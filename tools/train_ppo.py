@@ -38,6 +38,9 @@ def calculate_max_limbs_joints():
     # Add extra 1 for max_joints; needed for adding edge padding
     cfg.MODEL.MAX_JOINTS = max(num_joints) + 1
     cfg.MODEL.MAX_LIMBS = max(num_limbs) + 1
+    cfg.MODEL.MAX_JOINTS = 16
+    cfg.MODEL.MAX_LIMBS = 12
+    print (cfg.MODEL.MAX_JOINTS, cfg.MODEL.MAX_LIMBS)
 
 
 def calculate_max_iters():
@@ -133,7 +136,7 @@ def ppo_train():
     PPOTrainer.train()
     hparams = get_hparams()
     PPOTrainer.save_rewards(hparams=hparams)
-    PPOTrainer.save_model()
+    PPOTrainer.save_model(-1)
     cleanup_tensorboard()
 
 
@@ -144,6 +147,14 @@ def main():
     # Load config options
     cfg.merge_from_file(args.cfg_file)
     cfg.merge_from_list(args.opts)
+    # for test
+    obs_type = [
+        "body_xpos", "body_xvelp", "body_xvelr", "body_xquat", # limb
+        "qpos", "qvel", # joint
+    ]
+    test_opts = ["MODEL.PROPRIOCEPTIVE_OBS_TYPES", obs_type]
+    # test_opts.extend(["MODEL.TRANSFORMER.POS_EMBEDDING", None])
+    cfg.merge_from_list(test_opts)
     # Set cfg options which are inferred
     set_cfg_options()
     os.makedirs(cfg.OUT_DIR, exist_ok=True)

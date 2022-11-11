@@ -58,13 +58,20 @@ def make_vec_envs(
     if seed is None:
         seed = cfg.RNG_SEED
 
+    #print ('WALKERS')
+    #print (cfg.ENV.WALKERS)
+
     if len(cfg.ENV.WALKERS) <= 1 or render_policy or save_video:
-        if len(cfg.ENV.WALKERS) == 1:
+        #if len(cfg.ENV.WALKERS) == 1:
+        if xml_file is None or len(cfg.ENV.WALKERS) == 1:
             xml_file = cfg.ENV.WALKERS[0]
+        #print ('xml file', xml_file)
         envs = [
             make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file)
             for idx in range(num_env)
         ]
+        #print (len(envs))
+        print (envs[0]())
     else:
         # Dummy init the actual xml_file will change on each reset
         xml_file = cfg.ENV.WALKERS[0]
@@ -72,8 +79,10 @@ def make_vec_envs(
         for idx in range(num_env):
             _env = make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file)()
             envs.append(env_func_wrapper(MultiEnvWrapper(_env, idx)))
+        print (_env)
 
-    if save_video or render_policy:
+    #if save_video or render_policy:
+    if save_video:
         envs = DummyVecEnv([envs[0]])
     elif cfg.VECENV.TYPE == "DummyVecEnv":
         envs = DummyVecEnv(envs)

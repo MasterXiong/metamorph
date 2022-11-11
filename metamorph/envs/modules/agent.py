@@ -14,6 +14,22 @@ class Agent:
 
         self.np_random = random_state
 
+        self.limb_context = {
+            'body_pos': np.array([[-0.5, -0.45, -0.49], [0.5, 0.45, 2.04]]), 
+            'body_ipos': np.array([[-0.225, -0.225, -0.225], [0.225, 0.225, 0.]]), 
+            'body_iquat': np.array([[0.70710678, -0.70710678, -0.70710678, 0.], [1., 0.70710678, 0.70710678, 0.]]), 
+            'geom_quat': np.array([[0.70710678, -0.70710678, -0.70710678, 0.], [1., 0.70710678, 0.70710678, 0.]]), 
+            'body_mass': np.array([[1.17809725], [4.1887902]]), 
+            'body_shape': np.array([[0.05, 0.], [0.1, 0.22627417]]), 
+        }
+
+        self.joint_context = {
+            'jnt_pos': np.array([[-0.05, -0.05, 0.], [0.05, 0.05, 0.05]]), 
+            'joint_range': np.array([[-1.57079633, 0.], [0., 1.57079633]]), 
+            'joint_axis': np.array([[-0.5000024, -0.5000024, -1.], [1., 1., 1.]]), 
+            'gear': np.array([[0.], [300.]])
+        }
+
     def modify_xml_step(self, env, root, tree):
         # Store agent height
         worldbody = root.findall("./worldbody")[0]
@@ -167,7 +183,12 @@ class Agent:
         obs["body_mass"] = sim.model.body_mass[body_idxs].copy()[:, np.newaxis]
         obs["body_shape"] = sim.model.geom_size[self.agent_geom_idxs, :2].copy()
         obs["body_friction"] = sim.model.geom_friction[self.agent_geom_idxs, 0:1].copy()
-        return self._select_obs(obs)
+        
+        for key in self.limb_context:
+            lower_bound, upper_bound = self.limb_context[key][0], self.limb_context[key][1]
+            obs[key] = -1. * (lower_bound != upper_bound) + 2. * (obs[key] - lower_bound) / (upper_bound - lower_bound + 1e-8)
+
+        return self._select_obs(obs, cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES), self._select_obs(obs, cfg.MODEL.CONTEXT_OBS_TYPES)
 
     def get_joint_obs(self, sim):
         obs = {}
@@ -186,7 +207,11 @@ class Agent:
         obs["armature"] = sim.model.dof_armature[6:].copy()[:, np.newaxis]
         obs["damping"] = sim.model.dof_damping[6:].copy()[:, np.newaxis]
 
-        return self._select_obs(obs)
+        for key in self.joint_context:
+            lower_bound, upper_bound = self.joint_context[key][0], self.joint_context[key][1]
+            obs[key] = -1. * (lower_bound != upper_bound) + 2. * (obs[key] - lower_bound) / (upper_bound - lower_bound + 1e-8)
+
+        return self._select_obs(obs, cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES), self._select_obs(obs, cfg.MODEL.CONTEXT_OBS_TYPES)
 
     def _get_one_hot_body_idx(self):
         body_idxs = self.agent_body_idxs
@@ -195,9 +220,9 @@ class Agent:
         one_hot_encoding[rows, body_idxs] = 1
         return one_hot_encoding
 
-    def _select_obs(self, obs):
+    def _select_obs(self, obs, keys):
         obs_to_ret = []
-        for obs_type in cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES:
+        for obs_type in keys:
             if obs_type in obs:
                 obs_to_ret.append(obs[obs_type])
 
@@ -212,27 +237,32 @@ class Agent:
         # are concatenation of all hinge joints connecting the limb with it's
         # parent limb.
         num_limbs = len(self.agent_body_idxs)
-        joint_obs_size = joint_obs.shape[1]
-        # Two limbs can be connected by atmost 2 hinge joints
-        joint_obs_padded = np.zeros((num_limbs, joint_obs_size * 2))
-        joint_obs_padded = joint_obs_padded.reshape(-1, joint_obs_size)
-        joint_obs_padded[self.joint_mask_for_node_graph, :] = joint_obs
-        joint_obs_padded = joint_obs_padded.reshape(num_limbs, -1)
-        if limb_obs is None:
-            obs = joint_obs_padded
+        if joint_obs is None:
+            obs = limb_obs
         else:
-            obs = np.hstack((limb_obs, joint_obs_padded))
+            joint_obs_size = joint_obs.shape[1]
+            # Two limbs can be connected by atmost 2 hinge joints
+            joint_obs_padded = np.zeros((num_limbs, joint_obs_size * 2))
+            joint_obs_padded = joint_obs_padded.reshape(-1, joint_obs_size)
+            joint_obs_padded[self.joint_mask_for_node_graph, :] = joint_obs
+            joint_obs_padded = joint_obs_padded.reshape(num_limbs, -1)
+            if limb_obs is None:
+                obs = joint_obs_padded
+            else:
+                obs = np.hstack((limb_obs, joint_obs_padded))
+        # print (obs.shape)
 
         if (cfg.MIRROR_DATA_AUG and env.metadata["mirrored"]):
             obs = obs[env.metadata["o_to_m"], :]
         return obs.flatten()
 
     def observation_step(self, env, sim):
-        limb_obs = self.get_limb_obs(sim)
-        joint_obs = self.get_joint_obs(sim)
+        limb_obs, limb_context = self.get_limb_obs(sim)
+        joint_obs, joint_context = self.get_joint_obs(sim)
         return {
             "proprioceptive": self.combine_limb_joint_obs(limb_obs, joint_obs, env),
-            "edges": self.edges
+            "edges": self.edges, 
+            "context": self.combine_limb_joint_obs(limb_context, joint_context, env)
         }
 
     def _add_fixed_cameras(self, worldbody):

@@ -71,10 +71,13 @@ class MultiUnimalNodeCentricObservation(gym.ObservationWrapper):
             // self.metadata["num_limbs"]
         )
 
+        self.context_obs_size = self.observation_space["context"].shape[0] // self.metadata["num_limbs"]
+
         self._create_padding_mask()
 
         delta_obs = {
             "proprioceptive": (self.limb_obs_size * cfg.MODEL.MAX_LIMBS,),
+            "context": (self.context_obs_size * cfg.MODEL.MAX_LIMBS,),
             "edges": (2 * cfg.MODEL.MAX_JOINTS,),
             "obs_padding_mask": (self.obs_padding_mask.size,),
             "obs_padding_cm_mask": (self.obs_padding_cm_mask.size,),
@@ -112,9 +115,12 @@ class MultiUnimalNodeCentricObservation(gym.ObservationWrapper):
 
     def observation(self, obs):
         proprioceptive = obs["proprioceptive"]
+        context = obs["context"]
         padding = [0.0] * (self.limb_obs_size * self.num_limb_pads)
+        context_padding = [0.0] * (self.context_obs_size * self.num_limb_pads)
 
         obs["proprioceptive"] = np.concatenate([proprioceptive, padding]).ravel()
+        obs["context"] = np.concatenate([context, context_padding]).ravel()
         obs["obs_padding_mask"] = self.obs_padding_mask
         obs["obs_padding_cm_mask"] = self.obs_padding_cm_mask
         obs["act_padding_mask"] = self.act_padding_mask

@@ -62,7 +62,7 @@ _C.ENV.STAND_HEIGHT_RATIO = 0.5
 _C.ENV.MODULES = ["Floor", "Agent"]
 
 # Agent name if you are not using unimal but want to still use the unimal env
-_C.ENV.WALKER_DIR = "./output/unimals_100/train"
+_C.ENV.WALKER_DIR = "./unimals_100/train"
 
 # Agent name if you are not using unimal but want to still use the unimal env
 _C.ENV.WALKERS = []
@@ -350,14 +350,23 @@ _C.MODEL.ACTION_STD_FIXED = True
 
 # Types of proprioceptive obs to include
 _C.MODEL.PROPRIOCEPTIVE_OBS_TYPES = [
-    "body_xpos", "body_xvelp", "body_xvelr", "body_xquat", "body_pos", "body_ipos", "body_iquat", "geom_quat", # limb
+    "body_xpos", "body_xvelp", "body_xvelr", "body_xquat", 
+    "body_pos", "body_ipos", "body_iquat", "geom_quat", # limb model
     "body_mass", "body_shape", # limb hardware
-    "qpos", "qvel", "jnt_pos", # joint
+    "qpos", "qvel", 
+    "jnt_pos", # joint model
+    "joint_range", "joint_axis", "gear" # joint hardware
+]
+
+_C.MODEL.CONTEXT_OBS_TYPES = [
+    "body_pos", "body_ipos", "body_iquat", "geom_quat", # limb model
+    "body_mass", "body_shape", # limb hardware
+    "jnt_pos", # joint model
     "joint_range", "joint_axis", "gear" # joint hardware
 ]
 
 # Model specific observation types to keep
-_C.MODEL.OBS_TYPES = ["proprioceptive", "edges", "obs_padding_mask", "act_padding_mask"]
+_C.MODEL.OBS_TYPES = ["proprioceptive", "edges", "obs_padding_mask", "act_padding_mask", "context"]
 
 # Observations to normalize via VecNormalize
 _C.MODEL.OBS_TO_NORM = ["proprioceptive"]
@@ -397,6 +406,10 @@ _C.MODEL.TRANSFORMER.EXT_MIX = "none"
 
 # Type of position embedding to use: None, learnt
 _C.MODEL.TRANSFORMER.POS_EMBEDDING = "learnt"
+
+# Whether to use hypernet to generate the weights of the decoder
+_C.MODEL.TRANSFORMER.HYPERNET = False
+_C.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE = 128
 
 # --------------------------------------------------------------------------- #
 # Finetuning Options

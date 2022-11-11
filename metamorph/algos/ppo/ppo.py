@@ -30,6 +30,12 @@ class PPO:
 
         self.device = torch.device(cfg.DEVICE)
 
+        print ('observation_space')
+        print (self.envs.observation_space)
+        print ('action_space')
+        print (self.envs.action_space)
+        print (self.envs)
+
         self.actor_critic = globals()[cfg.MODEL.ACTOR_CRITIC](
             self.envs.observation_space, self.envs.action_space
         )
@@ -40,7 +46,7 @@ class PPO:
             set_ob_rms(self.envs, ob_rms)
 
         if print_model:
-            print(self.actor_critic)
+            #print(self.actor_critic)
             print("Num params: {}".format(mu.num_params(self.actor_critic)))
 
         self.actor_critic.to(self.device)
@@ -55,6 +61,8 @@ class PPO:
 
         self.train_meter = TrainMeter()
         self.writer = SummaryWriter(log_dir=os.path.join(cfg.OUT_DIR, "tensorboard"))
+        #obs = self.envs.reset()
+        #self.writer.add_graph(self.actor_critic, obs)
         # Get the param name for log_std term, can vary depending on arch
         for name, param in self.actor_critic.state_dict().items():
             if "log_std" in name:
@@ -72,6 +80,13 @@ class PPO:
         self.buffer.to(self.device)
         self.start = time.time()
 
+        print ('obs')
+        print (type(obs), len(obs))
+        for key in obs:
+            print (key, obs[key].size())
+        
+        # old_values = self.agent.ac.v_net.context_embed.bias.detach().clone()
+
         for cur_iter in range(cfg.PPO.MAX_ITERS):
 
             if cfg.PPO.EARLY_EXIT and cur_iter >= cfg.PPO.EARLY_EXIT_MAX_ITERS:
@@ -80,11 +95,64 @@ class PPO:
             lr = ou.get_iter_lr(cur_iter)
             ou.set_lr(self.optimizer, lr)
 
+            # print ('state embedding weight')
+            # print (self.agent.ac.v_net.limb_embed.bias[:8])
+            # print ('context embedding weight')
+            # print (self.agent.ac.v_net.context_embed.bias[:8])
+
+            # new_values = self.agent.ac.v_net.context_embed.bias.detach().clone()
+            # print (self.agent.ac.v_net.context_embed.bias.requires_grad)
+            if cfg.MODEL.TRANSFORMER.HYPERNET:
+                print ('***hypernet grad***')
+                # print (self.agent.ac.v_net.hnet_weight.weight.grad)
+                print ('parameter value')
+                print (self.agent.ac.v_net.hnet_weight.weight.data[0, :4])
+                print ('parameter grad')
+                try:
+                    print (self.agent.ac.v_net.hnet_weight.weight.grad[0, :4])
+                    print ('  non-zero grad fraction', (self.agent.ac.v_net.hnet_weight.weight.grad != 0.).float().mean())
+                except:
+                    print ('  none grad')
+                # print ('is leaf', self.agent.ac.v_net.hnet_weight.weight.is_leaf)
+                # print (self.agent.ac.v_net.hnet_weight.bias.grad)
+                # print ('context encoder grad')
+                # print (self.agent.ac.v_net.context_encoder.linear1.weight.grad[0, :8])
+                # print (self.agent.ac.v_net.context_encoder.linear1.bias.grad)
+                print ('***context embed grad***')
+                print ('parameter value')
+                print (self.agent.ac.v_net.context_embed.weight.data[0, :4])
+                print ('parameter grad')
+                try:
+                    print (self.agent.ac.v_net.context_embed.weight.grad[0, :4])
+                    print ('  non-zero grad fraction', (self.agent.ac.v_net.context_embed.weight.grad != 0.).float().mean())
+                except:
+                    print ('  none grad')
+            print ('***state embed grad***')
+            print ('parameter value')
+            print (self.agent.ac.v_net.limb_embed.weight.data[0, :4])
+            print ('parameter grad')
+            try:
+                print (self.agent.ac.v_net.limb_embed.weight.grad[0, :4])
+                print ('  non-zero grad fraction', (self.agent.ac.v_net.limb_embed.weight.grad != 0.).float().mean())
+            except:
+                print ('  none grad')
+            print ('\n')
+            # print ('is leaf', self.agent.ac.v_net.limb_embed.weight.is_leaf)
+            # print (self.agent.ac.v_net.context_embed.bias.grad)
+            # print ('number of bias changed in context embedding bias', (new_values != old_values).sum())
+            # old_values = new_values
+            # print (self.agent.ac.v_net.context_embed.weight.data[0, :8])
+
             for step in range(cfg.PPO.TIMESTEPS):
                 # Sample actions
                 val, act, logp = self.agent.act(obs)
+                #print (obs['proprioceptive'].size())
 
                 next_obs, reward, done, infos = self.envs.step(act)
+
+                # if (next_obs['context'][0] != obs['context'][0]).sum() != 0:
+                #     print (f'context change at step {step} with done={done[0]}')
+                #     print (next_obs['context'][0])
 
                 self.train_meter.add_ep_info(infos)
 
@@ -114,12 +182,19 @@ class PPO:
                     'Reward', cur_rew, self.env_steps_done(cur_iter)
                 )
             if (
-                cur_iter > 0
+                cur_iter >= 0
                 and cur_iter % cfg.LOG_PERIOD == 0
                 and cfg.LOG_PERIOD > 0
             ):
                 self._log_stats(cur_iter)
-                self.save_model()
+                self.save_model(cur_iter)
+
+                file_name = "{}_results.json".format(self.file_prefix)
+                path = os.path.join(cfg.OUT_DIR, file_name)
+                self._log_fps(cfg.PPO.MAX_ITERS - 1, log=False)
+                stats = self.train_meter.get_stats()
+                stats["fps"] = self.fps
+                fu.save_json(stats, path)
 
         print("Finished Training: {}".format(self.file_prefix))
 
@@ -127,17 +202,19 @@ class PPO:
         adv = self.buffer.ret - self.buffer.val
         adv = (adv - adv.mean()) / (adv.std() + 1e-5)
 
-        for _ in range(cfg.PPO.EPOCHS):
+        for i in range(cfg.PPO.EPOCHS):
             batch_sampler = self.buffer.get_sampler(adv)
 
-            for batch in batch_sampler:
+            for j, batch in enumerate(batch_sampler):
                 # Reshape to do in a single forward pass for all steps
                 val, _, logp, ent = self.actor_critic(batch["obs"], batch["act"])
                 clip_ratio = cfg.PPO.CLIP_EPS
                 ratio = torch.exp(logp - batch["logp_old"])
                 approx_kl = (batch["logp_old"] - logp).mean().item()
 
-                if approx_kl > cfg.PPO.KL_TARGET_COEF * 0.01:
+                if cfg.PPO.KL_TARGET_COEF is not None and approx_kl > cfg.PPO.KL_TARGET_COEF * 0.01:
+                    self.train_meter.add_train_stat("approx_kl", approx_kl)
+                    print (f'early stop iter {cur_iter} at epoch {i + 1}/{cfg.PPO.EPOCHS}, batch {j + 1} with approx_kl {approx_kl}')
                     return
 
                 surr1 = ratio * batch["adv"]
@@ -164,10 +241,26 @@ class PPO:
                 loss += -ent * cfg.PPO.ENTROPY_COEF
                 loss.backward()
 
+                # check gradient norm of each module
+                if i == 0 and j == 0:
+                    print ('grad norm')
+                    norms = []
+                    for name, p in self.actor_critic.named_parameters():
+                        if 'hnet' in name or 'decoder' in name:
+                            g = p.grad
+                            if g is not None:
+                                grad_norm = torch.norm(g.detach(), 2.)
+                                norms.append(grad_norm)
+                                print ('  ', name, grad_norm)
+                            else:
+                                print ('  ', name, g)
+                    # print (f'  total_norm: {torch.norm(torch.stack(norms), 2.)}')
+
                 # Log training stats
                 norm = nn.utils.clip_grad_norm_(
                     self.actor_critic.parameters(), cfg.PPO.MAX_GRAD_NORM
                 )
+                print (f'epoch {i}, batch {j}, gradient norm: {norm}, approx_kl: {approx_kl}')
                 self.train_meter.add_train_stat("grad_norm", norm.item())
 
                 log_std = (
@@ -195,10 +288,12 @@ class PPO:
                     # If layer does not have .grad move on
                     continue
 
-    def save_model(self, path=None):
+    def save_model(self, cur_iter, path=None):
         if not path:
             path = os.path.join(cfg.OUT_DIR, self.file_prefix + ".pt")
         torch.save([self.actor_critic, get_ob_rms(self.envs)], path)
+        checkpoint_path = os.path.join(cfg.OUT_DIR, f"checkpoint_{cur_iter}.pt")
+        torch.save([self.actor_critic, get_ob_rms(self.envs)], checkpoint_path)
 
     def _log_stats(self, cur_iter):
         self._log_fps(cur_iter)
@@ -243,7 +338,7 @@ class PPO:
     def save_video(self, save_dir):
         env = make_vec_envs(training=False, norm_rew=False, save_video=True,)
         set_ob_rms(env, get_ob_rms(self.envs))
-
+        
         env = VecVideoRecorder(
             env,
             save_dir,
@@ -251,11 +346,14 @@ class PPO:
             video_length=cfg.PPO.VIDEO_LENGTH,
             file_prefix=self.file_prefix,
         )
+        
         obs = env.reset()
 
         for _ in range(cfg.PPO.VIDEO_LENGTH + 1):
             _, act, _ = self.agent.act(obs)
-            obs, _, _, _ = env.step(act)
+            obs, _, _, infos = env.step(act)
+            if 'episode' in infos[0]:
+                print (infos[0]['episode']['r'])
 
         env.close()
         # remove annoying meta file created by monitor

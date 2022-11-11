@@ -3,6 +3,8 @@ import math
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
 from torch.distributions.normal import Normal
 
 from metamorph.config import cfg
@@ -11,11 +13,15 @@ from metamorph.utils import model as tu
 from .transformer import TransformerEncoder
 from .transformer import TransformerEncoderLayerResidual
 
+import time
+
 
 # J: Max num joints between two limbs. 1 for 2D envs, 2 for unimal
 class TransformerModel(nn.Module):
     def __init__(self, obs_space, decoder_out_dim):
         super(TransformerModel, self).__init__()
+
+        self.decoder_out_dim = decoder_out_dim
 
         self.model_args = cfg.MODEL.TRANSFORMER
         self.seq_len = cfg.MODEL.MAX_LIMBS
@@ -54,21 +60,56 @@ class TransformerModel(nn.Module):
             decoder_input_dim += self.hfield_encoder.obs_feat_dim
 
         # self.decoder = nn.Linear(decoder_input_dim, decoder_out_dim)
-        self.decoder = tu.make_mlp_default(
-            [decoder_input_dim] + self.model_args.DECODER_DIMS + [decoder_out_dim],
-            final_nonlinearity=False,
-        )
+        if not self.model_args.HYPERNET:
+            self.decoder = tu.make_mlp_default(
+                [decoder_input_dim] + self.model_args.DECODER_DIMS + [decoder_out_dim],
+                final_nonlinearity=False,
+            )
+        else:
+            # the network to generate context embedding from the morphology context
+            context_obs_size = obs_space["context"].shape[0] // self.seq_len
+            self.context_embed = nn.Linear(context_obs_size, self.model_args.CONTEXT_EMBED_SIZE)
+            
+            context_encoder_layers = TransformerEncoderLayerResidual(
+                self.model_args.CONTEXT_EMBED_SIZE,
+                self.model_args.NHEAD,
+                self.model_args.DIM_FEEDFORWARD,
+                self.model_args.DROPOUT,
+            )
+            self.context_encoder = TransformerEncoder(
+                context_encoder_layers, 1, norm=None,
+            )
+
+            self.hnet_weight = nn.Linear(self.model_args.CONTEXT_EMBED_SIZE, decoder_input_dim * decoder_out_dim)
+            self.hnet_bias = nn.Linear(self.model_args.CONTEXT_EMBED_SIZE, decoder_out_dim)
+
         self.init_weights()
+
+        # for name, param in self.named_parameters():
+        #     print(name, param.requires_grad)
 
     def init_weights(self):
         initrange = cfg.MODEL.TRANSFORMER.EMBED_INIT
         self.limb_embed.weight.data.uniform_(-initrange, initrange)
-        self.decoder[-1].bias.data.zero_()
-        initrange = cfg.MODEL.TRANSFORMER.DECODER_INIT
-        self.decoder[-1].weight.data.uniform_(-initrange, initrange)
+        if not self.model_args.HYPERNET:
+            self.decoder[-1].bias.data.zero_()
+            initrange = cfg.MODEL.TRANSFORMER.DECODER_INIT
+            self.decoder[-1].weight.data.uniform_(-initrange, initrange)
+        else:
+            # initialize the hypernet following Jake's paper
+            initrange = cfg.MODEL.TRANSFORMER.DECODER_INIT
+            # self.hnet_weight.weight.data.uniform_(-initrange, initrange)
+            self.hnet_weight.weight.data.zero_()
+            self.hnet_weight.bias.data.uniform_(-initrange, initrange)
+            self.hnet_bias.weight.data.zero_()
+            self.hnet_bias.bias.data.zero_()
 
-    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, return_attention=False):
+            initrange = cfg.MODEL.TRANSFORMER.EMBED_INIT
+            self.context_embed.weight.data.uniform_(-initrange, initrange)
+
+    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, return_attention=False):
         # (num_limbs, batch_size, limb_obs_size) -> (num_limbs, batch_size, d_model)
+        # forward_start_time = time.time()
         obs_embed = self.limb_embed(obs) * math.sqrt(self.d_model)
         _, batch_size, _ = obs_embed.shape
 
@@ -82,8 +123,8 @@ class TransformerModel(nn.Module):
 
         attention_maps = None
 
-        if self.model_args.POS_EMBEDDING in ["learnt", "abs"]:
-            obs_embed = self.pos_embedding(obs_embed)
+        # if self.model_args.POS_EMBEDDING in ["learnt", "abs"]:
+        #     obs_embed = self.pos_embedding(obs_embed)
         if return_attention:
             obs_embed_t, attention_maps = self.transformer_encoder.get_attention_maps(
                 obs_embed, src_key_padding_mask=obs_mask
@@ -93,17 +134,46 @@ class TransformerModel(nn.Module):
             obs_embed_t = self.transformer_encoder(
                 obs_embed, src_key_padding_mask=obs_mask
             )
+        # obs_embed_t = obs_embed
+        # print ('decoder input abs mean', obs_embed_t.detach().abs().mean())
 
         decoder_input = obs_embed_t
         if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.ext_feat_fusion == "late":
             decoder_input = torch.cat([decoder_input, hfield_obs], axis=2)
 
         # (num_limbs, batch_size, J)
-        output = self.decoder(decoder_input)
+        if not self.model_args.HYPERNET:
+            output = self.decoder(decoder_input)
+        else:
+            # context_embedding = self.context_embed(obs_context) * math.sqrt(self.model_args.CONTEXT_EMBED_SIZE)
+            context_embedding = self.context_embed(obs_context)
+            # context_embedding = self.pos_embedding(torch.zeros(self.seq_len, batch_size, self.d_model).cuda())
+            context_embedding = self.context_encoder(context_embedding, src_key_padding_mask=obs_mask)
+            # print ('context embedding abs mean', context_embedding.detach().abs().mean())
+
+            # old (but efficient?) implementation with gradient issue
+            decoder_weight = self.hnet_weight(context_embedding).reshape(self.seq_len, batch_size, self.d_model, self.decoder_out_dim)
+            decoder_bias = self.hnet_bias(context_embedding)
+            output = (decoder_input[:, :, :, None] * decoder_weight).sum(dim=-2, keepdim=False) + decoder_bias
+            # output = (decoder_input.unsqueeze(3).repeat(1, 1, 1, self.decoder_out_dim) * decoder_weight).sum(dim=-2, keepdim=False)
+            # output = (decoder_input[:, :, :, None] * decoder_weight).sum(dim=-2, keepdim=False)
+
+            # new version
+            # decoder_weight = self.hnet_weight(context_embedding).reshape(-1, self.decoder_out_dim, self.d_model)
+            # # decoder_bias = self.hnet_bias(context_embedding).reshape(-1, self.decoder_out_dim)
+            # decoder_input = decoder_input.reshape(-1, self.d_model)
+            # N = decoder_input.size(0)
+            # output = [F.linear(decoder_input[i], decoder_weight[i]) for i in range(N)]
+            # output = torch.stack(output, dim=0).reshape(self.seq_len, batch_size, -1)
+        
         # (batch_size, num_limbs, J)
         output = output.permute(1, 0, 2)
         # (batch_size, num_limbs * J)
         output = output.reshape(batch_size, -1)
+        # forward_end_time = time.time()
+
+        # print ('forward pass seconds', forward_end_time - forward_start_time)
+        # print ('decoding time fraction', (decode_end_time - decode_start_time) / (forward_end_time - forward_start_time), forward_end_time - forward_start_time)
 
         return output, attention_maps
 
@@ -188,10 +258,11 @@ class ActorCritic(nn.Module):
             obs_cm_mask = obs["obs_padding_cm_mask"]
         else:
             obs_cm_mask = None
-        obs, obs_mask, act_mask, _ = (
+        obs, obs_mask, act_mask, obs_context, _ = (
             obs["proprioceptive"],
             obs["obs_padding_mask"],
             obs["act_padding_mask"],
+            obs["context"], 
             obs["edges"],
         )
 
@@ -199,9 +270,10 @@ class ActorCritic(nn.Module):
         act_mask = act_mask.bool()
 
         obs = obs.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
+        obs_context = obs_context.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
         # Per limb critic values
         limb_vals, v_attention_maps = self.v_net(
-            obs, obs_mask, obs_env, obs_cm_mask, return_attention=return_attention
+            obs, obs_mask, obs_env, obs_cm_mask, obs_context, return_attention=return_attention
         )
         # Zero out mask values
         limb_vals = limb_vals * (1 - obs_mask.int())
@@ -210,7 +282,7 @@ class ActorCritic(nn.Module):
         val = torch.divide(torch.sum(limb_vals, dim=1, keepdim=True), num_limbs)
 
         mu, mu_attention_maps = self.mu_net(
-            obs, obs_mask, obs_env, obs_cm_mask, return_attention=return_attention
+            obs, obs_mask, obs_env, obs_cm_mask, obs_context, return_attention=return_attention
         )
         std = torch.exp(self.log_std)
         pi = Normal(mu, std)
