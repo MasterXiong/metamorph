@@ -113,7 +113,7 @@ def parse_args():
         "--cfg", dest="cfg_file", help="Config file", required=True, type=str
     )
     parser.add_argument(
-        "--context_in_state", required=True, type=str
+        "--no_context_in_state", action="store_true"
     )
     parser.add_argument(
         "opts",
@@ -151,7 +151,7 @@ def main():
     cfg.merge_from_file(args.cfg_file)
     cfg.merge_from_list(args.opts)
 
-    if not args.context_in_state:
+    if args.no_context_in_state:
         obs_type = [
             "body_xpos", "body_xvelp", "body_xvelr", "body_xquat", # limb
             "qpos", "qvel", # joint
