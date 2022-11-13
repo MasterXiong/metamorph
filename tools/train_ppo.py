@@ -113,6 +113,9 @@ def parse_args():
         "--cfg", dest="cfg_file", help="Config file", required=True, type=str
     )
     parser.add_argument(
+        "--context_in_state", required=True, type=str
+    )
+    parser.add_argument(
         "opts",
         help="See morphology/core/config.py for all options",
         default=None,
@@ -147,14 +150,15 @@ def main():
     # Load config options
     cfg.merge_from_file(args.cfg_file)
     cfg.merge_from_list(args.opts)
-    # for test
-    obs_type = [
-        "body_xpos", "body_xvelp", "body_xvelr", "body_xquat", # limb
-        "qpos", "qvel", # joint
-    ]
-    test_opts = ["MODEL.PROPRIOCEPTIVE_OBS_TYPES", obs_type]
-    # test_opts.extend(["MODEL.TRANSFORMER.POS_EMBEDDING", None])
-    cfg.merge_from_list(test_opts)
+
+    if not args.context_in_state:
+        obs_type = [
+            "body_xpos", "body_xvelp", "body_xvelr", "body_xquat", # limb
+            "qpos", "qvel", # joint
+        ]
+        ob_opts = ["MODEL.PROPRIOCEPTIVE_OBS_TYPES", obs_type]
+        cfg.merge_from_list(ob_opts)
+
     # Set cfg options which are inferred
     set_cfg_options()
     os.makedirs(cfg.OUT_DIR, exist_ok=True)

@@ -123,8 +123,8 @@ class TransformerModel(nn.Module):
 
         attention_maps = None
 
-        # if self.model_args.POS_EMBEDDING in ["learnt", "abs"]:
-        #     obs_embed = self.pos_embedding(obs_embed)
+        if self.model_args.POS_EMBEDDING in ["learnt", "abs"]:
+            obs_embed = self.pos_embedding(obs_embed)
         if return_attention:
             obs_embed_t, attention_maps = self.transformer_encoder.get_attention_maps(
                 obs_embed, src_key_padding_mask=obs_mask
