@@ -184,11 +184,8 @@ class Agent:
         obs["body_shape"] = sim.model.geom_size[self.agent_geom_idxs, :2].copy()
         obs["body_friction"] = sim.model.geom_friction[self.agent_geom_idxs, 0:1].copy()
         
-        for key in self.limb_context:
-            lower_bound, upper_bound = self.limb_context[key][0], self.limb_context[key][1]
-            obs[key] = -1. * (lower_bound != upper_bound) + 2. * (obs[key] - lower_bound) / (upper_bound - lower_bound + 1e-8)
-
-        return self._select_obs(obs, cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES), self._select_obs(obs, cfg.MODEL.CONTEXT_OBS_TYPES)
+        return self._select_obs(obs, cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES), \
+               self._select_obs(obs, cfg.MODEL.CONTEXT_OBS_TYPES, normalization='limb')
 
     def get_joint_obs(self, sim):
         obs = {}
@@ -207,11 +204,8 @@ class Agent:
         obs["armature"] = sim.model.dof_armature[6:].copy()[:, np.newaxis]
         obs["damping"] = sim.model.dof_damping[6:].copy()[:, np.newaxis]
 
-        for key in self.joint_context:
-            lower_bound, upper_bound = self.joint_context[key][0], self.joint_context[key][1]
-            obs[key] = -1. * (lower_bound != upper_bound) + 2. * (obs[key] - lower_bound) / (upper_bound - lower_bound + 1e-8)
-
-        return self._select_obs(obs, cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES), self._select_obs(obs, cfg.MODEL.CONTEXT_OBS_TYPES)
+        return self._select_obs(obs, cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES), \
+               self._select_obs(obs, cfg.MODEL.CONTEXT_OBS_TYPES, normalization='joint')
 
     def _get_one_hot_body_idx(self):
         body_idxs = self.agent_body_idxs
@@ -220,7 +214,17 @@ class Agent:
         one_hot_encoding[rows, body_idxs] = 1
         return one_hot_encoding
 
-    def _select_obs(self, obs, keys):
+    def _select_obs(self, obs, keys, normalization=False):
+
+        if normalization == 'limb':
+            for key in self.limb_context:
+                lower_bound, upper_bound = self.limb_context[key][0], self.limb_context[key][1]
+                obs[key] = -1. * (lower_bound != upper_bound) + 2. * (obs[key] - lower_bound) / (upper_bound - lower_bound + 1e-8)
+        elif normalization == 'joint':
+            for key in self.joint_context:
+                lower_bound, upper_bound = self.joint_context[key][0], self.joint_context[key][1]
+                obs[key] = -1. * (lower_bound != upper_bound) + 2. * (obs[key] - lower_bound) / (upper_bound - lower_bound + 1e-8)
+
         obs_to_ret = []
         for obs_type in keys:
             if obs_type in obs:
