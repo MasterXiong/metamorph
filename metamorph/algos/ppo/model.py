@@ -32,9 +32,11 @@ class TransformerModel(nn.Module):
         self.ext_feat_fusion = self.model_args.EXT_MIX
 
         if self.model_args.POS_EMBEDDING == "learnt":
+            print ('use PE learnt')
             seq_len = self.seq_len
             self.pos_embedding = PositionalEncoding(self.d_model, seq_len)
         elif self.model_args.POS_EMBEDDING == "abs":
+            print ('use PE abs')
             self.pos_embedding = PositionalEncoding1D(self.d_model, self.seq_len)
 
         # Transformer Encoder
@@ -246,6 +248,12 @@ class ActorCritic(nn.Module):
             )
         else:
             self.log_std = nn.Parameter(torch.zeros(1, self.num_actions))
+        
+        # hard code the index of context features if they are included in proprioceptive features
+        limb_context_index = np.arange(13, 13 + 17)
+        # two joints features for each node
+        joint_context_index = np.concatenate([np.arange(2, 2 + 9), np.arange(11 + 2, 11 + 2 + 9)])
+        self.context_index = np.concatenate([limb_context_index, joint_context_index])
 
     def forward(self, obs, act=None, return_attention=False):
         if act is not None:
@@ -271,6 +279,9 @@ class ActorCritic(nn.Module):
 
         obs = obs.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
         obs_context = obs_context.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
+        if cfg.MODEL.CONTEXT_NORM == 'fixed':
+            obs[:, :, self.context_index] = obs_context.clone()
+        # print (obs[:, :, self.context_index].min(), obs[:, :, self.context_index].max())
         # Per limb critic values
         limb_vals, v_attention_maps = self.v_net(
             obs, obs_mask, obs_env, obs_cm_mask, obs_context, return_attention=return_attention
