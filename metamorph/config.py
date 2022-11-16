@@ -371,6 +371,9 @@ _C.MODEL.OBS_TYPES = ["proprioceptive", "edges", "obs_padding_mask", "act_paddin
 # Observations to normalize via VecNormalize
 _C.MODEL.OBS_TO_NORM = ["proprioceptive"]
 
+# Context normalization with RunningMeanStd or fixed range
+_C.MODEL.BASE_CONTEXT_NORM = 'running'
+
 # Wrappers to add specific to model
 _C.MODEL.WRAPPERS = ["MultiUnimalNodeCentricObservation", "MultiUnimalNodeCentricAction"]
 
@@ -406,6 +409,8 @@ _C.MODEL.TRANSFORMER.EXT_MIX = "none"
 
 # Type of position embedding to use: None, learnt
 _C.MODEL.TRANSFORMER.POS_EMBEDDING = "learnt"
+_C.MODEL.TRANSFORMER.PE_POSITION = "base"
+_C.MODEL.TRANSFORMER.DROPOUT_AFTER_PE = True
 
 # Whether to use hypernet to generate the weights of the decoder
 _C.MODEL.TRANSFORMER.HYPERNET = False

@@ -14,6 +14,7 @@ from .transformer import TransformerEncoder
 from .transformer import TransformerEncoderLayerResidual
 
 import time
+import matplotlib.pyplot as plt
 
 
 # J: Max num joints between two limbs. 1 for 2D envs, 2 for unimal
@@ -87,6 +88,8 @@ class TransformerModel(nn.Module):
 
         self.init_weights()
 
+        self.fig_count = 0
+
         # for name, param in self.named_parameters():
         #     print(name, param.requires_grad)
 
@@ -125,7 +128,7 @@ class TransformerModel(nn.Module):
 
         attention_maps = None
 
-        if self.model_args.POS_EMBEDDING in ["learnt", "abs"]:
+        if self.model_args.POS_EMBEDDING in ["learnt", "abs"] and self.model_args.PE_POSITION == 'base':
             obs_embed = self.pos_embedding(obs_embed)
         if return_attention:
             obs_embed_t, attention_maps = self.transformer_encoder.get_attention_maps(
@@ -149,7 +152,17 @@ class TransformerModel(nn.Module):
         else:
             # context_embedding = self.context_embed(obs_context) * math.sqrt(self.model_args.CONTEXT_EMBED_SIZE)
             context_embedding = self.context_embed(obs_context)
+            # context_embedding_before_PE = context_embedding.clone()
             # context_embedding = self.pos_embedding(torch.zeros(self.seq_len, batch_size, self.d_model).cuda())
+            if self.model_args.PE_POSITION == 'HN':
+                context_embedding = self.pos_embedding(context_embedding)
+            # plt.figure()
+            # plt.hist(context_embedding.cpu().numpy().ravel(), bins=100, label='after PE')
+            # plt.hist(context_embedding_before_PE.cpu().numpy().ravel(), bins=100, label='before PE')
+            # plt.legend()
+            # plt.savefig(f'figures/context_embedding_dist/{self.fig_count}.png')
+            # plt.close()
+            # self.fig_count += 1
             context_embedding = self.context_encoder(context_embedding, src_key_padding_mask=obs_mask)
             # print ('context embedding abs mean', context_embedding.detach().abs().mean())
 
@@ -184,7 +197,10 @@ class PositionalEncoding(nn.Module):
     def __init__(self, d_model, seq_len, dropout=0.1):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
-        self.pe = nn.Parameter(torch.randn(seq_len, 1, d_model))
+        if cfg.MODEL.TRANSFORMER.PE_POSITION == 'base':
+            self.pe = nn.Parameter(torch.randn(seq_len, 1, d_model))
+        else:
+            self.pe = nn.Parameter(torch.randn(seq_len, 1, d_model) / math.sqrt(cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE))
 
     def forward(self, x):
         """
@@ -192,7 +208,10 @@ class PositionalEncoding(nn.Module):
             x: Tensor, shape [seq_len, batch_size, embedding_dim]
         """
         x = x + self.pe
-        return self.dropout(x)
+        if cfg.MODEL.TRANSFORMER.DROPOUT_AFTER_PE:
+            return self.dropout(x)
+        else:
+            return x
 
 
 class PositionalEncoding1D(nn.Module):
@@ -279,7 +298,7 @@ class ActorCritic(nn.Module):
 
         obs = obs.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
         obs_context = obs_context.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
-        if cfg.MODEL.CONTEXT_NORM == 'fixed':
+        if cfg.MODEL.BASE_CONTEXT_NORM == 'fixed':
             obs[:, :, self.context_index] = obs_context.clone()
         # print (obs[:, :, self.context_index].min(), obs[:, :, self.context_index].max())
         # Per limb critic values
