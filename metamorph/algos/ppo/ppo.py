@@ -84,6 +84,8 @@ class PPO:
         print (type(obs), len(obs))
         for key in obs:
             print (key, obs[key].size())
+
+        # print (obs['edges'])
         
         # old_values = self.agent.ac.v_net.context_embed.bias.detach().clone()
 
@@ -102,41 +104,41 @@ class PPO:
 
             # new_values = self.agent.ac.v_net.context_embed.bias.detach().clone()
             # print (self.agent.ac.v_net.context_embed.bias.requires_grad)
-            if cfg.MODEL.TRANSFORMER.HYPERNET:
-                print ('***hypernet grad***')
-                # print (self.agent.ac.v_net.hnet_weight.weight.grad)
-                print ('parameter value')
-                print (self.agent.ac.v_net.hnet_weight.weight.data[0, :4])
-                print ('parameter grad')
-                try:
-                    print (self.agent.ac.v_net.hnet_weight.weight.grad[0, :4])
-                    print ('  non-zero grad fraction', (self.agent.ac.v_net.hnet_weight.weight.grad != 0.).float().mean())
-                except:
-                    print ('  none grad')
-                # print ('is leaf', self.agent.ac.v_net.hnet_weight.weight.is_leaf)
-                # print (self.agent.ac.v_net.hnet_weight.bias.grad)
-                # print ('context encoder grad')
-                # print (self.agent.ac.v_net.context_encoder.linear1.weight.grad[0, :8])
-                # print (self.agent.ac.v_net.context_encoder.linear1.bias.grad)
-                print ('***context embed grad***')
-                print ('parameter value')
-                print (self.agent.ac.v_net.context_embed.weight.data[0, :4])
-                print ('parameter grad')
-                try:
-                    print (self.agent.ac.v_net.context_embed.weight.grad[0, :4])
-                    print ('  non-zero grad fraction', (self.agent.ac.v_net.context_embed.weight.grad != 0.).float().mean())
-                except:
-                    print ('  none grad')
-            print ('***state embed grad***')
-            print ('parameter value')
-            print (self.agent.ac.v_net.limb_embed.weight.data[0, :4])
-            print ('parameter grad')
-            try:
-                print (self.agent.ac.v_net.limb_embed.weight.grad[0, :4])
-                print ('  non-zero grad fraction', (self.agent.ac.v_net.limb_embed.weight.grad != 0.).float().mean())
-            except:
-                print ('  none grad')
-            print ('\n')
+            # if cfg.MODEL.TRANSFORMER.HYPERNET:
+            #     print ('***hypernet grad***')
+            #     # print (self.agent.ac.v_net.hnet_weight.weight.grad)
+            #     print ('parameter value')
+            #     print (self.agent.ac.v_net.hnet_weight.weight.data[0, :4])
+            #     print ('parameter grad')
+            #     try:
+            #         print (self.agent.ac.v_net.hnet_weight.weight.grad[0, :4])
+            #         print ('  non-zero grad fraction', (self.agent.ac.v_net.hnet_weight.weight.grad != 0.).float().mean())
+            #     except:
+            #         print ('  none grad')
+            #     # print ('is leaf', self.agent.ac.v_net.hnet_weight.weight.is_leaf)
+            #     # print (self.agent.ac.v_net.hnet_weight.bias.grad)
+            #     # print ('context encoder grad')
+            #     # print (self.agent.ac.v_net.context_encoder.linear1.weight.grad[0, :8])
+            #     # print (self.agent.ac.v_net.context_encoder.linear1.bias.grad)
+            #     print ('***context embed grad***')
+            #     print ('parameter value')
+            #     print (self.agent.ac.v_net.context_embed.weight.data[0, :4])
+            #     print ('parameter grad')
+            #     try:
+            #         print (self.agent.ac.v_net.context_embed.weight.grad[0, :4])
+            #         print ('  non-zero grad fraction', (self.agent.ac.v_net.context_embed.weight.grad != 0.).float().mean())
+            #     except:
+            #         print ('  none grad')
+            # print ('***state embed grad***')
+            # print ('parameter value')
+            # print (self.agent.ac.v_net.limb_embed.weight.data[0, :4])
+            # print ('parameter grad')
+            # try:
+            #     print (self.agent.ac.v_net.limb_embed.weight.grad[0, :4])
+            #     print ('  non-zero grad fraction', (self.agent.ac.v_net.limb_embed.weight.grad != 0.).float().mean())
+            # except:
+            #     print ('  none grad')
+            # print ('\n')
             # print ('is leaf', self.agent.ac.v_net.limb_embed.weight.is_leaf)
             # print (self.agent.ac.v_net.context_embed.bias.grad)
             # print ('number of bias changed in context embedding bias', (new_values != old_values).sum())
@@ -145,7 +147,7 @@ class PPO:
 
             for step in range(cfg.PPO.TIMESTEPS):
                 # Sample actions
-                val, act, logp = self.agent.act(obs)
+                val, act, logp, dropout_mask_v, dropout_mask_mu = self.agent.act(obs)
                 #print (obs['proprioceptive'].size())
 
                 next_obs, reward, done, infos = self.envs.step(act)
@@ -167,7 +169,7 @@ class PPO:
                     device=self.device,
                 )
 
-                self.buffer.insert(obs, act, logp, val, reward, masks, timeouts)
+                self.buffer.insert(obs, act, logp, val, reward, masks, timeouts, dropout_mask_v, dropout_mask_mu)
                 obs = next_obs
 
             next_val = self.agent.get_value(obs)
@@ -195,6 +197,7 @@ class PPO:
                 stats = self.train_meter.get_stats()
                 stats["fps"] = self.fps
                 fu.save_json(stats, path)
+                print (cfg.OUT_DIR)
 
         print("Finished Training: {}".format(self.file_prefix))
 
@@ -207,7 +210,7 @@ class PPO:
 
             for j, batch in enumerate(batch_sampler):
                 # Reshape to do in a single forward pass for all steps
-                val, _, logp, ent = self.actor_critic(batch["obs"], batch["act"])
+                val, _, logp, ent, _, _ = self.actor_critic(batch["obs"], batch["act"], dropout_mask_v=batch['dropout_mask_v'], dropout_mask_mu=batch['dropout_mask_mu'])
                 clip_ratio = cfg.PPO.CLIP_EPS
                 ratio = torch.exp(logp - batch["logp_old"])
                 approx_kl = (batch["logp_old"] - logp).mean().item()
@@ -242,18 +245,18 @@ class PPO:
                 loss.backward()
 
                 # check gradient norm of each module
-                if i == 0 and j == 0:
-                    print ('grad norm')
-                    norms = []
-                    for name, p in self.actor_critic.named_parameters():
-                        if 'hnet' in name or 'decoder' in name:
-                            g = p.grad
-                            if g is not None:
-                                grad_norm = torch.norm(g.detach(), 2.)
-                                norms.append(grad_norm)
-                                print ('  ', name, grad_norm)
-                            else:
-                                print ('  ', name, g)
+                # if i == 0 and j == 0:
+                #     print ('grad norm')
+                #     norms = []
+                #     for name, p in self.actor_critic.named_parameters():
+                #         if 'hnet' in name or 'decoder' in name:
+                #             g = p.grad
+                #             if g is not None:
+                #                 grad_norm = torch.norm(g.detach(), 2.)
+                #                 norms.append(grad_norm)
+                #                 print ('  ', name, grad_norm)
+                #             else:
+                #                 print ('  ', name, g)
                     # print (f'  total_norm: {torch.norm(torch.stack(norms), 2.)}')
 
                 # Log training stats

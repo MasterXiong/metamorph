@@ -63,12 +63,13 @@ class TransformerModel(nn.Module):
             decoder_input_dim += self.hfield_encoder.obs_feat_dim
 
         # self.decoder = nn.Linear(decoder_input_dim, decoder_out_dim)
-        if not self.model_args.HYPERNET:
-            self.decoder = tu.make_mlp_default(
-                [decoder_input_dim] + self.model_args.DECODER_DIMS + [decoder_out_dim],
-                final_nonlinearity=False,
-            )
-        else:
+        self.decoder = tu.make_mlp_default(
+            [decoder_input_dim] + self.model_args.DECODER_DIMS + [decoder_out_dim],
+            final_nonlinearity=False,
+        )
+
+        if self.model_args.FIX_ATTENTION or self.model_args.HYPERNET:
+            print ('use HN')
             # the network to generate context embedding from the morphology context
             context_obs_size = obs_space["context"].shape[0] // self.seq_len
             self.context_embed = nn.Linear(context_obs_size, self.model_args.CONTEXT_EMBED_SIZE)
@@ -80,43 +81,65 @@ class TransformerModel(nn.Module):
                 self.model_args.DROPOUT,
             )
             self.context_encoder = TransformerEncoder(
-                context_encoder_layers, 1, norm=None,
+                context_encoder_layers, self.model_args.CONTEXT_LAYER, norm=None,
             )
+
+        if self.model_args.HYPERNET:
+            self.hnet_embed_weight = nn.Linear(self.model_args.CONTEXT_EMBED_SIZE, limb_obs_size * self.d_model)
+            self.hnet_embed_bias = nn.Linear(self.model_args.CONTEXT_EMBED_SIZE, self.d_model)
 
             self.hnet_weight = nn.Linear(self.model_args.CONTEXT_EMBED_SIZE, decoder_input_dim * decoder_out_dim)
             self.hnet_bias = nn.Linear(self.model_args.CONTEXT_EMBED_SIZE, decoder_out_dim)
 
+        self.dropout = nn.Dropout(p=0.1)
+
         self.init_weights()
 
-        self.fig_count = 0
-
-        # for name, param in self.named_parameters():
-        #     print(name, param.requires_grad)
-
     def init_weights(self):
+        # init obs embedding
         initrange = cfg.MODEL.TRANSFORMER.EMBED_INIT
         self.limb_embed.weight.data.uniform_(-initrange, initrange)
-        if not self.model_args.HYPERNET:
-            self.decoder[-1].bias.data.zero_()
-            initrange = cfg.MODEL.TRANSFORMER.DECODER_INIT
-            self.decoder[-1].weight.data.uniform_(-initrange, initrange)
-        else:
+        # init decoder
+        initrange = cfg.MODEL.TRANSFORMER.DECODER_INIT
+        self.decoder[-1].bias.data.zero_()
+        self.decoder[-1].weight.data.uniform_(-initrange, initrange)
+
+        if self.model_args.FIX_ATTENTION or self.model_args.HYPERNET:
+            initrange = cfg.MODEL.TRANSFORMER.EMBED_INIT
+            self.context_embed.weight.data.uniform_(-initrange, initrange)
+
+        if self.model_args.HYPERNET:
             # initialize the hypernet following Jake's paper
+            initrange = cfg.MODEL.TRANSFORMER.EMBED_INIT
+            self.hnet_embed_weight.weight.data.zero_()
+            self.hnet_embed_weight.bias.data.uniform_(-initrange, initrange)
+            self.hnet_embed_bias.weight.data.zero_()
+            self.hnet_embed_bias.bias.data.zero_()
+
             initrange = cfg.MODEL.TRANSFORMER.DECODER_INIT
-            # self.hnet_weight.weight.data.uniform_(-initrange, initrange)
             self.hnet_weight.weight.data.zero_()
             self.hnet_weight.bias.data.uniform_(-initrange, initrange)
             self.hnet_bias.weight.data.zero_()
             self.hnet_bias.bias.data.zero_()
 
-            initrange = cfg.MODEL.TRANSFORMER.EMBED_INIT
-            self.context_embed.weight.data.uniform_(-initrange, initrange)
-
-    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, return_attention=False):
+    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, return_attention=False, dropout_mask=None):
         # (num_limbs, batch_size, limb_obs_size) -> (num_limbs, batch_size, d_model)
         # forward_start_time = time.time()
-        obs_embed = self.limb_embed(obs) * math.sqrt(self.d_model)
-        _, batch_size, _ = obs_embed.shape
+        _, batch_size, limb_obs_size = obs.shape
+
+        if self.model_args.FIX_ATTENTION or self.model_args.HYPERNET:
+            context_embedding = self.context_embed(obs_context)
+            if self.model_args.PE_POSITION == 'HN':
+                context_embedding = self.pos_embedding(context_embedding)
+            context_embedding = self.context_encoder(context_embedding, src_key_padding_mask=obs_mask)
+
+        if not self.model_args.HYPERNET:
+            obs_embed = self.limb_embed(obs) * math.sqrt(self.d_model)
+        else:
+            embed_weight = self.hnet_embed_weight(context_embedding).reshape(self.seq_len, batch_size, limb_obs_size, self.d_model)
+            embed_bias = self.hnet_embed_bias(context_embedding)
+            obs_embed = (obs[:, :, :, None] * embed_weight).sum(dim=-2, keepdim=False) + embed_bias
+            obs_embed = obs_embed * math.sqrt(self.d_model)
 
         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
             # (batch_size, embed_size)
@@ -130,17 +153,33 @@ class TransformerModel(nn.Module):
 
         if self.model_args.POS_EMBEDDING in ["learnt", "abs"] and self.model_args.PE_POSITION == 'base':
             obs_embed = self.pos_embedding(obs_embed)
+        
+        # code for dropout test
+        if self.model_args.EMBEDDING_DROPOUT:
+            print ('hahaha')
+            if dropout_mask is None:
+                obs_embed_after_dropout = self.dropout(obs_embed)
+                # print (obs_embed_after_dropout / obs_embed)
+                dropout_mask = torch.where(obs_embed_after_dropout == 0., 0., 1.).permute(1, 0, 2)
+                # print (obs_embed_after_dropout == (obs_embed * dropout_mask.permute(1, 0, 2) / 0.9))
+                obs_embed = obs_embed_after_dropout
+            else:
+                obs_embed = obs_embed * dropout_mask.permute(1, 0, 2) / 0.9
+
+        if self.model_args.FIX_ATTENTION:
+            context_to_base = context_embedding
+        else:
+            context_to_base = None
+
         if return_attention:
             obs_embed_t, attention_maps = self.transformer_encoder.get_attention_maps(
-                obs_embed, src_key_padding_mask=obs_mask
+                obs_embed, src_key_padding_mask=obs_mask, context=context_to_base
             )
         else:
             # (num_limbs, batch_size, d_model)
             obs_embed_t = self.transformer_encoder(
-                obs_embed, src_key_padding_mask=obs_mask
+                obs_embed, src_key_padding_mask=obs_mask, context=context_to_base
             )
-        # obs_embed_t = obs_embed
-        # print ('decoder input abs mean', obs_embed_t.detach().abs().mean())
 
         decoder_input = obs_embed_t
         if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.ext_feat_fusion == "late":
@@ -150,36 +189,9 @@ class TransformerModel(nn.Module):
         if not self.model_args.HYPERNET:
             output = self.decoder(decoder_input)
         else:
-            # context_embedding = self.context_embed(obs_context) * math.sqrt(self.model_args.CONTEXT_EMBED_SIZE)
-            context_embedding = self.context_embed(obs_context)
-            # context_embedding_before_PE = context_embedding.clone()
-            # context_embedding = self.pos_embedding(torch.zeros(self.seq_len, batch_size, self.d_model).cuda())
-            if self.model_args.PE_POSITION == 'HN':
-                context_embedding = self.pos_embedding(context_embedding)
-            # plt.figure()
-            # plt.hist(context_embedding.cpu().numpy().ravel(), bins=100, label='after PE')
-            # plt.hist(context_embedding_before_PE.cpu().numpy().ravel(), bins=100, label='before PE')
-            # plt.legend()
-            # plt.savefig(f'figures/context_embedding_dist/{self.fig_count}.png')
-            # plt.close()
-            # self.fig_count += 1
-            context_embedding = self.context_encoder(context_embedding, src_key_padding_mask=obs_mask)
-            # print ('context embedding abs mean', context_embedding.detach().abs().mean())
-
-            # old (but efficient?) implementation with gradient issue
             decoder_weight = self.hnet_weight(context_embedding).reshape(self.seq_len, batch_size, self.d_model, self.decoder_out_dim)
             decoder_bias = self.hnet_bias(context_embedding)
             output = (decoder_input[:, :, :, None] * decoder_weight).sum(dim=-2, keepdim=False) + decoder_bias
-            # output = (decoder_input.unsqueeze(3).repeat(1, 1, 1, self.decoder_out_dim) * decoder_weight).sum(dim=-2, keepdim=False)
-            # output = (decoder_input[:, :, :, None] * decoder_weight).sum(dim=-2, keepdim=False)
-
-            # new version
-            # decoder_weight = self.hnet_weight(context_embedding).reshape(-1, self.decoder_out_dim, self.d_model)
-            # # decoder_bias = self.hnet_bias(context_embedding).reshape(-1, self.decoder_out_dim)
-            # decoder_input = decoder_input.reshape(-1, self.d_model)
-            # N = decoder_input.size(0)
-            # output = [F.linear(decoder_input[i], decoder_weight[i]) for i in range(N)]
-            # output = torch.stack(output, dim=0).reshape(self.seq_len, batch_size, -1)
         
         # (batch_size, num_limbs, J)
         output = output.permute(1, 0, 2)
@@ -190,7 +202,7 @@ class TransformerModel(nn.Module):
         # print ('forward pass seconds', forward_end_time - forward_start_time)
         # print ('decoding time fraction', (decode_end_time - decode_start_time) / (forward_end_time - forward_start_time), forward_end_time - forward_start_time)
 
-        return output, attention_maps
+        return output, attention_maps, dropout_mask
 
 
 class PositionalEncoding(nn.Module):
@@ -274,7 +286,7 @@ class ActorCritic(nn.Module):
         joint_context_index = np.concatenate([np.arange(2, 2 + 9), np.arange(11 + 2, 11 + 2 + 9)])
         self.context_index = np.concatenate([limb_context_index, joint_context_index])
 
-    def forward(self, obs, act=None, return_attention=False):
+    def forward(self, obs, act=None, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None):
         if act is not None:
             batch_size = cfg.PPO.BATCH_SIZE
         else:
@@ -302,8 +314,9 @@ class ActorCritic(nn.Module):
             obs[:, :, self.context_index] = obs_context.clone()
         # print (obs[:, :, self.context_index].min(), obs[:, :, self.context_index].max())
         # Per limb critic values
-        limb_vals, v_attention_maps = self.v_net(
-            obs, obs_mask, obs_env, obs_cm_mask, obs_context, return_attention=return_attention
+        limb_vals, v_attention_maps, dropout_mask_v = self.v_net(
+            obs, obs_mask, obs_env, obs_cm_mask, obs_context, 
+            return_attention=return_attention, dropout_mask=dropout_mask_v
         )
         # Zero out mask values
         limb_vals = limb_vals * (1 - obs_mask.int())
@@ -311,8 +324,9 @@ class ActorCritic(nn.Module):
         num_limbs = self.seq_len - torch.sum(obs_mask.int(), dim=1, keepdim=True)
         val = torch.divide(torch.sum(limb_vals, dim=1, keepdim=True), num_limbs)
 
-        mu, mu_attention_maps = self.mu_net(
-            obs, obs_mask, obs_env, obs_cm_mask, obs_context, return_attention=return_attention
+        mu, mu_attention_maps, dropout_mask_mu = self.mu_net(
+            obs, obs_mask, obs_env, obs_cm_mask, obs_context, 
+            return_attention=return_attention, dropout_mask=dropout_mask_mu
         )
         std = torch.exp(self.log_std)
         pi = Normal(mu, std)
@@ -324,12 +338,12 @@ class ActorCritic(nn.Module):
             entropy = pi.entropy()
             entropy[act_mask] = 0.0
             entropy = entropy.mean()
-            return val, pi, logp, entropy
+            return val, pi, logp, entropy, dropout_mask_v, dropout_mask_mu
         else:
             if return_attention:
-                return val, pi, v_attention_maps, mu_attention_maps
+                return val, pi, v_attention_maps, mu_attention_maps, dropout_mask_v, dropout_mask_mu
             else:
-                return val, pi, None, None
+                return val, pi, None, None, dropout_mask_v, dropout_mask_mu
 
 
 class Agent:
@@ -337,16 +351,16 @@ class Agent:
         self.ac = actor_critic
 
     @torch.no_grad()
-    def act(self, obs):
-        val, pi, _, _ = self.ac(obs)
+    def act(self, obs, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None):
+        val, pi, self.v_attention_maps, _, dropout_mask_v, dropout_mask_mu = self.ac(obs, return_attention=return_attention, dropout_mask_v=dropout_mask_v, dropout_mask_mu=dropout_mask_mu)
         act = pi.sample()
         logp = pi.log_prob(act)
         act_mask = obs["act_padding_mask"].bool()
         logp[act_mask] = 0.0
         logp = logp.sum(-1, keepdim=True)
-        return val, act, logp
+        return val, act, logp, dropout_mask_v, dropout_mask_mu
 
     @torch.no_grad()
-    def get_value(self, obs):
-        val, _, _, _ = self.ac(obs)
+    def get_value(self, obs, dropout_mask_v=None, dropout_mask_mu=None):
+        val, _, _, _, _, _ = self.ac(obs, dropout_mask_v=dropout_mask_v, dropout_mask_mu=dropout_mask_mu)
         return val

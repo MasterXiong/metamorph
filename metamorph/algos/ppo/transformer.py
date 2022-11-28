@@ -5,6 +5,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.modules import ModuleList
 
+from metamorph.config import cfg
+
 
 def _get_clones(module, N):
     return ModuleList([copy.deepcopy(module) for i in range(N)])
@@ -39,7 +41,7 @@ class TransformerEncoder(nn.Module):
         self.num_layers = num_layers
         self.norm = norm
 
-    def forward(self, src, mask=None, src_key_padding_mask=None):
+    def forward(self, src, mask=None, src_key_padding_mask=None, context=None):
         r"""Pass the input through the encoder layers in turn.
 
         Args:
@@ -53,14 +55,14 @@ class TransformerEncoder(nn.Module):
         output = src
 
         for l in self.layers:
-            output = l(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask)
+            output = l(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask, context=context)
 
         if self.norm is not None:
             output = self.norm(output)
 
         return output
 
-    def get_attention_maps(self, src, mask=None, src_key_padding_mask=None):
+    def get_attention_maps(self, src, mask=None, src_key_padding_mask=None, context=None):
         attention_maps = []
         output = src
 
@@ -72,7 +74,8 @@ class TransformerEncoder(nn.Module):
                 output,
                 src_mask=mask,
                 src_key_padding_mask=src_key_padding_mask,
-                return_attention=True
+                return_attention=True, 
+                context=context
             )
             attention_maps.append(attention_map)
 
@@ -98,6 +101,9 @@ class TransformerEncoderLayerResidual(nn.Module):
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
 
+        if cfg.MODEL.TRANSFORMER.FIX_ATTENTION:
+            self.norm_context = nn.LayerNorm(d_model)
+
         self.activation = _get_activation_fn(activation)
 
     def __setstate__(self, state):
@@ -105,11 +111,20 @@ class TransformerEncoderLayerResidual(nn.Module):
             state["activation"] = F.relu
         super(TransformerEncoderLayerResidual, self).__setstate__(state)
 
-    def forward(self, src, src_mask=None, src_key_padding_mask=None, return_attention=False):
+    def forward(self, src, src_mask=None, src_key_padding_mask=None, return_attention=False, context=None):
+        
         src2 = self.norm1(src)
-        src2, attn_weights = self.self_attn(
-            src2, src2, src2, attn_mask=src_mask, key_padding_mask=src_key_padding_mask
-        )
+
+        if context is not None:
+            context_normed = self.norm_context(context)
+            src2, attn_weights = self.self_attn(
+                context_normed, context_normed, src2, attn_mask=src_mask, key_padding_mask=src_key_padding_mask
+            )
+        else:
+            src2, attn_weights = self.self_attn(
+                src2, src2, src2, attn_mask=src_mask, key_padding_mask=src_key_padding_mask
+            )
+        
         src = src + self.dropout1(src2)
 
         src2 = self.norm2(src)
@@ -120,3 +135,4 @@ class TransformerEncoderLayerResidual(nn.Module):
             return src, attn_weights
         else:
             return src
+        

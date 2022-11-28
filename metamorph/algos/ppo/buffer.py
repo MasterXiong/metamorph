@@ -25,6 +25,8 @@ class Buffer(object):
         self.logp = torch.zeros(T, P, 1)
         self.masks = torch.ones(T, P, 1)
         self.timeout = torch.ones(T, P, 1)
+        self.dropout_mask_v = torch.ones(T, P, 12, 128)
+        self.dropout_mask_mu = torch.ones(T, P, 12, 128)
 
         self.step = 0
 
@@ -41,8 +43,10 @@ class Buffer(object):
         self.logp = self.logp.to(device)
         self.masks = self.masks.to(device)
         self.timeout = self.timeout.to(device)
+        self.dropout_mask_v = self.dropout_mask_v.to(device)
+        self.dropout_mask_mu = self.dropout_mask_mu.to(device)
 
-    def insert(self, obs, act, logp, val, rew, masks, timeouts):
+    def insert(self, obs, act, logp, val, rew, masks, timeouts, dropout_mask_v, dropout_mask_mu):
         if isinstance(obs, dict):
             for obs_type, obs_val in obs.items():
                 self.obs[obs_type][self.step] = obs_val
@@ -54,6 +58,8 @@ class Buffer(object):
         self.logp[self.step] = logp
         self.masks[self.step] = masks
         self.timeout[self.step] = timeouts
+        self.dropout_mask_v[self.step] = dropout_mask_v
+        self.dropout_mask_mu[self.step] = dropout_mask_mu
 
         self.step = (self.step + 1) % cfg.PPO.TIMESTEPS
 
@@ -105,4 +111,6 @@ class Buffer(object):
             batch["act"] = self.act.view(-1, self.act.size(-1))[idxs]
             batch["adv"] = adv.view(-1, 1)[idxs]
             batch["logp_old"] = self.logp.view(-1, 1)[idxs]
+            batch["dropout_mask_v"] = self.dropout_mask_v.view(-1, 12, 128)[idxs]
+            batch["dropout_mask_mu"] = self.dropout_mask_mu.view(-1, 12, 128)[idxs]
             yield batch
