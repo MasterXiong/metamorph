@@ -84,8 +84,6 @@ class PPO:
         print (type(obs), len(obs))
         for key in obs:
             print (key, obs[key].size())
-
-        # print (obs['edges'])
         
         # old_values = self.agent.ac.v_net.context_embed.bias.detach().clone()
 

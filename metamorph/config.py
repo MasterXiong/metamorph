@@ -411,7 +411,8 @@ _C.MODEL.TRANSFORMER.EXT_MIX = "none"
 _C.MODEL.TRANSFORMER.POS_EMBEDDING = "learnt"
 _C.MODEL.TRANSFORMER.PE_POSITION = "base"
 _C.MODEL.TRANSFORMER.DROPOUT_AFTER_PE = True
-_C.MODEL.TRANSFORMER.EMBEDDING_DROPOUT = False
+_C.MODEL.TRANSFORMER.EMBEDDING_DROPOUT = True
+_C.MODEL.TRANSFORMER.CONSISTENT_DROPOUT = False
 
 # Whether to use hypernet to generate the weights of the decoder
 _C.MODEL.TRANSFORMER.HYPERNET = False
@@ -420,6 +421,8 @@ _C.MODEL.TRANSFORMER.CONTEXT_LAYER = 3
 
 # whether to use context to generate fixed attention weights
 _C.MODEL.TRANSFORMER.FIX_ATTENTION = False
+# whether adjust attention weights based on morphology information
+_C.MODEL.TRANSFORMER.USE_MORPHOLOGY_INFO_IN_ATTENTION = False
 
 # --------------------------------------------------------------------------- #
 # Finetuning Options

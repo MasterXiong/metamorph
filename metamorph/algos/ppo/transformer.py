@@ -41,8 +41,8 @@ class TransformerEncoder(nn.Module):
         self.num_layers = num_layers
         self.norm = norm
 
-    def forward(self, src, mask=None, src_key_padding_mask=None, context=None):
-        r"""Pass the input through the encoder layers in turn.
+    def forward(self, src, mask=None, src_key_padding_mask=None, context=None, morphology_info=None):
+        """Pass the input through the encoder layers in turn.
 
         Args:
             src: the sequence to the encoder (required).
@@ -55,14 +55,14 @@ class TransformerEncoder(nn.Module):
         output = src
 
         for l in self.layers:
-            output = l(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask, context=context)
+            output = l(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask, context=context, morphology_info=morphology_info)
 
         if self.norm is not None:
             output = self.norm(output)
 
         return output
 
-    def get_attention_maps(self, src, mask=None, src_key_padding_mask=None, context=None):
+    def get_attention_maps(self, src, mask=None, src_key_padding_mask=None, context=None, morphology_info=None):
         attention_maps = []
         output = src
 
@@ -75,7 +75,8 @@ class TransformerEncoder(nn.Module):
                 src_mask=mask,
                 src_key_padding_mask=src_key_padding_mask,
                 return_attention=True, 
-                context=context
+                context=context, 
+                morphology_info=morphology_info
             )
             attention_maps.append(attention_map)
 
@@ -103,6 +104,13 @@ class TransformerEncoderLayerResidual(nn.Module):
 
         if cfg.MODEL.TRANSFORMER.FIX_ATTENTION:
             self.norm_context = nn.LayerNorm(d_model)
+        
+        if cfg.MODEL.TRANSFORMER.USE_MORPHOLOGY_INFO_IN_ATTENTION:
+            self.connectivity_encoder = nn.Sequential(
+                nn.Linear(3, 16), 
+                nn.ReLU(), 
+                nn.Linear(16, nhead), 
+            )
 
         self.activation = _get_activation_fn(activation)
 
@@ -111,9 +119,18 @@ class TransformerEncoderLayerResidual(nn.Module):
             state["activation"] = F.relu
         super(TransformerEncoderLayerResidual, self).__setstate__(state)
 
-    def forward(self, src, src_mask=None, src_key_padding_mask=None, return_attention=False, context=None):
+    def forward(self, src, src_mask=None, src_key_padding_mask=None, return_attention=False, context=None, morphology_info=None):
         
         src2 = self.norm1(src)
+
+        if morphology_info is None:
+            src_mask = None
+        else:
+            # (batch_size, seq_len, seq_len, feat_dim) -> (batch_size, seq_len, seq_len, num_head)
+            src_mask = self.connectivity_encoder(morphology_info['connectivity'])
+            # (batch_size, seq_len, seq_len, num_head) -> (batch_size * num_head, seq_len, seq_len)
+            # stack the embedding for each head in the first dimension
+            src_mask = torch.cat([src_mask[:, :, :, i] for i in range(src_mask.size(-1))], 0)
 
         if context is not None:
             context_normed = self.norm_context(context)
