@@ -79,7 +79,7 @@ def make_vec_envs(
         for idx in range(num_env):
             _env = make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file)()
             envs.append(env_func_wrapper(MultiEnvWrapper(_env, idx)))
-        # print (_env)
+        print (_env)
 
     #if save_video or render_policy:
     if save_video:

@@ -321,6 +321,9 @@ class ActorCritic(nn.Module):
         self.context_index = np.concatenate([limb_context_index, joint_context_index])
 
     def forward(self, obs, act=None, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None):
+        
+        # all_start = time.time()
+        
         if act is not None:
             batch_size = cfg.PPO.BATCH_SIZE
         else:
@@ -331,30 +334,25 @@ class ActorCritic(nn.Module):
             obs_cm_mask = obs["obs_padding_cm_mask"]
         else:
             obs_cm_mask = None
-        obs, obs_mask, act_mask, obs_context, edges = (
+        obs, obs_mask, act_mask, obs_context, edges, connectivity = (
             obs["proprioceptive"],
             obs["obs_padding_mask"],
             obs["act_padding_mask"],
             obs["context"], 
-            obs["edges"],
+            obs["edges"], 
+            obs['connectivity'], 
         )
 
+        # start = time.time()
         if cfg.MODEL.TRANSFORMER.USE_MORPHOLOGY_INFO_IN_ATTENTION:
             morphology_info = {}
-            # generate connectivity features of 3d for each node pair: batch_size * seq_len * seq_len * feat_dim
-            # 0: identity indicator; 1: parent; 2: child
-            connectivity = torch.zeros(batch_size, cfg.MODEL.MAX_LIMBS, cfg.MODEL.MAX_LIMBS, 3)
-            connectivity[:, :, :, 0] = torch.stack([torch.eye(cfg.MODEL.MAX_LIMBS) for _ in range(batch_size)])
-            for i in range(batch_size):
-                for j in range(edges.shape[1] // 2):
-                    child_idx, parent_idx = int(edges[i, 2 * j].item()), int(edges[i, 2 * j + 1].item())
-                    if child_idx == 11 and parent_idx == 11:
-                        break
-                    connectivity[i, parent_idx, child_idx, 1] = 1.
-                    connectivity[i, child_idx, parent_idx, 2] = 1.
-            morphology_info['connectivity'] = connectivity.cuda()
+            # # generate connectivity features of 3d for each node pair: batch_size * seq_len * seq_len * feat_dim
+            # # 0: identity indicator; 1: parent; 2: child
+            morphology_info['connectivity'] = connectivity
         else:
             morphology_info = None
+        # end = time.time()
+        # print ('time on connectivity', end - start)
 
         obs_mask = obs_mask.bool()
         act_mask = act_mask.bool()
@@ -381,6 +379,9 @@ class ActorCritic(nn.Module):
         )
         std = torch.exp(self.log_std)
         pi = Normal(mu, std)
+
+        # all_end = time.time()
+        # print ('full forward time', all_end - all_start)
 
         if act is not None:
             logp = pi.log_prob(act)

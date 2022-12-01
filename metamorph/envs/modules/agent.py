@@ -110,7 +110,7 @@ class Agent:
         self.limb_btm_sites = [
             site for site in env.metadata["agent_sites"] if "limb/btm" in site
         ]
-        self.edges = self._get_edges(sim)
+        self.edges, self.connectivity = self._get_edges(sim)
         env.metadata["num_limbs"] = len(self.agent_body_idxs)
         env.metadata["num_joints"] = len(sim.model.joint_names) - 1
         # Useful for attention map analysis
@@ -157,7 +157,16 @@ class Agent:
         # world body
         joint_to -= 1
         joint_from -= 1
-        return np.vstack((joint_to, joint_from)).T.flatten()
+
+        # generate connectivity matrix
+        connectivity = np.zeros([cfg.MODEL.MAX_LIMBS, cfg.MODEL.MAX_LIMBS, 3])
+        connectivity[:, :, 0] = np.eye(cfg.MODEL.MAX_LIMBS)
+        for i in range(len(joint_to)):
+            child_idx, parent_idx = joint_to[i], joint_from[i]
+            connectivity[parent_idx, child_idx, 1] = 1.
+            connectivity[child_idx, parent_idx, 2] = 1.
+
+        return np.vstack((joint_to, joint_from)).T.flatten(), connectivity
 
     def get_limb_obs(self, sim):
         obs = {}
@@ -266,7 +275,8 @@ class Agent:
         return {
             "proprioceptive": self.combine_limb_joint_obs(limb_obs, joint_obs, env),
             "edges": self.edges, 
-            "context": self.combine_limb_joint_obs(limb_context, joint_context, env)
+            "context": self.combine_limb_joint_obs(limb_context, joint_context, env), 
+            "connectivity": self.connectivity, 
         }
 
     def _add_fixed_cameras(self, worldbody):

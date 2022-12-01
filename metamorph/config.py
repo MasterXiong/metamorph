@@ -366,7 +366,7 @@ _C.MODEL.CONTEXT_OBS_TYPES = [
 ]
 
 # Model specific observation types to keep
-_C.MODEL.OBS_TYPES = ["proprioceptive", "edges", "obs_padding_mask", "act_padding_mask", "context"]
+_C.MODEL.OBS_TYPES = ["proprioceptive", "edges", "obs_padding_mask", "act_padding_mask", "context", "connectivity"]
 
 # Observations to normalize via VecNormalize
 _C.MODEL.OBS_TO_NORM = ["proprioceptive"]
