@@ -142,7 +142,6 @@ class TransformerModel(nn.Module):
 
     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, dropout_mask=None):
         # (num_limbs, batch_size, limb_obs_size) -> (num_limbs, batch_size, d_model)
-        # forward_start_time = time.time()
         _, batch_size, limb_obs_size = obs.shape
 
         if self.model_args.FIX_ATTENTION:
@@ -193,7 +192,8 @@ class TransformerModel(nn.Module):
             else:
                 # print ('vanilla dropout')
                 obs_embed = self.dropout(obs_embed)
-                dropout_mask = torch.where(obs_embed == 0., 0., 1.).permute(1, 0, 2)
+                # dropout_mask = torch.where(obs_embed == 0., 0., 1.).permute(1, 0, 2)
+                dropout_mask = 0.
         else:
             dropout_mask = 0.
 
@@ -234,10 +234,6 @@ class TransformerModel(nn.Module):
         output = output.permute(1, 0, 2)
         # (batch_size, num_limbs * J)
         output = output.reshape(batch_size, -1)
-        # forward_end_time = time.time()
-
-        # print ('forward pass seconds', forward_end_time - forward_start_time)
-        # print ('decoding time fraction', (decode_end_time - decode_start_time) / (forward_end_time - forward_start_time), forward_end_time - forward_start_time)
 
         return output, attention_maps, dropout_mask
 

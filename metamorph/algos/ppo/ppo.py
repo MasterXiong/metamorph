@@ -351,7 +351,7 @@ class PPO:
         obs = env.reset()
 
         for _ in range(cfg.PPO.VIDEO_LENGTH + 1):
-            _, act, _ = self.agent.act(obs)
+            _, act, _, _, _ = self.agent.act(obs)
             obs, _, _, infos = env.step(act)
             if 'episode' in infos[0]:
                 print (infos[0]['episode']['r'])
