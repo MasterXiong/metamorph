@@ -1,5 +1,6 @@
 import os
 import time
+import pickle
 
 import numpy as np
 import torch
@@ -73,6 +74,7 @@ class PPO:
         #     print(name, weight.requires_grad)
 
         self.fps = 0
+        os.system(f'mkdir {cfg.OUT_DIR}/ratio_hist')
 
     def train(self):
         self.save_sampled_agent_seq(0)
@@ -203,6 +205,8 @@ class PPO:
         adv = self.buffer.ret - self.buffer.val
         adv = (adv - adv.mean()) / (adv.std() + 1e-5)
 
+        ratio_hist = [[] for _ in range(cfg.PPO.EPOCHS)]
+
         for i in range(cfg.PPO.EPOCHS):
             batch_sampler = self.buffer.get_sampler(adv)
 
@@ -215,12 +219,21 @@ class PPO:
 
                 if cfg.PPO.KL_TARGET_COEF is not None and approx_kl > cfg.PPO.KL_TARGET_COEF * 0.01:
                     self.train_meter.add_train_stat("approx_kl", approx_kl)
+                    if cfg.SAVE_HIST_RATIO:
+                        with open(os.path.join(cfg.OUT_DIR, 'ratio_hist', f'ratio_hist_{cur_iter}.pkl'), 'wb') as f:
+                            pickle.dump(ratio_hist, f)
                     print (f'early stop iter {cur_iter} at epoch {i + 1}/{cfg.PPO.EPOCHS}, batch {j + 1} with approx_kl {approx_kl}')
                     return
+
+                if cfg.SAVE_HIST_RATIO:
+                    clipped_ratio = torch.clamp(ratio, 0., 2.0).detach()
+                    hist, _ = np.histogram(clipped_ratio.cpu().numpy(), 100, range=(0., 2.))
+                    ratio_hist[i].append(hist)
 
                 surr1 = ratio * batch["adv"]
 
                 surr2 = torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
+                clip_frac = (ratio != surr2).float().mean().item()
                 surr2 *= batch["adv"]
 
                 pi_loss = -torch.min(surr1, surr2).mean()
@@ -276,8 +289,13 @@ class PPO:
                 self.train_meter.add_train_stat("ratio", ratio.mean().item())
                 self.train_meter.add_train_stat("surr1", surr1.mean().item())
                 self.train_meter.add_train_stat("surr2", surr2.mean().item())
+                self.train_meter.add_train_stat("clip_frac", clip_frac)
 
                 self.optimizer.step()
+
+        if cfg.SAVE_HIST_RATIO:
+            with open(os.path.join(cfg.OUT_DIR, 'ratio_hist', f'ratio_hist_{cur_iter}.pkl'), 'wb') as f:
+                pickle.dump(ratio_hist, f)
 
         # Save weight histogram
         if cfg.SAVE_HIST_WEIGHTS:

@@ -123,6 +123,8 @@ class Agent:
         )
         env.metadata["joint_mask_for_node_graph"] = self.joint_mask_for_node_graph
 
+        self.context_limb, self.context_joint = self.get_context(sim)
+
     def get_joint_mask_for_node_graph(self, edge_names):
         limb_joint_types = defaultdict(list)
         limb_order = []
@@ -168,6 +170,41 @@ class Agent:
 
         return np.vstack((joint_to, joint_from)).T.flatten(), connectivity
 
+    def get_context(self, sim):
+        context_limb = {}
+        body_idxs = self.agent_body_idxs
+        # Relative position, orientation
+        context_limb["body_pos"] = sim.model.body_pos[body_idxs, :].copy()
+        context_limb["body_ipos"] = sim.model.body_ipos[body_idxs, :].copy()
+        context_limb["body_iquat"] = sim.model.body_iquat[body_idxs, :].copy()
+        context_limb["geom_quat"] = sim.model.geom_quat[self.agent_geom_idxs, :].copy()
+        context_limb["geom_extremities"] = self.extremities(sim)
+        # Hardware property
+        context_limb["body_mass"] = sim.model.body_mass[body_idxs].copy()[:, np.newaxis]
+        context_limb["body_shape"] = sim.model.geom_size[self.agent_geom_idxs, :2].copy()
+        context_limb["body_friction"] = sim.model.geom_friction[self.agent_geom_idxs, 0:1].copy()
+
+        for key in self.limb_context:
+            lower_bound, upper_bound = self.limb_context[key][0], self.limb_context[key][1]
+            context_limb[key] = -1. * (lower_bound != upper_bound) + 2. * (context_limb[key] - lower_bound) / (upper_bound - lower_bound + 1e-8)
+        context_limb = self._select_obs(context_limb, cfg.MODEL.CONTEXT_OBS_TYPES)
+        
+        # joint property
+        context_joint = {}
+        context_joint["jnt_pos"] = sim.model.jnt_pos[1:, :].copy()
+        context_joint["joint_range"] = sim.model.jnt_range[1:, :].copy()
+        context_joint["joint_axis"] = sim.model.jnt_axis[1:, :].copy()
+        context_joint["gear"] = sim.model.actuator_gear[:, 0:1].copy()
+        context_joint["armature"] = sim.model.dof_armature[6:].copy()[:, np.newaxis]
+        context_joint["damping"] = sim.model.dof_damping[6:].copy()[:, np.newaxis]
+
+        for key in self.joint_context:
+            lower_bound, upper_bound = self.joint_context[key][0], self.joint_context[key][1]
+            context_joint[key] = -1. * (lower_bound != upper_bound) + 2. * (context_joint[key] - lower_bound) / (upper_bound - lower_bound + 1e-8)
+        context_joint = self._select_obs(context_joint, cfg.MODEL.CONTEXT_OBS_TYPES)
+
+        return context_limb, context_joint
+
     def get_limb_obs(self, sim):
         obs = {}
         body_idxs = self.agent_body_idxs
@@ -193,8 +230,7 @@ class Agent:
         obs["body_shape"] = sim.model.geom_size[self.agent_geom_idxs, :2].copy()
         obs["body_friction"] = sim.model.geom_friction[self.agent_geom_idxs, 0:1].copy()
         
-        return self._select_obs(obs, cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES), \
-               self._select_obs(obs, cfg.MODEL.CONTEXT_OBS_TYPES, normalization='limb')
+        return self._select_obs(obs, cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES)
 
     def get_joint_obs(self, sim):
         obs = {}
@@ -213,8 +249,7 @@ class Agent:
         obs["armature"] = sim.model.dof_armature[6:].copy()[:, np.newaxis]
         obs["damping"] = sim.model.dof_damping[6:].copy()[:, np.newaxis]
 
-        return self._select_obs(obs, cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES), \
-               self._select_obs(obs, cfg.MODEL.CONTEXT_OBS_TYPES, normalization='joint')
+        return self._select_obs(obs, cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES)
 
     def _get_one_hot_body_idx(self):
         body_idxs = self.agent_body_idxs
@@ -223,16 +258,7 @@ class Agent:
         one_hot_encoding[rows, body_idxs] = 1
         return one_hot_encoding
 
-    def _select_obs(self, obs, keys, normalization=False):
-
-        if normalization == 'limb':
-            for key in self.limb_context:
-                lower_bound, upper_bound = self.limb_context[key][0], self.limb_context[key][1]
-                obs[key] = -1. * (lower_bound != upper_bound) + 2. * (obs[key] - lower_bound) / (upper_bound - lower_bound + 1e-8)
-        elif normalization == 'joint':
-            for key in self.joint_context:
-                lower_bound, upper_bound = self.joint_context[key][0], self.joint_context[key][1]
-                obs[key] = -1. * (lower_bound != upper_bound) + 2. * (obs[key] - lower_bound) / (upper_bound - lower_bound + 1e-8)
+    def _select_obs(self, obs, keys):
 
         obs_to_ret = []
         for obs_type in keys:
@@ -270,12 +296,13 @@ class Agent:
         return obs.flatten()
 
     def observation_step(self, env, sim):
-        limb_obs, limb_context = self.get_limb_obs(sim)
-        joint_obs, joint_context = self.get_joint_obs(sim)
+        limb_obs = self.get_limb_obs(sim)
+        joint_obs = self.get_joint_obs(sim)
         return {
             "proprioceptive": self.combine_limb_joint_obs(limb_obs, joint_obs, env),
             "edges": self.edges, 
-            "context": self.combine_limb_joint_obs(limb_context, joint_context, env), 
+            "context": self.combine_limb_joint_obs(self.context_limb, self.context_joint, env), 
+            # "context": self.combine_limb_joint_obs(limb_context, joint_context, env), 
             "connectivity": self.connectivity, 
         }
 
