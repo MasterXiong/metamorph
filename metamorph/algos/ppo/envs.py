@@ -75,6 +75,7 @@ def make_vec_envs(
     else:
         # Dummy init the actual xml_file will change on each reset
         xml_file = cfg.ENV.WALKERS[0]
+        print (xml_file)
         envs = []
         for idx in range(num_env):
             _env = make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file)()

@@ -68,6 +68,7 @@ class Agent:
         env.metadata["orig_height"] = round(orig_height, 2)
         env.metadata["fall_threshold"] = orig_height * cfg.ENV.STAND_HEIGHT_RATIO
         self._change_order(env, root)
+        self.node_depth = self.get_tree_depth(root)
 
     def _change_order(self, env, root):
         worldbody = root.findall("./worldbody")[0]
@@ -95,6 +96,26 @@ class Agent:
             mirror_order.index(o)
             for o in orig_order
         ]
+    
+    def get_tree_depth(self, root):
+        worldbody = root.findall("./worldbody")[0]
+        root = xu.find_elem(worldbody, "body", "name", "torso/0")[0]
+
+        def tree_treversal(order, depth_list, depth=1):
+            children = xu.find_elem(order[-1], "body", child_only=True)
+            for c in children:
+                order.append(c)
+                depth_list.append(depth)
+                tree_treversal(order, depth_list, depth=depth + 1)
+        
+        order = [root]
+        depth_list = [0]
+        tree_treversal(order, depth_list, depth=1)
+        # turn depth into one-hot form
+        node_depth = np.zeros([cfg.MODEL.MAX_LIMBS, cfg.MODEL.TRANSFORMER.MAX_NODE_DEPTH])
+        for i in range(len(depth_list)):
+            node_depth[i, depth_list[i]] = 1.
+        return node_depth
 
     def modify_sim_step(self, env, sim):
         self.agent_qpos_idxs = np.array(mu.qpos_idxs_for_agent(sim))
@@ -302,8 +323,8 @@ class Agent:
             "proprioceptive": self.combine_limb_joint_obs(limb_obs, joint_obs, env),
             "edges": self.edges, 
             "context": self.combine_limb_joint_obs(self.context_limb, self.context_joint, env), 
-            # "context": self.combine_limb_joint_obs(limb_context, joint_context, env), 
             "connectivity": self.connectivity, 
+            'node_depth': self.node_depth, 
         }
 
     def _add_fixed_cameras(self, worldbody):

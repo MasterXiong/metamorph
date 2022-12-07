@@ -123,7 +123,7 @@ class TransformerEncoderLayerResidual(nn.Module):
         
         src2 = self.norm1(src)
 
-        if morphology_info is None:
+        if not cfg.MODEL.TRANSFORMER.USE_MORPHOLOGY_INFO_IN_ATTENTION:
             src_mask = None
         else:
             # (batch_size, seq_len, seq_len, feat_dim) -> (batch_size, seq_len, seq_len, num_head)

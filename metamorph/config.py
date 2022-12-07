@@ -366,7 +366,12 @@ _C.MODEL.CONTEXT_OBS_TYPES = [
 ]
 
 # Model specific observation types to keep
-_C.MODEL.OBS_TYPES = ["proprioceptive", "edges", "obs_padding_mask", "act_padding_mask", "context", "connectivity"]
+_C.MODEL.OBS_TYPES = [
+    "proprioceptive", "edges", "obs_padding_mask", "act_padding_mask", 
+    "context", 
+    "connectivity", 
+    "node_depth", 
+]
 
 # Observations to normalize via VecNormalize
 _C.MODEL.OBS_TO_NORM = ["proprioceptive"]
@@ -421,8 +426,11 @@ _C.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE = 128
 # whether to use context to generate fixed attention weights
 _C.MODEL.TRANSFORMER.FIX_ATTENTION = False
 _C.MODEL.TRANSFORMER.CONTEXT_LAYER = 3
+_C.MODEL.TRANSFORMER.CONTEXT_ENCODER = 'transformer'
 # whether adjust attention weights based on morphology information
 _C.MODEL.TRANSFORMER.USE_MORPHOLOGY_INFO_IN_ATTENTION = False
+_C.MODEL.TRANSFORMER.USE_NODE_DEPTH = False
+_C.MODEL.TRANSFORMER.MAX_NODE_DEPTH = 6
 
 # --------------------------------------------------------------------------- #
 # Finetuning Options
