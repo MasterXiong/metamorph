@@ -87,6 +87,8 @@ class PPO:
         for key in obs:
             print (key, obs[key].size())
         
+        init_context = obs['context'][0].clone()
+        
         # old_values = self.agent.ac.v_net.context_embed.bias.detach().clone()
 
         for cur_iter in range(cfg.PPO.MAX_ITERS):
@@ -145,12 +147,23 @@ class PPO:
             # old_values = new_values
             # print (self.agent.ac.v_net.context_embed.weight.data[0, :8])
 
+            # reset_flag = False
             for step in range(cfg.PPO.TIMESTEPS):
                 # Sample actions
                 val, act, logp, dropout_mask_v, dropout_mask_mu = self.agent.act(obs)
                 #print (obs['proprioceptive'].size())
 
                 next_obs, reward, done, infos = self.envs.step(act)
+                # if reset_flag:
+                #     print ('new agent', infos[0]['name'])
+                #     if (next_obs['context'][0] != init_context).sum().item() != 0:
+                #         print ('new agent if different from the init one')
+                #     else:
+                #         print ('agent does not change')
+                # if 'episode' in infos[0]:
+                #     reset_flag = True
+                # else:
+                #     reset_flag = False
 
                 # if (next_obs['context'][0] != obs['context'][0]).sum() != 0:
                 #     print (f'context change at step {step} with done={done[0]}')
@@ -216,6 +229,9 @@ class PPO:
                 clip_ratio = cfg.PPO.CLIP_EPS
                 ratio = torch.exp(logp - batch["logp_old"])
                 approx_kl = (batch["logp_old"] - logp).mean().item()
+
+                # if i == 0 and j == 0:
+                #     print (ratio.detach().cpu().numpy().ravel())
 
                 if cfg.PPO.KL_TARGET_COEF is not None and approx_kl > cfg.PPO.KL_TARGET_COEF * 0.01:
                     self.train_meter.add_train_stat("approx_kl", approx_kl)

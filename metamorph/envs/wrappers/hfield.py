@@ -319,6 +319,7 @@ class TerminateOnFalling(gym.Wrapper):
         obs, rew, done, info = self.env.step(action)
         if self.has_fallen(obs):
             done = True
+            info['terminate_on_fall'] = True
         return obs, rew, done, info
 
     def has_fallen(self, obs):

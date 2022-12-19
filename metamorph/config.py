@@ -426,11 +426,15 @@ _C.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE = 128
 # whether to use context to generate fixed attention weights
 _C.MODEL.TRANSFORMER.FIX_ATTENTION = False
 _C.MODEL.TRANSFORMER.CONTEXT_LAYER = 3
+_C.MODEL.TRANSFORMER.LINEAR_CONTEXT_LAYER = 2
 _C.MODEL.TRANSFORMER.CONTEXT_ENCODER = 'transformer'
+_C.MODEL.TRANSFORMER.CONTEXT_DROPOUT = False
 # whether adjust attention weights based on morphology information
 _C.MODEL.TRANSFORMER.USE_MORPHOLOGY_INFO_IN_ATTENTION = False
 _C.MODEL.TRANSFORMER.USE_NODE_DEPTH = False
 _C.MODEL.TRANSFORMER.MAX_NODE_DEPTH = 6
+# context PE
+_C.MODEL.TRANSFORMER.CONTEXT_PE = False
 
 # --------------------------------------------------------------------------- #
 # Finetuning Options
@@ -496,6 +500,10 @@ _C.CHECKPOINT_PERIOD = 100
 
 # Evaluate the policy after every EVAL_PERIOD iters
 _C.EVAL_PERIOD = -1
+# whether to include terminating on falling mask during evaluation
+_C.TERMINATE_ON_FALL = True
+# whether to use deterministic action (only used during evaluation)
+_C.DETERMINISTIC = False
 
 # Node ID for distributed runs
 _C.NODE_ID = -1

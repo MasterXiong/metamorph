@@ -12,19 +12,30 @@ def restore_from_checkpoint(ac):
     fine_tune_layers = set()
     layer_substrings = cfg.MODEL.FINETUNE.LAYER_SUBSTRING
     for name, param in state_dict_c.items():
-        try:
+
+        if name in state_dict_p:
             param_p = state_dict_p[name]
-            if param_p.shape == param.shape:
-                with torch.no_grad():
-                    param.copy_(param_p)
+        else:
+            if 'HN' in name:
+                # a trick here because the HN name is changed during code development
+                name_p = name.replace('_HN', '')
+                param_p = state_dict_p[name_p]
+            elif 'attention' in name:
+                name_p = name.replace('_attention', '')
+                param_p = state_dict_p[name_p]
             else:
-                raise ValueError(
-                    "Checkpoint path is invalid as there is shape mismatch"
-                )
-            if any(name_substr in name for name_substr in layer_substrings):
-                fine_tune_layers.add(name)
-        except:
-            continue
+                print (f'the model does not have {name}')
+                continue
+
+        if param_p.shape == param.shape:
+            with torch.no_grad():
+                param.copy_(param_p)
+        else:
+            raise ValueError(
+                "Checkpoint path is invalid as there is shape mismatch"
+            )
+        if any(name_substr in name for name_substr in layer_substrings):
+            fine_tune_layers.add(name)
 
     if not cfg.MODEL.FINETUNE.FULL_MODEL:
         for name, param in ac.named_parameters():

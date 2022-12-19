@@ -90,7 +90,8 @@ def make_env_locomotion(xml, unimal_id):
     # Add all wrappers
     env = UnimalHeightObs(env)
     env = StandReward(env)
-    env = TerminateOnFalling(env)
+    if cfg.TERMINATE_ON_FALL:
+        env = TerminateOnFalling(env)
     if "Terrain" in cfg.ENV.MODULES:
         if cfg.HFIELD.DIM == 1:
             env = HfieldObs1D(env)
