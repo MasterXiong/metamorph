@@ -1,16 +1,18 @@
 import numpy as np
 from gym import utils
 
-from derl.config import cfg
-from derl.envs.modules.agent import Agent
-from derl.envs.modules.objects import Objects
-from derl.envs.modules.terrain import Terrain
-from derl.envs.tasks.unimal import UnimalEnv
-from derl.envs.wrappers.hfield import ExploreTerrainReward
-from derl.envs.wrappers.hfield import HfieldObs2D
-from derl.envs.wrappers.hfield import StandReward
-from derl.envs.wrappers.hfield import TerminateOnFalling
-from derl.envs.wrappers.hfield import UnimalHeightObs
+from metamorph.config import cfg
+from metamorph.envs.modules.agent import Agent
+from metamorph.envs.modules.objects import Objects
+from metamorph.envs.modules.terrain import Terrain
+from metamorph.envs.tasks.unimal import UnimalEnv
+from metamorph.envs.wrappers.hfield import ExploreTerrainReward
+from metamorph.envs.wrappers.hfield import HfieldObs2D
+from metamorph.envs.wrappers.hfield import StandReward
+from metamorph.envs.wrappers.hfield import TerminateOnFalling
+from metamorph.envs.wrappers.hfield import UnimalHeightObs
+from metamorph.envs.wrappers.multi_env_wrapper import MultiUnimalNodeCentricAction
+from metamorph.envs.wrappers.multi_env_wrapper import MultiUnimalNodeCentricObservation
 
 
 class ExplorationTask(UnimalEnv, utils.EzPickle):
@@ -41,6 +43,7 @@ class ExplorationTask(UnimalEnv, utils.EzPickle):
             "__reward__forward": forward_reward,
             "__reward__energy": self.calculate_energy(),
             "__reward__ctrl": ctrl_cost,
+            "name": self.unimal_id,
         }
 
         # Update viewer with markers, if any
@@ -63,4 +66,8 @@ def make_env_exploration(xml, unimal_id):
     env = StandReward(env)
     env = TerminateOnFalling(env)
     env = ExploreTerrainReward(env)
+
+    for wrapper_func in cfg.MODEL.WRAPPERS:
+        env = globals()[wrapper_func](env)
+
     return env

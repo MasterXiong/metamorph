@@ -1,14 +1,16 @@
 import numpy as np
 from gym import utils
 
-from derl.config import cfg
-from derl.envs.modules.agent import Agent
-from derl.envs.modules.terrain import Terrain
-from derl.envs.tasks.unimal import UnimalEnv
-from derl.envs.wrappers.hfield import StandReward
-from derl.envs.wrappers.hfield import TerminateOnFalling
-from derl.envs.wrappers.hfield import TerminateOnTerrainEdge
-from derl.envs.wrappers.hfield import UnimalHeightObs
+from metamorph.config import cfg
+from metamorph.envs.modules.agent import Agent
+from metamorph.envs.modules.terrain import Terrain
+from metamorph.envs.tasks.unimal import UnimalEnv
+from metamorph.envs.wrappers.hfield import StandReward
+from metamorph.envs.wrappers.hfield import TerminateOnFalling
+from metamorph.envs.wrappers.hfield import TerminateOnTerrainEdge
+from metamorph.envs.wrappers.hfield import UnimalHeightObs
+from metamorph.envs.wrappers.multi_env_wrapper import MultiUnimalNodeCentricAction
+from metamorph.envs.wrappers.multi_env_wrapper import MultiUnimalNodeCentricObservation
 
 
 class InclineTask(UnimalEnv, utils.EzPickle):
@@ -45,6 +47,7 @@ class InclineTask(UnimalEnv, utils.EzPickle):
             "xy_pos_before": xy_pos_before,
             "xy_pos_after": xy_pos_after,
             "__reward__forward": forward_reward,
+            "name": self.unimal_id,
             "metric": metric,
         }
 
@@ -64,5 +67,8 @@ def make_env_incline(xml, unimal_id):
     env = StandReward(env)
     env = TerminateOnFalling(env)
     env = TerminateOnTerrainEdge(env)
+
+    for wrapper_func in cfg.MODEL.WRAPPERS:
+        env = globals()[wrapper_func](env)
 
     return env
