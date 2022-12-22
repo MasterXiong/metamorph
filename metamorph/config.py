@@ -371,6 +371,7 @@ _C.MODEL.OBS_TYPES = [
     "context", 
     "connectivity", 
     "node_depth", 
+    "traversals", 
 ]
 
 # Observations to normalize via VecNormalize
@@ -435,6 +436,9 @@ _C.MODEL.TRANSFORMER.USE_NODE_DEPTH = False
 _C.MODEL.TRANSFORMER.MAX_NODE_DEPTH = 6
 # context PE
 _C.MODEL.TRANSFORMER.CONTEXT_PE = False
+# use SWAT PE
+_C.MODEL.TRANSFORMER.USE_SWAT_PE = False
+_C.MODEL.TRANSFORMER.TRAVERSALS = ['pre', 'inlcrs', 'postlcrs']
 
 # --------------------------------------------------------------------------- #
 # Finetuning Options

@@ -7,6 +7,7 @@ import metamorph.utils.xml as xu
 from metamorph.config import cfg
 from metamorph.utils import mjpy as mu
 from metamorph.utils import geom as gu
+from metamorph.utils import swat
 
 
 class Agent:
@@ -131,7 +132,7 @@ class Agent:
         self.limb_btm_sites = [
             site for site in env.metadata["agent_sites"] if "limb/btm" in site
         ]
-        self.edges, self.connectivity = self._get_edges(sim)
+        self.edges, self.connectivity, self.traversals = self._get_edges(sim)
         env.metadata["num_limbs"] = len(self.agent_body_idxs)
         env.metadata["num_joints"] = len(sim.model.joint_names) - 1
         # Useful for attention map analysis
@@ -188,8 +189,14 @@ class Agent:
             child_idx, parent_idx = joint_to[i], joint_from[i]
             connectivity[parent_idx, child_idx, 1] = 1.
             connectivity[child_idx, parent_idx, 2] = 1.
+        
+        # generate SWAT traversals
+        parents = [-1 for _ in range(len(body_idxs))]
+        for i in range(len(joint_to)):
+            parents[joint_to[i]] = joint_from[i]
+        traversals = swat.getTraversal(parents)
 
-        return np.vstack((joint_to, joint_from)).T.flatten(), connectivity
+        return np.vstack((joint_to, joint_from)).T.flatten(), connectivity, traversals
 
     def get_context(self, sim):
         context_limb = {}
@@ -325,6 +332,7 @@ class Agent:
             "context": self.combine_limb_joint_obs(self.context_limb, self.context_joint, env), 
             "connectivity": self.connectivity, 
             'node_depth': self.node_depth, 
+            'traversals': self.traversals, 
         }
 
     def _add_fixed_cameras(self, worldbody):

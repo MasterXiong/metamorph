@@ -135,6 +135,9 @@ class TransformerModel(nn.Module):
             self.context_encoder_PE = TransformerEncoder(
                 context_encoder_layers, 1, norm=None,
             )
+        
+        if self.model_args.USE_SWAT_PE:
+            self.swat_PE_encoder = SWATPEEncoder(self.d_model, self.seq_len)
 
         self.dropout = nn.Dropout(p=0.1)
 
@@ -230,6 +233,9 @@ class TransformerModel(nn.Module):
 
         if self.model_args.CONTEXT_PE:
             obs_embed = obs_embed + context_embedding_PE
+        
+        if self.model_args.USE_SWAT_PE:
+            obs_embed = self.swat_PE_encoder(obs_embed, morphology_info['traversals'])
 
         # code for dropout test
         if self.model_args.EMBEDDING_DROPOUT:
@@ -309,6 +315,30 @@ class PositionalEncoding(nn.Module):
             x: Tensor, shape [seq_len, batch_size, embedding_dim]
         """
         x = x + self.pe
+        return x
+
+
+class SWATPEEncoder(nn.Module):
+    def __init__(self, d_model, seq_len, dropout=0.):
+        super().__init__()
+        self.seq_len = seq_len
+        self.d_model = d_model
+        self.swat_pe = nn.ModuleList([nn.Embedding(seq_len, d_model) for _ in cfg.MODEL.TRANSFORMER.TRAVERSALS])
+        self.compress_layer = nn.Linear(len(cfg.MODEL.TRANSFORMER.TRAVERSALS) * d_model, d_model)
+
+    def forward(self, x, indexes):
+        """
+        Args:
+            x: Tensor, shape [seq_len, batch_size, embedding_dim]
+        """
+        embeddings = []
+        batch_size = x.size(1)
+        for i in range(len(cfg.MODEL.TRANSFORMER.TRAVERSALS)):
+            idx = indexes[:, :, i]
+            pe = self.swat_pe[i](idx)
+            embeddings.append(pe)
+        embeddings = torch.cat(embeddings, dim=-1)
+        x = x + self.compress_layer(embeddings)
         return x
 
 
@@ -404,6 +434,9 @@ class ActorCritic(nn.Module):
         if cfg.MODEL.TRANSFORMER.USE_NODE_DEPTH:
             # (batch_size, seq_len, max_node_depth) ->(seq_len, batch_size, max_node_depth)
             morphology_info['node_depth'] = obs_dict['node_depth'].permute(1, 0, 2)
+        if cfg.MODEL.TRANSFORMER.USE_SWAT_PE:
+            # (batch_size, seq_len, traversal_num) ->(seq_len, batch_size, traversal_num)
+            morphology_info['traversals'] = obs_dict['traversals'].permute(1, 0, 2).long()
         
         if len(morphology_info.keys()) == 0:
             morphology_info = None
