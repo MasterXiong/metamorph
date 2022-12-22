@@ -40,6 +40,8 @@ def worker(remote, parent_remote, env_fn_wrappers):
                         )
                     )
                 )
+            elif cmd == 'get_unimal_idx':
+                remote.send([env.get_unimal_idx() for env in envs])
             else:
                 raise NotImplementedError
     except KeyboardInterrupt:
@@ -146,6 +148,12 @@ class SubprocVecEnv(VecEnv):
     def __del__(self):
         if not self.closed:
             self.close()
+
+    def get_unimal_idx(self):
+        for remote in self.remotes:
+            remote.send(("get_unimal_idx", None))
+        ids = [remote.recv() for remote in self.remotes]
+        return _flatten_list(ids)
 
 
 def _flatten_obs(obs):

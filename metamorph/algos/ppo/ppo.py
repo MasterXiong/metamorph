@@ -150,10 +150,17 @@ class PPO:
             # reset_flag = False
             for step in range(cfg.PPO.TIMESTEPS):
                 # Sample actions
-                val, act, logp, dropout_mask_v, dropout_mask_mu = self.agent.act(obs)
+                unimal_ids = self.envs.get_unimal_idx()
+                val, act, logp, dropout_mask_v, dropout_mask_mu = self.agent.act(obs, unimal_ids=unimal_ids)
                 #print (obs['proprioceptive'].size())
 
                 next_obs, reward, done, infos = self.envs.step(act)
+
+                # context = obs['context'][0, :].reshape(12, -1).cpu().numpy()
+                # for i in range(12):
+                #     print (list(context[i]))
+                # print (infos[0]['name'])
+                # print ()
                 # if reset_flag:
                 #     print ('new agent', infos[0]['name'])
                 #     if (next_obs['context'][0] != init_context).sum().item() != 0:
@@ -182,10 +189,11 @@ class PPO:
                     device=self.device,
                 )
 
-                self.buffer.insert(obs, act, logp, val, reward, masks, timeouts, dropout_mask_v, dropout_mask_mu)
+                self.buffer.insert(obs, act, logp, val, reward, masks, timeouts, dropout_mask_v, dropout_mask_mu, unimal_ids)
                 obs = next_obs
 
-            next_val = self.agent.get_value(obs)
+            unimal_ids = self.envs.get_unimal_idx()
+            next_val = self.agent.get_value(obs, unimal_ids=unimal_ids)
             self.buffer.compute_returns(next_val)
             self.train_on_batch(cur_iter)
             self.save_sampled_agent_seq(cur_iter)
@@ -225,7 +233,10 @@ class PPO:
 
             for j, batch in enumerate(batch_sampler):
                 # Reshape to do in a single forward pass for all steps
-                val, _, logp, ent, _, _ = self.actor_critic(batch["obs"], batch["act"], dropout_mask_v=batch['dropout_mask_v'], dropout_mask_mu=batch['dropout_mask_mu'])
+                val, _, logp, ent, _, _ = self.actor_critic(batch["obs"], batch["act"], \
+                    dropout_mask_v=batch['dropout_mask_v'], \
+                    dropout_mask_mu=batch['dropout_mask_mu'], \
+                    unimal_ids=batch['unimal_ids'])
                 clip_ratio = cfg.PPO.CLIP_EPS
                 ratio = torch.exp(logp - batch["logp_old"])
                 approx_kl = (batch["logp_old"] - logp).mean().item()

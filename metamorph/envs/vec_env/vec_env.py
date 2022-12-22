@@ -139,6 +139,8 @@ class VecEnv(ABC):
             self.viewer = rendering.SimpleImageViewer()
         return self.viewer
 
+    def get_unimal_idx(self):
+        pass
 
 class VecEnvWrapper(VecEnv):
     """
@@ -173,6 +175,9 @@ class VecEnvWrapper(VecEnv):
 
     def get_images(self):
         return self.venv.get_images()
+    
+    def get_unimal_idx(self):
+        return self.venv.get_unimal_idx()
 
     def __getattr__(self, name):
         if name.startswith("_"):

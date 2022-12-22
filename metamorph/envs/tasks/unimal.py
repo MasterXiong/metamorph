@@ -31,6 +31,7 @@ class UnimalEnv(gym.Env):
     def __init__(self, xml_str, unimal_id):
         self.frame_skip = 4
         self.unimal_id = unimal_id
+        self.unimal_idx = cfg.ENV.WALKERS.index(unimal_id)
 
         self.viewer = None
         self._viewers = {}
@@ -51,6 +52,9 @@ class UnimalEnv(gym.Env):
         self.modules = OrderedDict()
         self.seed()
         self.unimal_xmls = self._load_all_unimals()
+
+    def get_unimal_idx(self):
+        return self.unimal_idx
 
     def _load_all_unimals(self):
         dir_path = os.path.join(cfg.ENV.WALKER_DIR, "xml")
@@ -102,6 +106,7 @@ class UnimalEnv(gym.Env):
         self.metadata["unimal_id"] = unimal_id
         self.metadata["agent_idx"] = idx
         self.unimal_id = unimal_id
+        self.unimal_idx = cfg.ENV.WALKERS.index(unimal_id)
         self.metadata["mirrored"] = su.sample_from_list(
             [True, False], self.np_random
         )

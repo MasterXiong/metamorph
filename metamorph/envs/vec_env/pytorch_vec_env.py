@@ -28,6 +28,9 @@ class VecPyTorch(VecEnvWrapper):
         reward = torch.from_numpy(reward).unsqueeze(dim=1).float()
         return obs, reward, done, info
 
+    def get_unimal_idx(self):
+        return self.venv.get_unimal_idx()
+
     def _obs_np2torch(self, obs):
         if isinstance(obs, dict):
             for ot, ov in obs.items():

@@ -439,6 +439,8 @@ _C.MODEL.TRANSFORMER.CONTEXT_PE = False
 # use SWAT PE
 _C.MODEL.TRANSFORMER.USE_SWAT_PE = False
 _C.MODEL.TRANSFORMER.TRAVERSALS = ['pre', 'inlcrs', 'postlcrs']
+# use separate PE
+_C.MODEL.TRANSFORMER.USE_SEPARATE_PE = False
 
 # --------------------------------------------------------------------------- #
 # Finetuning Options

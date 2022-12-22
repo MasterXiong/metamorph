@@ -138,6 +138,8 @@ class TransformerModel(nn.Module):
         
         if self.model_args.USE_SWAT_PE:
             self.swat_PE_encoder = SWATPEEncoder(self.d_model, self.seq_len)
+        if self.model_args.USE_SEPARATE_PE:
+            self.separate_PE_encoder = SeparatePEEncoder(self.d_model, self.seq_len)
 
         self.dropout = nn.Dropout(p=0.1)
 
@@ -183,7 +185,7 @@ class TransformerModel(nn.Module):
             initrange = cfg.MODEL.TRANSFORMER.EMBED_INIT
             self.context_embed_PE.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, dropout_mask=None):
+    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, dropout_mask=None, unimal_ids=None):
         # (num_limbs, batch_size, limb_obs_size) -> (num_limbs, batch_size, d_model)
         _, batch_size, limb_obs_size = obs.shape
 
@@ -228,14 +230,15 @@ class TransformerModel(nn.Module):
 
         attention_maps = None
 
+        # add PE
         if self.model_args.POS_EMBEDDING in ["learnt", "abs"] and self.model_args.PE_POSITION == 'base':
             obs_embed = self.pos_embedding(obs_embed)
-
         if self.model_args.CONTEXT_PE:
             obs_embed = obs_embed + context_embedding_PE
-        
         if self.model_args.USE_SWAT_PE:
             obs_embed = self.swat_PE_encoder(obs_embed, morphology_info['traversals'])
+        if self.model_args.USE_SEPARATE_PE:
+            obs_embed = self.separate_PE_encoder(obs_embed, unimal_ids)
 
         # code for dropout test
         if self.model_args.EMBEDDING_DROPOUT:
@@ -342,6 +345,22 @@ class SWATPEEncoder(nn.Module):
         return x
 
 
+class SeparatePEEncoder(nn.Module):
+    def __init__(self, d_model, seq_len, dropout=0.):
+        super().__init__()
+        self.seq_len = seq_len
+        self.d_model = d_model
+        self.pe = nn.Parameter(torch.randn(seq_len, len(cfg.ENV.WALKERS), d_model))
+
+    def forward(self, x, unimal_ids):
+        """
+        Args:
+            x: Tensor, shape [seq_len, batch_size, embedding_dim]
+        """
+        x = x + self.pe[:, unimal_ids, :]
+        return x
+
+
 class PositionalEncoding1D(nn.Module):
 
     def __init__(self, d_model, seq_len, dropout=0.1):
@@ -402,7 +421,7 @@ class ActorCritic(nn.Module):
         joint_context_index = np.concatenate([np.arange(2, 2 + 9), np.arange(11 + 2, 11 + 2 + 9)])
         self.context_index = np.concatenate([limb_context_index, joint_context_index])
 
-    def forward(self, obs, act=None, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None):
+    def forward(self, obs, act=None, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None, unimal_ids=None):
         
         # all_start = time.time()
         
@@ -454,7 +473,8 @@ class ActorCritic(nn.Module):
         # Per limb critic values
         limb_vals, v_attention_maps, dropout_mask_v = self.v_net(
             obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, 
-            return_attention=return_attention, dropout_mask=dropout_mask_v
+            return_attention=return_attention, dropout_mask=dropout_mask_v, 
+            unimal_ids=unimal_ids
         )
         # Zero out mask values
         limb_vals = limb_vals * (1 - obs_mask.int())
@@ -464,7 +484,8 @@ class ActorCritic(nn.Module):
 
         mu, mu_attention_maps, dropout_mask_mu = self.mu_net(
             obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, 
-            return_attention=return_attention, dropout_mask=dropout_mask_mu
+            return_attention=return_attention, dropout_mask=dropout_mask_mu, 
+            unimal_ids=unimal_ids
         )
         std = torch.exp(self.log_std)
         pi = Normal(mu, std)
@@ -492,8 +513,8 @@ class Agent:
         self.ac = actor_critic
 
     @torch.no_grad()
-    def act(self, obs, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None):
-        val, pi, _, _, dropout_mask_v, dropout_mask_mu = self.ac(obs, return_attention=return_attention, dropout_mask_v=dropout_mask_v, dropout_mask_mu=dropout_mask_mu)
+    def act(self, obs, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None, unimal_ids=None):
+        val, pi, _, _, dropout_mask_v, dropout_mask_mu = self.ac(obs, return_attention=return_attention, dropout_mask_v=dropout_mask_v, dropout_mask_mu=dropout_mask_mu, unimal_ids=unimal_ids)
         if not cfg.DETERMINISTIC:
             act = pi.sample()
         else:
@@ -505,6 +526,6 @@ class Agent:
         return val, act, logp, dropout_mask_v, dropout_mask_mu
 
     @torch.no_grad()
-    def get_value(self, obs, dropout_mask_v=None, dropout_mask_mu=None):
-        val, _, _, _, _, _ = self.ac(obs, dropout_mask_v=dropout_mask_v, dropout_mask_mu=dropout_mask_mu)
+    def get_value(self, obs, dropout_mask_v=None, dropout_mask_mu=None, unimal_ids=None):
+        val, _, _, _, _, _ = self.ac(obs, dropout_mask_v=dropout_mask_v, dropout_mask_mu=dropout_mask_mu, unimal_ids=unimal_ids)
         return val
