@@ -423,6 +423,7 @@ _C.MODEL.TRANSFORMER.CONSISTENT_DROPOUT = False
 # Whether to use hypernet to generate the weights of the decoder
 _C.MODEL.TRANSFORMER.HYPERNET = False
 _C.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE = 128
+_C.MODEL.TRANSFORMER.DEPTH_INPUT_HN = False
 
 # whether to use context to generate fixed attention weights
 _C.MODEL.TRANSFORMER.FIX_ATTENTION = False

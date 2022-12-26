@@ -115,11 +115,16 @@ class TransformerModel(nn.Module):
                 context_encoder_layers, 1, norm=None,
             )
 
-            self.hnet_embed_weight = nn.Linear(self.model_args.CONTEXT_EMBED_SIZE, limb_obs_size * self.d_model)
-            self.hnet_embed_bias = nn.Linear(self.model_args.CONTEXT_EMBED_SIZE, self.d_model)
+            if not self.model_args.DEPTH_INPUT_HN:
+                HN_input_dim = self.model_args.CONTEXT_EMBED_SIZE
+            else:
+                HN_input_dim = self.model_args.MAX_NODE_DEPTH
 
-            self.hnet_weight = nn.Linear(self.model_args.CONTEXT_EMBED_SIZE, decoder_input_dim * decoder_out_dim)
-            self.hnet_bias = nn.Linear(self.model_args.CONTEXT_EMBED_SIZE, decoder_out_dim)
+            self.hnet_embed_weight = nn.Linear(HN_input_dim, limb_obs_size * self.d_model)
+            self.hnet_embed_bias = nn.Linear(HN_input_dim, self.d_model)
+
+            self.hnet_weight = nn.Linear(HN_input_dim, decoder_input_dim * decoder_out_dim)
+            self.hnet_bias = nn.Linear(HN_input_dim, decoder_out_dim)
 
         if self.model_args.CONTEXT_PE:
             print ('use context PE')
@@ -191,8 +196,8 @@ class TransformerModel(nn.Module):
 
         if self.model_args.FIX_ATTENTION:
             context_embedding_attention = self.context_embed_attention(obs_context)
-            if self.model_args.USE_NODE_DEPTH:
-                context_embedding_attention = context_embedding_attention + self.node_depth_embed(morphology_info['node_depth'])
+            # if self.model_args.USE_NODE_DEPTH:
+            #     context_embedding_attention = context_embedding_attention + self.node_depth_embed(morphology_info['node_depth'])
             if self.model_args.CONTEXT_DROPOUT:
                 context_embedding_attention = self.context_dropout(context_embedding_attention)
             if self.model_args.CONTEXT_ENCODER == 'transformer':
@@ -204,9 +209,12 @@ class TransformerModel(nn.Module):
                 context_embedding_attention = self.context_encoder_attention(context_embedding_attention)
 
         if self.model_args.HYPERNET:
-            context_embedding_HN = self.context_embed_HN(obs_context)
-            # TODO: use morphology_info in HN or not
-            context_embedding_HN = self.context_encoder_HN(context_embedding_HN, src_key_padding_mask=obs_mask)
+            if not self.model_args.DEPTH_INPUT_HN:
+                context_embedding_HN = self.context_embed_HN(obs_context)
+                # TODO: use morphology_info in HN or not
+                context_embedding_HN = self.context_encoder_HN(context_embedding_HN, src_key_padding_mask=obs_mask)
+            else:
+                context_embedding_HN = morphology_info['node_depth']
 
         if self.model_args.CONTEXT_PE:
             context_embedding_PE = self.context_embed_PE(obs_context)

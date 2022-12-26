@@ -1,0 +1,9 @@
+ENV_NAME: 'Unimal-v0'
+OUT_DIR: './output'
+ENV:
+  MODULES: ["Agent", "Bowl"]
+  TASK: "escape_bowl"
+  KEYS_TO_KEEP: ["hfield"]
+TERRAIN:
+  SIZE: [50, 50, 1]
+  BOWL_MAX_Z: 1.3
