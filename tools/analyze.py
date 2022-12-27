@@ -246,22 +246,22 @@ def scatter_train_performance_compared_to_subset_train(folder, option):
 
 def get_context():
 
-    cfg.ENV.WALKER_DIR = 'unimals_100/train'
+    cfg.ENV.WALKER_DIR = 'unimals_100/test'
     cfg.ENV.WALKERS = []
     cfg.OUT_DIR = './eval'
     cfg.PPO.NUM_ENVS = 2
     set_cfg_options()
 
-    agents = list(os.listdir('unimals_single_task'))
+    agents = list(os.listdir('unimals_single_task_test'))
     context = {}
     for agent in agents:
         env = make_env(cfg.ENV_NAME, 0, 0, xml_file=agent)()
         obs = env.reset()
-        context[agent] = obs['context'].reshape(cfg.MODEL.MAX_LIMBS, -1)[:env.metadata["num_limbs"]]
+        # context[agent] = obs['context'].reshape(cfg.MODEL.MAX_LIMBS, -1)[:env.metadata["num_limbs"]]
         env.close()
     
-    with open('train_context.pkl', 'wb') as f:
-        pickle.dump(context, f)
+    # with open('train_context.pkl', 'wb') as f:
+        # pickle.dump(context, f)
 
 
 def analyze_ratio_hist(folders):
@@ -461,6 +461,8 @@ def analyze_ratio_hist_per_epoch(folder, prefix=None, seed=1409):
 
 
 if __name__ == '__main__':
+
+    get_context()
     
     # context_features = [
     #     "body_pos", "body_ipos", "body_iquat", "geom_quat", # limb model
@@ -502,45 +504,65 @@ if __name__ == '__main__':
     # agents = os.listdir('output/log_single_task_wo_dropout')
     # plot_training_stats(folders, key='ratio', suffix=None)
 
-    folders = [
-        'csr_baseline', 
-        'csr_baseline_wo_dropout', 
-        # 'csr_fixed_attention_wo_PE+dropout', 
-        # 'csr_fix_attention_MLP_wo_PE+dropout', 
-        'csr_baseline_KL_5_wo_PE+dropout', 
-        'csr_fix_attention_MLP_KL_5_wo_PE+dropout', 
-    ]
-    names = [
-        'baseline + dropout', 
-        'baseline', 
-        'baseline + KL=0.05', 
-        'baseline + KL=0.05 + fix attention', 
-    ]
-    kl = [0.2, 0.2, 0.05, 0.05]
-    prefix = 'csr'
     # folders = [
-    #     # 'log_baseline', 
-    #     'ft_baseline_dropout_wo_PE', 
-    #     # 'log_baseline_wo_dropout', 
-    #     'ft_baseline_wo_PE+dropout', 
-    #     # 'ft_fix_attention_MLP_wo_PE+dropout', 
-    #     # 'log_baseline_wo_PE_aligned_dropout', 
-    #     # 'ft_fix_attention_MLP_KL_5_wo_PE+dropout', 
-    #     # 'ft_fix_attention_MLP_dropout_wo_PE', 
-    #     # 'ft_fix_attention_MLP_dropout_both_wo_PE', 
-    #     'ft_baseline_KL_5_wo_PE+dropout', 
-    #     'ft_fix_attention_MLP_KL_5_wo_PE+dropout', 
+    #     'csr_baseline', 
+    #     'csr_baseline_wo_dropout', 
+    #     # 'csr_fixed_attention_wo_PE+dropout', 
+    #     # 'csr_fix_attention_MLP_wo_PE+dropout', 
+    #     'csr_baseline_KL_5_wo_PE+dropout', 
+    #     'csr_fix_attention_MLP_KL_5_wo_PE+dropout', 
     # ]
     # names = [
+    #     'baseline + dropout', 
     #     'baseline', 
-    #     'baseline wo dropout', 
-    #     # 'fixed attention, wo dropout', 
-    #     'KL threshold = 0.05, wo dropout', 
-    #     'fixed attention, KL threshold = 0.05, wo dropout', 
+    #     'baseline + KL=0.05', 
+    #     'baseline + KL=0.05 + fix attention', 
     # ]
     # kl = [0.2, 0.2, 0.05, 0.05]
-    # prefix = 'ft'
+    # prefix = 'csr'
+    folders = [
+        'ft_fix_attention_MLP_KL_5_wo_PE+dropout', 
+        'ft_HN_fix_attention_MLP_KL_5_wo_PE+dropout', 
+        'ft_HN_fix_attention_MLP_wo_PE+dropout', 
+        'ft_baseline_KL_5_wo_PE+dropout', 
+        'ft_baseline_dropout_wo_PE', 
+    ]
+    names = [
+        'baseline', 
+        'baseline wo dropout', 
+        'fixed attention, dropout, wo PE', 
+        'fixed attention, dropout both, wo PE', 
+        'KL threshold = 0.05, wo dropout', 
+        'fixed attention, KL threshold = 0.05, wo dropout', 
+    ]
+    names = folders
+    kl = [0.05, 0.05, 0.2, 0.05, 0.2]
+    prefix = 'ft'
+
+    # folders = [
+    #     'incline_baseline', 
+    #     'incline_baseline_KL_5_wo_dropout', 
+    #     'incline_MLP_fix_attention_KL_5_wo_dropout', 
+    #     'incline_baseline_wo_dropout', 
+    #     'incline_MLP_fix_attention_wo_dropout', 
+    # ]
+    # names = folders
+    # kl = [0.2, 0.05, 0.05, 0.2, 0.2]
+    # prefix = 'incline'
+
+    # folders = [
+    #     'exploration_baseline', 
+    #     'exploration_baseline_KL_5_wo_dropout', 
+    #     # 'exploration_baseline_wo_dropout', 
+    #     'exploration_MLP_fix_attention_KL_5_wo_dropout', 
+    #     # 'exploration_MLP_fix_attention_wo_dropout', 
+    # ]
+    # names = folders
+    # kl = [0.2, 0.05, 0.05]
+    # prefix = 'exploration'
+
     for stat in ['approx_kl', 'grad_norm', 'pi_loss', 'ratio', 'val_loss', 'clip_frac']:
+    # for stat in ['clip_frac']:
         plot_training_stats(folders, names, key=stat, prefix=prefix, kl_threshold=kl)
         # agents = [
         #     'floor-1409-11-14-01-15-44-14', 

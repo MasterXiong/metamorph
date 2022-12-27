@@ -236,16 +236,20 @@ def compare_train_curve():
 
     folders = [
         'csr_baseline', 
-        'csr_baseline_wo_dropout', 
+        # 'csr_baseline_wo_dropout', 
         # 'csr_fixed_attention_wo_PE+dropout', 
         # 'csr_fix_attention_MLP_wo_PE+dropout', 
         'csr_fix_attention_MLP_KL_5_wo_PE+dropout', 
-        # 'csr_fix_attention_MLP_KL_10_wo_PE+dropout', 
+        'csr_fix_attention_MLP_KL_3_wo_PE+dropout', 
+        # 'csr_baseline_wo_PE', 
+        # 'csr_baseline_KL_7_wo_dropout', 
         'csr_baseline_KL_5_wo_PE+dropout', 
-        'csr_baseline_wo_PE', 
-        'csr_baseline_KL_7_wo_dropout', 
+        'csr_baseline_KL_3_wo_dropout', 
+        # 'csr_fix_attention_MLP_KL_3_wo_PE+dropout', 
     ]
     names = folders
+    names = ['MetaMorph', 'fix attention, KL=0.05', 'fix attention, KL=0.03', 'KL=0.05', 'KL=0.03']
+    suffix = 'csr_fix_attention'
 
     # folders = [
     #     # 'log_fix_attention_wo_PE', 
@@ -256,33 +260,77 @@ def compare_train_curve():
     #     'ft_fix_attention_MLP_wo_PE+dropout', 
     #     # 'ft_fix_attention_MLP_dropout_wo_PE', 
     #     # 'ft_fix_attention_MLP_dropout_both_wo_PE', 
-    #     # 'ft_fix_attention_MLP_KL_3_wo_PE+dropout', 
+    #     'ft_fix_attention_MLP_KL_3_wo_PE+dropout', 
     #     'ft_fix_attention_MLP_KL_5_wo_PE+dropout', 
-    #     # 'ft_fix_attention_MLP_KL_10_wo_PE+dropout', 
-    #     'ft_HN_fix_attention_MLP_wo_PE+dropout', 
-    #     'ft_HN_fix_attention_MLP_KL_5_wo_PE+dropout', 
-    #     'ft_baseline_KL_5_wo_PE+dropout', 
-    #     'ft_context_PE_KL_5_wo_PE+dropout', 
+    #     'ft_fix_attention_MLP_KL_10_wo_PE+dropout', 
+    #     # 'ft_HN_fix_attention_MLP_wo_PE+dropout', 
+    #     # 'ft_HN_fix_attention_MLP_KL_5_wo_PE+dropout', 
+    #     # 'ft_baseline_KL_5_wo_PE+dropout', 
+    #     # 'ft_baseline_dropout_wo_PE', 
+    #     # 'ft_SWAT_PE_KL_5_wo_PE+dropout', 
+    #     # 'ft_SWAT_PE_wo_PE', 
+    #     # 'ft_separate_PE_KL_5_wo_PE+dropout', 
+    #     # 'ft_separate_PE_wo_PE', 
+    #     # 'ft_baseline_wo_context', 
+    #     # 'ft_context_PE_KL_5_wo_PE+dropout', 
+    #     # 'ft_HN_depth_input_fix_attention_MLP_KL_5_wo_PE+dropout', 
+    #     # 'ft_context_PE_tree_PE_KL_5_wo_PE+dropout', 
+    #     # 'ft_context_PE_graph_PE_KL_5_wo_PE+dropout', 
+    #     # 'ft_context_PE_tree+graph_PE_KL_5_wo_PE+dropout', 
     # ]
     # names = folders
+    # suffix = 'ft'
 
     folders = [
-        'incline_baseline', 
-        'incline_baseline_KL_5_wo_dropout', 
-        'incline_baseline_wo_dropout', 
-        'incline_MLP_fix_attention_KL_5_wo_dropout', 
-        'incline_MLP_fix_attention_wo_dropout', 
+        'ft_baseline', 
+        ''
     ]
-    names = folders
+
+    # folders = [
+    #     'incline_baseline', 
+    #     'incline_baseline_KL_5_wo_dropout', 
+    #     # 'incline_baseline_wo_dropout', 
+    #     'incline_MLP_fix_attention_KL_5_wo_dropout', 
+    #     # 'incline_MLP_fix_attention_wo_dropout', 
+    # ]
+    # names = folders
+    # suffix = 'incline'
 
     # folders = [
     #     'exploration_baseline', 
-    #     'exploration_baseline_KL_5_wo_dropout', 
-    #     'exploration_baseline_wo_dropout', 
-    #     'exploration_MLP_fix_attention_KL_5_wo_dropout', 
-    #     'exploration_MLP_fix_attention_wo_dropout', 
+    #     'exploration_baseline_KL_3_wo_dropout', 
+    #     # 'exploration_baseline_KL_5_wo_dropout', 
+    #     # 'exploration_baseline_KL_10_wo_dropout', 
+    #     # 'exploration_baseline_wo_dropout', 
+    #     'exploration_MLP_fix_attention_KL_3_wo_dropout', 
+    #     # 'exploration_MLP_fix_attention_wo_dropout', 
+    # ]
+    # # names = folders
+    # # names = ['MetaMorph', 'KL=0.03', 'KL=0.05', 'KL=0.1', 'KL=0.2']
+    # names = ['MetaMorph', 'KL=0.03', 'fix attention, KL=0.03']
+    # suffix = 'exploration_fix_attention'
+
+    # folders = [
+    #     'obstacle_baseline', 
+    #     'obstacle_baseline_KL_3_wo_dropout', 
+    #     'obstacle_baseline_KL_5_wo_dropout', 
+    #     # 'obstacle_baseline_KL_10_wo_dropout', 
+    #     # 'obstacle_baseline_wo_dropout', 
+    #     'obstacle_MLP_fix_attention_KL_3_wo_dropout', 
+    #     'obstacle_MLP_fix_attention_KL_5_wo_dropout', 
+    # ]
+    # # names = folders
+    # # names = ['MetaMorph', 'KL=0.03', 'KL=0.05', 'KL=0.1', 'KL=0.2']
+    # names = ['MetaMorph', 'KL=0.03', 'KL=0.05', 'fix attention, KL=0.03', 'fix attention, KL=0.05']
+    # suffix = 'obstacle_fix_attention'
+
+    # folders = [
+    #     'escape_bowl_baseline', 
+    #     'escape_bowl_baseline_KL_5_wo_dropout', 
+    #     'escape_bowl_MLP_fix_attention_KL_5_wo_dropout', 
     # ]
     # names = folders
+    # suffix = 'escape'
 
     # folders = [
     #     'hist_ratio_baseline', 
@@ -363,15 +411,15 @@ def compare_train_curve():
         print (seed_count)
         l = min([len(x) for x in all_curves])
         avg_curve = np.stack([x[:l] for x in all_curves])
-        plt.plot(avg_curve.mean(axis=0), label=names[i])
+        plt.plot(avg_curve.mean(axis=0), label=f'{names[i]} ({seed_count} seeds)')
         plt.fill_between(np.arange(avg_curve.shape[1]), avg_curve.mean(axis=0) - avg_curve.std(axis=0), avg_curve.mean(axis=0) + avg_curve.std(axis=0), alpha=0.25)
         # for i in range(avg_curve.shape[0]):
         #     plt.plot(all_curves[i], label=names[i], alpha=0.4)
         print (names[i], avg_curve.mean(axis=0)[-1])
-    plt.legend()
+    plt.legend(prop = {'size':8})
     plt.xlabel('PPO update number')
     plt.ylabel('return')
-    plt.savefig('figures/train_curve.png')
+    plt.savefig(f'figures/train_curve_{suffix}.png')
     plt.close()
 
     # path = 'output/log_hypernet_1410/checkpoint_500.pt'
