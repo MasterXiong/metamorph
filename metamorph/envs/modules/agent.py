@@ -8,6 +8,7 @@ from metamorph.config import cfg
 from metamorph.utils import mjpy as mu
 from metamorph.utils import geom as gu
 from metamorph.utils import swat
+from metamorph.utils import positional_encoding as pe
 
 
 class Agent:
@@ -132,7 +133,7 @@ class Agent:
         self.limb_btm_sites = [
             site for site in env.metadata["agent_sites"] if "limb/btm" in site
         ]
-        self.edges, self.connectivity, self.traversals = self._get_edges(sim)
+        self.edges, self.connectivity, self.traversals, self.tree_PE, self.graph_PE = self._get_edges(sim)
         env.metadata["num_limbs"] = len(self.agent_body_idxs)
         env.metadata["num_joints"] = len(sim.model.joint_names) - 1
         # Useful for attention map analysis
@@ -185,10 +186,17 @@ class Agent:
         # generate connectivity matrix
         connectivity = np.zeros([cfg.MODEL.MAX_LIMBS, cfg.MODEL.MAX_LIMBS, 3])
         connectivity[:, :, 0] = np.eye(cfg.MODEL.MAX_LIMBS)
+        adjacency_matrix = np.zeros([cfg.MODEL.MAX_LIMBS, cfg.MODEL.MAX_LIMBS])
         for i in range(len(joint_to)):
             child_idx, parent_idx = joint_to[i], joint_from[i]
             connectivity[parent_idx, child_idx, 1] = 1.
             connectivity[child_idx, parent_idx, 2] = 1.
+            adjacency_matrix[parent_idx, child_idx] = 1.
+            adjacency_matrix[child_idx, parent_idx] = 1.
+        # generate graph Laplacian PE
+        idx = np.where(adjacency_matrix.sum(axis=1) != 0)[0]
+        adjacency_matrix = adjacency_matrix[idx, :][:, idx]
+        graph_PE = pe.create_graph_PE(adjacency_matrix, cfg.MODEL.TRANSFORMER.GRAPH_PE_DIM)
         
         # generate SWAT traversals
         parents = [-1 for _ in range(len(body_idxs))]
@@ -196,7 +204,17 @@ class Agent:
             parents[joint_to[i]] = joint_from[i]
         traversals = swat.getTraversal(parents)
 
-        return np.vstack((joint_to, joint_from)).T.flatten(), connectivity, traversals
+        # generate tree PE from the paper "Novel positional encodings to enable tree-based transformers"
+        children = swat.getChildrens(parents)
+        max_child_num = cfg.MODEL.TRANSFORMER.MAX_CHILD_NUM
+        tree_PE = np.zeros([len(children), cfg.MODEL.TRANSFORMER.MAX_NODE_DEPTH * max_child_num])
+        for parent_id, node_children in enumerate(children):
+            for branch_id, child_id in enumerate(node_children):
+                tree_PE[child_id] = tree_PE[parent_id]
+                tree_PE[child_id, max_child_num:] = tree_PE[child_id, :-max_child_num]
+                tree_PE[child_id, branch_id] = 1.
+
+        return np.vstack((joint_to, joint_from)).T.flatten(), connectivity, traversals, tree_PE, graph_PE
 
     def get_context(self, sim):
         context_limb = {}
@@ -321,15 +339,20 @@ class Agent:
 
         if (cfg.MIRROR_DATA_AUG and env.metadata["mirrored"]):
             obs = obs[env.metadata["o_to_m"], :]
-        return obs.flatten()
+        return obs
 
     def observation_step(self, env, sim):
         limb_obs = self.get_limb_obs(sim)
         joint_obs = self.get_joint_obs(sim)
+        context_obs = self.combine_limb_joint_obs(self.context_limb, self.context_joint, env)
+        if cfg.MODEL.TRANSFORMER.TREE_PE_IN_CONTEXT:
+            context_obs = np.concatenate([context_obs, self.tree_PE], axis=1)
+        if cfg.MODEL.TRANSFORMER.GRAPH_PE_IN_CONTEXT:
+            context_obs = np.concatenate([context_obs, self.graph_PE], axis=1)
         return {
-            "proprioceptive": self.combine_limb_joint_obs(limb_obs, joint_obs, env),
+            "proprioceptive": self.combine_limb_joint_obs(limb_obs, joint_obs, env).flatten(),
             "edges": self.edges, 
-            "context": self.combine_limb_joint_obs(self.context_limb, self.context_joint, env), 
+            "context": context_obs.flatten(), 
             "connectivity": self.connectivity, 
             'node_depth': self.node_depth, 
             'traversals': self.traversals, 

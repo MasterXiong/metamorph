@@ -442,6 +442,12 @@ _C.MODEL.TRANSFORMER.USE_SWAT_PE = False
 _C.MODEL.TRANSFORMER.TRAVERSALS = ['pre', 'inlcrs', 'postlcrs']
 # use separate PE
 _C.MODEL.TRANSFORMER.USE_SEPARATE_PE = False
+# tree PE
+_C.MODEL.TRANSFORMER.TREE_PE_IN_CONTEXT = False
+_C.MODEL.TRANSFORMER.MAX_CHILD_NUM = 4
+# graph PE
+_C.MODEL.TRANSFORMER.GRAPH_PE_IN_CONTEXT = False
+_C.MODEL.TRANSFORMER.GRAPH_PE_DIM = 3
 
 # --------------------------------------------------------------------------- #
 # Finetuning Options
