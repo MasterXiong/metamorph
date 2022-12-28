@@ -73,7 +73,9 @@ class TransformerModel(nn.Module):
             # the network to generate context embedding from the morphology context
             context_obs_size = obs_space["context"].shape[0] // self.seq_len
             self.context_embed_attention = nn.Linear(context_obs_size, self.model_args.CONTEXT_EMBED_SIZE)
-            
+            if self.model_args.HFIELD_IN_FIX_ATTENTION:
+                self.hfield_embed = nn.Linear(self.model_args.EXT_HIDDEN_DIMS[-1], self.model_args.CONTEXT_EMBED_SIZE)
+
             if self.model_args.CONTEXT_ENCODER == 'transformer':
                 print ('use transformer context encoder')
                 context_encoder_layers = TransformerEncoderLayerResidual(
@@ -194,8 +196,19 @@ class TransformerModel(nn.Module):
         # (num_limbs, batch_size, limb_obs_size) -> (num_limbs, batch_size, d_model)
         _, batch_size, limb_obs_size = obs.shape
 
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            # (batch_size, embed_size)
+            hfield_obs = self.hfield_encoder(obs_env["hfield"])
+
+        if self.ext_feat_fusion in ["late"]:
+            hfield_obs = hfield_obs.repeat(self.seq_len, 1)
+            hfield_obs = hfield_obs.reshape(self.seq_len, batch_size, -1)
+
         if self.model_args.FIX_ATTENTION:
             context_embedding_attention = self.context_embed_attention(obs_context)
+            if self.model_args.HFIELD_IN_FIX_ATTENTION:
+                hfield_embedding = self.hfield_embed(hfield_obs)
+                context_embedding_attention = context_embedding_attention + hfield_embedding
             # if self.model_args.USE_NODE_DEPTH:
             #     context_embedding_attention = context_embedding_attention + self.node_depth_embed(morphology_info['node_depth'])
             if self.model_args.CONTEXT_DROPOUT:
@@ -227,14 +240,6 @@ class TransformerModel(nn.Module):
             embed_bias = self.hnet_embed_bias(context_embedding_HN)
             obs_embed = (obs[:, :, :, None] * embed_weight).sum(dim=-2, keepdim=False) + embed_bias
             # obs_embed = obs_embed * math.sqrt(self.d_model)
-
-        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-            # (batch_size, embed_size)
-            hfield_obs = self.hfield_encoder(obs_env["hfield"])
-
-        if self.ext_feat_fusion in ["late"]:
-            hfield_obs = hfield_obs.repeat(self.seq_len, 1)
-            hfield_obs = hfield_obs.reshape(self.seq_len, batch_size, -1)
 
         attention_maps = None
 

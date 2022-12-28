@@ -194,6 +194,8 @@ class Agent:
             adjacency_matrix[parent_idx, child_idx] = 1.
             adjacency_matrix[child_idx, parent_idx] = 1.
         # generate graph Laplacian PE
+        idx = np.where(adjacency_matrix.sum(axis=1) != 0)[0]
+        adjacency_matrix = adjacency_matrix[idx, :][:, idx]
         graph_PE = pe.create_graph_PE(adjacency_matrix, cfg.MODEL.TRANSFORMER.GRAPH_PE_DIM)
         
         # generate SWAT traversals
