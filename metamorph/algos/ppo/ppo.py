@@ -96,94 +96,18 @@ class PPO:
             if cfg.PPO.EARLY_EXIT and cur_iter >= cfg.PPO.EARLY_EXIT_MAX_ITERS:
                 break
             
-            # if cur_iter < 200:
-            #     self.kl_threshold = 0.05
-            # else:
-            #     self.kl_threshold = 0.05 - 0.02 * (cur_iter - 200) / (cfg.PPO.MAX_ITERS - 200)
-
             lr = ou.get_iter_lr(cur_iter)
             ou.set_lr(self.optimizer, lr)
 
-            # print ('state embedding weight')
-            # print (self.agent.ac.v_net.limb_embed.bias[:8])
-            # print ('context embedding weight')
-            # print (self.agent.ac.v_net.context_embed.bias[:8])
-
-            # new_values = self.agent.ac.v_net.context_embed.bias.detach().clone()
-            # print (self.agent.ac.v_net.context_embed.bias.requires_grad)
-            # if cfg.MODEL.TRANSFORMER.HYPERNET:
-            #     print ('***hypernet grad***')
-            #     # print (self.agent.ac.v_net.hnet_weight.weight.grad)
-            #     print ('parameter value')
-            #     print (self.agent.ac.v_net.hnet_weight.weight.data[0, :4])
-            #     print ('parameter grad')
-            #     try:
-            #         print (self.agent.ac.v_net.hnet_weight.weight.grad[0, :4])
-            #         print ('  non-zero grad fraction', (self.agent.ac.v_net.hnet_weight.weight.grad != 0.).float().mean())
-            #     except:
-            #         print ('  none grad')
-            #     # print ('is leaf', self.agent.ac.v_net.hnet_weight.weight.is_leaf)
-            #     # print (self.agent.ac.v_net.hnet_weight.bias.grad)
-            #     # print ('context encoder grad')
-            #     # print (self.agent.ac.v_net.context_encoder.linear1.weight.grad[0, :8])
-            #     # print (self.agent.ac.v_net.context_encoder.linear1.bias.grad)
-            #     print ('***context embed grad***')
-            #     print ('parameter value')
-            #     print (self.agent.ac.v_net.context_embed.weight.data[0, :4])
-            #     print ('parameter grad')
-            #     try:
-            #         print (self.agent.ac.v_net.context_embed.weight.grad[0, :4])
-            #         print ('  non-zero grad fraction', (self.agent.ac.v_net.context_embed.weight.grad != 0.).float().mean())
-            #     except:
-            #         print ('  none grad')
-            # print ('***state embed grad***')
-            # print ('parameter value')
-            # print (self.agent.ac.v_net.limb_embed.weight.data[0, :4])
-            # print ('parameter grad')
-            # try:
-            #     print (self.agent.ac.v_net.limb_embed.weight.grad[0, :4])
-            #     print ('  non-zero grad fraction', (self.agent.ac.v_net.limb_embed.weight.grad != 0.).float().mean())
-            # except:
-            #     print ('  none grad')
-            # print ('\n')
-            # print ('is leaf', self.agent.ac.v_net.limb_embed.weight.is_leaf)
-            # print (self.agent.ac.v_net.context_embed.bias.grad)
-            # print ('number of bias changed in context embedding bias', (new_values != old_values).sum())
-            # old_values = new_values
-            # print (self.agent.ac.v_net.context_embed.weight.data[0, :8])
-
-            # reset_flag = False
             for step in range(cfg.PPO.TIMESTEPS):
                 # Sample actions
                 if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE or cfg.MODEL.TRANSFORMER.PER_NODE_EMBED:
                     unimal_ids = self.envs.get_unimal_idx()
                 else:
                     unimal_ids = [0 for _ in range(cfg.PPO.NUM_ENVS)]
-                # print (cfg.ENV.WALKERS[unimal_ids[0]])
                 val, act, logp, dropout_mask_v, dropout_mask_mu = self.agent.act(obs, unimal_ids=unimal_ids)
-                #print (obs['proprioceptive'].size())
 
                 next_obs, reward, done, infos = self.envs.step(act)
-
-                # context = obs['context'][0, :].reshape(12, -1).cpu().numpy()
-                # for i in range(12):
-                #     print (list(context[i]))
-                # print (infos[0]['name'])
-                # print ()
-                # if reset_flag:
-                #     print ('new agent', infos[0]['name'])
-                #     if (next_obs['context'][0] != init_context).sum().item() != 0:
-                #         print ('new agent if different from the init one')
-                #     else:
-                #         print ('agent does not change')
-                # if 'episode' in infos[0]:
-                #     reset_flag = True
-                # else:
-                #     reset_flag = False
-
-                # if (next_obs['context'][0] != obs['context'][0]).sum() != 0:
-                #     print (f'context change at step {step} with done={done[0]}')
-                #     print (next_obs['context'][0])
 
                 self.train_meter.add_ep_info(infos)
 
@@ -255,11 +179,7 @@ class PPO:
                 ratio = torch.exp(logp - batch["logp_old"])
                 approx_kl = (batch["logp_old"] - logp).mean().item()
 
-                # if i == 0 and j == 0:
-                #     print (ratio.detach().cpu().numpy().ravel())
-
                 if cfg.PPO.KL_TARGET_COEF is not None and approx_kl > cfg.PPO.KL_TARGET_COEF * 0.01:
-                # if approx_kl > self.kl_threshold:
                     self.train_meter.add_train_stat("approx_kl", approx_kl)
                     if cfg.SAVE_HIST_RATIO:
                         with open(os.path.join(cfg.OUT_DIR, 'ratio_hist', f'ratio_hist_{cur_iter}.pkl'), 'wb') as f:
@@ -296,21 +216,6 @@ class PPO:
                 loss += pi_loss
                 loss += -ent * cfg.PPO.ENTROPY_COEF
                 loss.backward()
-
-                # check gradient norm of each module
-                # if i == 0 and j == 0:
-                #     print ('grad norm')
-                #     norms = []
-                #     for name, p in self.actor_critic.named_parameters():
-                #         if 'hnet' in name or 'decoder' in name:
-                #             g = p.grad
-                #             if g is not None:
-                #                 grad_norm = torch.norm(g.detach(), 2.)
-                #                 norms.append(grad_norm)
-                #                 print ('  ', name, grad_norm)
-                #             else:
-                #                 print ('  ', name, g)
-                    # print (f'  total_norm: {torch.norm(torch.stack(norms), 2.)}')
 
                 # Log training stats
                 norm = nn.utils.clip_grad_norm_(

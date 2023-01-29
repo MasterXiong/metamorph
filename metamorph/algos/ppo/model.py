@@ -73,6 +73,7 @@ class TransformerModel(nn.Module):
 
         # self.decoder = nn.Linear(decoder_input_dim, decoder_out_dim)
         if self.model_args.PER_NODE_DECODER:
+            # only support a single output layer
             initrange = cfg.MODEL.TRANSFORMER.DECODER_INIT
             self.decoder_weights = torch.zeros(decoder_input_dim, decoder_out_dim).uniform_(-initrange, initrange)
             self.decoder_weights = self.decoder_weights.repeat(self.seq_len, len(cfg.ENV.WALKERS), 1, 1)
@@ -113,16 +114,16 @@ class TransformerModel(nn.Module):
                     modules.append(nn.ReLU())
                 self.context_encoder_attention = nn.Sequential(*modules)
 
-            if self.model_args.RNN_CONTEXT:
-                context_encoder_layers = TransformerEncoderLayerResidual(
-                    self.model_args.CONTEXT_EMBED_SIZE,
-                    self.model_args.NHEAD,
-                    self.model_args.DIM_FEEDFORWARD,
-                    self.model_args.DROPOUT,
-                )
-                self.rnn_context_encoder_FA = TransformerEncoder(
-                    context_encoder_layers, 1, norm=None,
-                )
+            # if self.model_args.RNN_CONTEXT:
+            #     context_encoder_layers = TransformerEncoderLayerResidual(
+            #         self.model_args.CONTEXT_EMBED_SIZE,
+            #         self.model_args.NHEAD,
+            #         self.model_args.DIM_FEEDFORWARD,
+            #         self.model_args.DROPOUT,
+            #     )
+            #     self.rnn_context_encoder_FA = TransformerEncoder(
+            #         context_encoder_layers, 1, norm=None,
+            #     )
 
             if self.model_args.HFIELD_IN_FIX_ATTENTION:
                 self.context_hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
@@ -154,10 +155,7 @@ class TransformerModel(nn.Module):
                     context_encoder_layers, self.model_args.HN_CONTEXT_LAYER_NUM, norm=None,
                 )
 
-            if not self.model_args.DEPTH_INPUT_HN:
-                HN_input_dim = self.model_args.CONTEXT_EMBED_SIZE
-            else:
-                HN_input_dim = self.model_args.MAX_NODE_DEPTH
+            HN_input_dim = self.model_args.CONTEXT_EMBED_SIZE
 
             self.hnet_embed_weight = nn.Linear(HN_input_dim, limb_obs_size * self.d_model)
             self.hnet_embed_bias = nn.Linear(HN_input_dim, self.d_model)
@@ -178,9 +176,6 @@ class TransformerModel(nn.Module):
                     self.hnet_decoder_bias.append(layer_b)
                 self.hnet_decoder_weight = nn.ModuleList(self.hnet_decoder_weight)
                 self.hnet_decoder_bias = nn.ModuleList(self.hnet_decoder_bias)
-
-            # self.hnet_weight = nn.Linear(HN_input_dim, decoder_input_dim * decoder_out_dim)
-            # self.hnet_bias = nn.Linear(HN_input_dim, decoder_out_dim)
 
         if self.model_args.CONTEXT_PE:
             print ('use context PE')
@@ -234,9 +229,6 @@ class TransformerModel(nn.Module):
         if self.model_args.CONTEXT_DROPOUT:
             self.context_dropout = nn.Dropout(p=0.1)
 
-        if self.model_args.USE_NODE_DEPTH:
-            self.node_depth_embed = nn.Linear(self.model_args.MAX_NODE_DEPTH, self.model_args.CONTEXT_EMBED_SIZE)
-
         self.init_weights()
         self.count = 0
 
@@ -261,7 +253,6 @@ class TransformerModel(nn.Module):
 
         if self.model_args.HYPERNET:
             initrange = cfg.MODEL.TRANSFORMER.HN_EMBED_INIT
-            print (initrange)
             self.context_embed_HN.weight.data.uniform_(-initrange, initrange)
 
             # initialize the hypernet following Jake's paper
@@ -305,18 +296,13 @@ class TransformerModel(nn.Module):
 
         if self.model_args.FIX_ATTENTION:
             context_embedding_attention = self.context_embed_attention(obs_context)
-            # context_embedding_attention *= math.sqrt(self.model_args.CONTEXT_EMBED_SIZE)
-            # if self.model_args.USE_NODE_DEPTH:
-            #     context_embedding_attention = context_embedding_attention + self.node_depth_embed(morphology_info['node_depth'])
-            # if self.model_args.CONTEXT_DROPOUT:
-            #     context_embedding_attention = self.context_dropout(context_embedding_attention)
 
-            if self.model_args.RNN_CONTEXT:
-                mask = torch.cat([morphology_info['node_path_mask'] for _ in range(self.model_args.NHEAD)], 0)
-                context_embedding_attention = self.rnn_context_encoder_FA(
-                    context_embedding_attention, 
-                    mask=mask, 
-                )
+            # if self.model_args.RNN_CONTEXT:
+            #     mask = torch.cat([morphology_info['node_path_mask'] for _ in range(self.model_args.NHEAD)], 0)
+            #     context_embedding_attention = self.rnn_context_encoder_FA(
+            #         context_embedding_attention, 
+            #         mask=mask, 
+            #     )
 
             if self.model_args.CONTEXT_ENCODER == 'transformer':
                 context_embedding_attention = self.context_encoder_attention(
@@ -335,12 +321,8 @@ class TransformerModel(nn.Module):
                 # context_embedding_attention = context_embedding_attention + hfield_embedding
 
         if self.model_args.HYPERNET:
-            if not self.model_args.DEPTH_INPUT_HN:
-                context_embedding_HN = self.context_embed_HN(obs_context)
-                # context_embedding_HN = self.context_encoder_HN(context_embedding_HN, src_key_padding_mask=obs_mask)
-                context_embedding_HN = self.context_encoder_HN(context_embedding_HN)
-            else:
-                context_embedding_HN = morphology_info['node_depth']
+            context_embedding_HN = self.context_embed_HN(obs_context)
+            context_embedding_HN = self.context_encoder_HN(context_embedding_HN)
 
         if self.model_args.CONTEXT_PE:
             context_embedding_PE = self.context_embed_PE(obs_context)
@@ -382,15 +364,11 @@ class TransformerModel(nn.Module):
             embed_weight = self.hnet_embed_weight(context_embedding_HN).reshape(self.seq_len, batch_size, limb_obs_size, self.d_model)
             embed_bias = self.hnet_embed_bias(context_embedding_HN)
             obs_embed = (obs[:, :, :, None] * embed_weight).sum(dim=-2, keepdim=False) + embed_bias
-            # self.HN_embed_weight = embed_weight
-            # can't scale when using HN; otherwise cause instability during learning
-            # obs_embed = obs_embed * math.sqrt(self.d_model)
         else:
             if self.model_args.PER_NODE_EMBED:
                 obs_embed = (obs[:, :, :, None] * self.limb_embed_weights[:, unimal_ids, :, :]).sum(dim=-2, keepdim=False) + self.limb_embed_bias[:, unimal_ids, :]
             else:
                 obs_embed = self.limb_embed(obs)
-                # obs_embed = self.limb_embed(obs) * math.sqrt(self.d_model)
         
         if self.model_args.EMBEDDING_SCALE:
             obs_embed *= math.sqrt(self.d_model)
@@ -424,7 +402,7 @@ class TransformerModel(nn.Module):
         # plt.close()
         # self.count += 1
 
-        # code for dropout test
+        # dropout
         if self.model_args.EMBEDDING_DROPOUT:
             if self.model_args.CONSISTENT_DROPOUT:
                 # print ('consistent dropout')
