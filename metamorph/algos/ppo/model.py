@@ -92,8 +92,11 @@ class TransformerModel(nn.Module):
         if self.model_args.FIX_ATTENTION:
             print ('use fix attention')
             # the network to generate context embedding from the morphology context
-            context_obs_size = obs_space["context"].shape[0] // self.seq_len
-            self.context_embed_attention = nn.Linear(context_obs_size, self.model_args.CONTEXT_EMBED_SIZE)
+            if self.model_args.CONTEXT_AS_FA_INPUT:
+                context_obs_size = obs_space["context"].shape[0] // self.seq_len
+                self.context_embed_attention = nn.Linear(context_obs_size, self.model_args.CONTEXT_EMBED_SIZE)
+            else:
+                self.context_embed_attention = nn.Linear(limb_obs_size, self.model_args.CONTEXT_EMBED_SIZE)
 
             if self.model_args.CONTEXT_ENCODER == 'transformer':
                 print ('use transformer context encoder')
@@ -162,20 +165,15 @@ class TransformerModel(nn.Module):
 
             self.decoder_dims = [decoder_input_dim] + self.model_args.DECODER_DIMS + [decoder_out_dim]
 
-            if self.model_args.HN_DECODER_LAST_LAYER:
-                self.shared_decoder_layers = tu.make_mlp_default(self.decoder_dims[:-1])
-                self.hnet_decoder_weight = nn.Linear(HN_input_dim, self.decoder_dims[-2] * self.decoder_dims[-1])
-                self.hnet_decoder_bias = nn.Linear(HN_input_dim, self.decoder_dims[-1])
-            else:
-                self.hnet_decoder_weight = []
-                self.hnet_decoder_bias = []
-                for i in range(len(self.decoder_dims) - 1):
-                    layer_w = nn.Linear(HN_input_dim, self.decoder_dims[i] * self.decoder_dims[i + 1])
-                    self.hnet_decoder_weight.append(layer_w)
-                    layer_b = nn.Linear(HN_input_dim, self.decoder_dims[i + 1])
-                    self.hnet_decoder_bias.append(layer_b)
-                self.hnet_decoder_weight = nn.ModuleList(self.hnet_decoder_weight)
-                self.hnet_decoder_bias = nn.ModuleList(self.hnet_decoder_bias)
+            self.hnet_decoder_weight = []
+            self.hnet_decoder_bias = []
+            for i in range(len(self.decoder_dims) - 1):
+                layer_w = nn.Linear(HN_input_dim, self.decoder_dims[i] * self.decoder_dims[i + 1])
+                self.hnet_decoder_weight.append(layer_w)
+                layer_b = nn.Linear(HN_input_dim, self.decoder_dims[i + 1])
+                self.hnet_decoder_bias.append(layer_b)
+            self.hnet_decoder_weight = nn.ModuleList(self.hnet_decoder_weight)
+            self.hnet_decoder_bias = nn.ModuleList(self.hnet_decoder_bias)
 
         if self.model_args.CONTEXT_PE:
             print ('use context PE')
@@ -226,9 +224,6 @@ class TransformerModel(nn.Module):
 
         self.dropout = nn.Dropout(p=0.1)
 
-        if self.model_args.CONTEXT_DROPOUT:
-            self.context_dropout = nn.Dropout(p=0.1)
-
         self.init_weights()
         self.count = 0
 
@@ -263,17 +258,11 @@ class TransformerModel(nn.Module):
             self.hnet_embed_bias.bias.data.zero_()
 
             initrange = cfg.MODEL.TRANSFORMER.DECODER_INIT
-            if self.model_args.HN_DECODER_LAST_LAYER:
-                self.hnet_decoder_weight.weight.data.zero_()
-                self.hnet_decoder_weight.bias.data.uniform_(-initrange, initrange)
-                self.hnet_decoder_bias.weight.data.zero_()
-                self.hnet_decoder_bias.bias.data.zero_()
-            else:
-                for i in range(len(self.hnet_decoder_weight)):
-                    self.hnet_decoder_weight[i].weight.data.zero_()
-                    self.hnet_decoder_weight[i].bias.data.uniform_(-initrange, initrange)
-                    self.hnet_decoder_bias[i].weight.data.zero_()
-                    self.hnet_decoder_bias[i].bias.data.zero_()
+            for i in range(len(self.hnet_decoder_weight)):
+                self.hnet_decoder_weight[i].weight.data.zero_()
+                self.hnet_decoder_weight[i].bias.data.uniform_(-initrange, initrange)
+                self.hnet_decoder_bias[i].weight.data.zero_()
+                self.hnet_decoder_bias[i].bias.data.zero_()
 
         if self.model_args.CONTEXT_PE:
             initrange = cfg.MODEL.TRANSFORMER.EMBED_INIT
@@ -295,7 +284,10 @@ class TransformerModel(nn.Module):
             hfield_obs = hfield_obs.reshape(self.seq_len, batch_size, -1)
 
         if self.model_args.FIX_ATTENTION:
-            context_embedding_attention = self.context_embed_attention(obs_context)
+            if self.model_args.CONTEXT_AS_FA_INPUT:
+                context_embedding_attention = self.context_embed_attention(obs_context)
+            else:
+                context_embedding_attention = self.context_embed_attention(obs)
 
             # if self.model_args.RNN_CONTEXT:
             #     mask = torch.cat([morphology_info['node_path_mask'] for _ in range(self.model_args.NHEAD)], 0)
@@ -462,20 +454,14 @@ class TransformerModel(nn.Module):
 
         # (num_limbs, batch_size, J)
         if self.model_args.HYPERNET and self.model_args.HN_DECODER:
-            if self.model_args.HN_DECODER_LAST_LAYER:
-                output = self.shared_decoder_layers(decoder_input)
-                layer_w = self.hnet_decoder_weight(context_embedding_HN).reshape(self.seq_len, batch_size, self.decoder_dims[-2], self.decoder_dims[-1])
-                layer_b = self.hnet_decoder_bias(context_embedding_HN)
+            output = decoder_input
+            layer_num = len(self.hnet_decoder_weight)
+            for i in range(layer_num):
+                layer_w = self.hnet_decoder_weight[i](context_embedding_HN).reshape(self.seq_len, batch_size, self.decoder_dims[i], self.decoder_dims[i + 1])
+                layer_b = self.hnet_decoder_bias[i](context_embedding_HN)
                 output = (output[:, :, :, None] * layer_w).sum(dim=-2, keepdim=False) + layer_b
-            else:
-                output = decoder_input
-                layer_num = len(self.hnet_decoder_weight)
-                for i in range(layer_num):
-                    layer_w = self.hnet_decoder_weight[i](context_embedding_HN).reshape(self.seq_len, batch_size, self.decoder_dims[i], self.decoder_dims[i + 1])
-                    layer_b = self.hnet_decoder_bias[i](context_embedding_HN)
-                    output = (output[:, :, :, None] * layer_w).sum(dim=-2, keepdim=False) + layer_b
-                    if i != (layer_num - 1):
-                        output = F.relu(output)
+                if i != (layer_num - 1):
+                    output = F.relu(output)
         else:
             if self.model_args.PER_NODE_DECODER:
                 output = (decoder_input[:, :, :, None] * self.decoder_weights[:, unimal_ids, :, :]).sum(dim=-2, keepdim=False) + self.decoder_bias[:, unimal_ids, :]
@@ -641,9 +627,6 @@ class ActorCritic(nn.Module):
             morphology_info['connectivity'] = obs_dict['connectivity'].bool()
         if cfg.MODEL.TRANSFORMER.USE_MORPHOLOGY_INFO_IN_ATTENTION:
             morphology_info['connectivity'] = obs_dict['connectivity']
-        if cfg.MODEL.TRANSFORMER.USE_NODE_DEPTH:
-            # (batch_size, seq_len, max_node_depth) ->(seq_len, batch_size, max_node_depth)
-            morphology_info['node_depth'] = obs_dict['node_depth'].permute(1, 0, 2)
         if cfg.MODEL.TRANSFORMER.USE_SWAT_PE:
             # (batch_size, seq_len, traversal_num) ->(seq_len, batch_size, traversal_num)
             morphology_info['traversals'] = obs_dict['traversals'].permute(1, 0, 2).long()

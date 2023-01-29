@@ -443,6 +443,8 @@ _C.MODEL.TRANSFORMER.LINEAR_CONTEXT_LAYER = 2
 _C.MODEL.TRANSFORMER.CONTEXT_ENCODER = 'linear'
 # use hfield in fix attention
 _C.MODEL.TRANSFORMER.HFIELD_IN_FIX_ATTENTION = False
+# use node context / state features as FA input
+_C.MODEL.TRANSFORMER.CONTEXT_AS_FA_INPUT = True
 
 # whether adjust attention weights based on morphology information
 _C.MODEL.TRANSFORMER.USE_MORPHOLOGY_INFO_IN_ATTENTION = False
