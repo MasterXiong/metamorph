@@ -225,6 +225,15 @@ class UnimalHeightObs(gym.ObservationWrapper):
         return obs
 
 
+class VisitationObs(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = spu.update_obs_space(env, {"visitation": (cfg.TERRAIN.SIZE[0] * cfg.TERRAIN.SIZE[1] * 4,)})
+
+    def observation(self, obs):
+        return obs
+
+
 """Reward Wrappers."""
 
 
@@ -260,6 +269,7 @@ class ExploreTerrainReward(gym.Wrapper):
     def reset(self, **kwargs):
         obs = self.env.reset(**kwargs)
         self.visit_grid[:, :] = 0.0
+        obs['visitation'] = self.visit_grid.ravel()
         return obs
 
     def step(self, action):
@@ -277,6 +287,7 @@ class ExploreTerrainReward(gym.Wrapper):
         info["__reward__explore"] = explore_reward
         info["metric"] = curr_visit_count
         rew += explore_reward
+        obs['visitation'] = self.visit_grid.ravel()
         return obs, rew, done, info
 
 

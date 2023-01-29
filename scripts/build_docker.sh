@@ -2,7 +2,8 @@
 set -x
 
 TAG=metamorph
-PARENT=nvidia/cuda:11.1-cudnn8-devel-ubuntu20.04
+# PARENT=nvidia/cuda:11.1-cudnn8-devel-ubuntu20.04
+PARENT=nvidia/cuda:11.6.1-cudnn8-devel-ubuntu20.04
 INSTALL_SCRIPT="install_gpu_deps"
 USER_ID=`id -u`
 

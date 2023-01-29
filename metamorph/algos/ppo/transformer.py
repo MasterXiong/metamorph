@@ -88,10 +88,10 @@ class TransformerEncoder(nn.Module):
 
 class TransformerEncoderLayerResidual(nn.Module):
     def __init__(
-        self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"
+        self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu", batch_first=False
     ):
         super(TransformerEncoderLayerResidual, self).__init__()
-        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first)
         # Implementation of Feedforward model
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
@@ -123,9 +123,7 @@ class TransformerEncoderLayerResidual(nn.Module):
         
         src2 = self.norm1(src)
 
-        if not cfg.MODEL.TRANSFORMER.USE_MORPHOLOGY_INFO_IN_ATTENTION:
-            src_mask = None
-        else:
+        if cfg.MODEL.TRANSFORMER.USE_MORPHOLOGY_INFO_IN_ATTENTION:
             # (batch_size, seq_len, seq_len, feat_dim) -> (batch_size, seq_len, seq_len, num_head)
             src_mask = self.connectivity_encoder(morphology_info['connectivity'])
             # (batch_size, seq_len, seq_len, num_head) -> (batch_size * num_head, seq_len, seq_len)

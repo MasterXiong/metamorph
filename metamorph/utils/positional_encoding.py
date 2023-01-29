@@ -17,5 +17,12 @@ def create_graph_PE(A, PE_dim):
     idx = eig_val.argsort() # increasing order
     eig_val, eig_vec = eig_val[idx], np.real(eig_vec[:, idx])
     pe = eig_vec[:,1:PE_dim + 1]
+
+    # take the absolute value of pe
+    # pe = np.abs(pe)
+    
+    # randomly flip the sign of each eigen vector
+    # sign = -1 + 2 * np.random.randint(0, 2, (1, PE_dim))
+    # pe *= sign
     
     return pe

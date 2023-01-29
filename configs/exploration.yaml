@@ -4,11 +4,17 @@ ENV:
   MODULES: ["Agent", "Terrain", "Objects"]
   FORWARD_REWARD_WEIGHT: 0.0
   TASK: "exploration"
+  KEYS_TO_KEEP: ["visitation"]
+MODEL:
+  TRANSFORMER:
+    EXT_HIDDEN_DIMS: [64, 64]
+    DECODER_DIMS: [64]
+    EXT_MIX: "late"
 TERRAIN:
-  SIZE: [50, 50, 1]
+  SIZE: [10, 10, 1]
   START_FLAT: 0
-  CENTER_FLAT: 50
-  FLAT_LENGTH_RANGE: [50, 50, 1]
-  HFIELD_LENGTH_RANGE: [50, 50, 1]
+  CENTER_FLAT: 10
+  FLAT_LENGTH_RANGE: [10, 10, 1]
+  HFIELD_LENGTH_RANGE: [10, 10, 1]
   TYPES: ["curve_slope"]
   BOUNDARY_WALLS: True

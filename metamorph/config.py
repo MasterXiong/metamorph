@@ -372,6 +372,8 @@ _C.MODEL.OBS_TYPES = [
     "connectivity", 
     "node_depth", 
     "traversals", 
+    'node_path_length', 
+    'node_path_mask', 
 ]
 
 # Observations to normalize via VecNormalize
@@ -406,6 +408,9 @@ _C.MODEL.TRANSFORMER.EMBED_INIT = 0.1
 # Init for output decoder embodedding
 _C.MODEL.TRANSFORMER.DECODER_INIT = 0.01
 
+# init range for HN embedding
+_C.MODEL.TRANSFORMER.HN_EMBED_INIT = 0.1
+
 _C.MODEL.TRANSFORMER.DECODER_DIMS = []
 
 _C.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS = []
@@ -419,11 +424,17 @@ _C.MODEL.TRANSFORMER.PE_POSITION = "base"
 # _C.MODEL.TRANSFORMER.DROPOUT_AFTER_PE = True
 _C.MODEL.TRANSFORMER.EMBEDDING_DROPOUT = True
 _C.MODEL.TRANSFORMER.CONSISTENT_DROPOUT = False
+_C.MODEL.TRANSFORMER.EMBEDDING_SCALE = True
 
 # Whether to use hypernet to generate the weights of the decoder
 _C.MODEL.TRANSFORMER.HYPERNET = False
 _C.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE = 128
 _C.MODEL.TRANSFORMER.DEPTH_INPUT_HN = False
+_C.MODEL.TRANSFORMER.HN_EMBED = True
+_C.MODEL.TRANSFORMER.HN_DECODER = True
+_C.MODEL.TRANSFORMER.HN_CONTEXT_ENCODER = 'linear'
+_C.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM = 1
+_C.MODEL.TRANSFORMER.HN_DECODER_LAST_LAYER = False
 
 # whether to use context to generate fixed attention weights
 _C.MODEL.TRANSFORMER.FIX_ATTENTION = False
@@ -451,6 +462,17 @@ _C.MODEL.TRANSFORMER.MAX_CHILD_NUM = 4
 # graph PE
 _C.MODEL.TRANSFORMER.GRAPH_PE_IN_CONTEXT = False
 _C.MODEL.TRANSFORMER.GRAPH_PE_DIM = 3
+# node depth PE
+_C.MODEL.TRANSFORMER.NODE_DEPTH_IN_CONTEXT = False
+# children number PE
+_C.MODEL.TRANSFORMER.CHILD_NUM_IN_CONTEXT = False
+# RNN PE
+_C.MODEL.TRANSFORMER.RNN_CONTEXT = False
+# add connectivity to TF attention mask
+_C.MODEL.TRANSFORMER.USE_CONNECTIVITY_IN_ATTENTION = False
+# test per-node embed and decode
+_C.MODEL.TRANSFORMER.PER_NODE_EMBED = False
+_C.MODEL.TRANSFORMER.PER_NODE_DECODER = False
 
 # --------------------------------------------------------------------------- #
 # Finetuning Options

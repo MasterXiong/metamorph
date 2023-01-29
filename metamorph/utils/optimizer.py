@@ -16,6 +16,10 @@ def lr_fun_lin(cur_iter):
     return (1.0 - cfg.PPO.MIN_LR) * lr + cfg.PPO.MIN_LR
 
 
+def lr_fun_constant(cur_iter):
+    return 1.
+
+
 def get_lr_fun():
     """Retrieves the specified lr policy function"""
     lr_fun = "lr_fun_" + cfg.PPO.LR_POLICY
@@ -34,6 +38,7 @@ def get_iter_lr(cur_iter):
         alpha = cur_iter / cfg.PPO.WARMUP_ITERS
         warmup_factor = cfg.PPO.WARMUP_FACTOR * (1.0 - alpha) + alpha
         lr *= warmup_factor
+    print (f'lr={lr} for iter {cur_iter}')
     return lr
 
 

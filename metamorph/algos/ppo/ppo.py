@@ -95,6 +95,11 @@ class PPO:
 
             if cfg.PPO.EARLY_EXIT and cur_iter >= cfg.PPO.EARLY_EXIT_MAX_ITERS:
                 break
+            
+            # if cur_iter < 200:
+            #     self.kl_threshold = 0.05
+            # else:
+            #     self.kl_threshold = 0.05 - 0.02 * (cur_iter - 200) / (cfg.PPO.MAX_ITERS - 200)
 
             lr = ou.get_iter_lr(cur_iter)
             ou.set_lr(self.optimizer, lr)
@@ -150,7 +155,7 @@ class PPO:
             # reset_flag = False
             for step in range(cfg.PPO.TIMESTEPS):
                 # Sample actions
-                if cfg.MODEL.TRANSFORMER.USE_SWAT_PE:
+                if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE or cfg.MODEL.TRANSFORMER.PER_NODE_EMBED:
                     unimal_ids = self.envs.get_unimal_idx()
                 else:
                     unimal_ids = [0 for _ in range(cfg.PPO.NUM_ENVS)]
@@ -196,7 +201,7 @@ class PPO:
                 self.buffer.insert(obs, act, logp, val, reward, masks, timeouts, dropout_mask_v, dropout_mask_mu, unimal_ids)
                 obs = next_obs
 
-            if cfg.MODEL.TRANSFORMER.USE_SWAT_PE:
+            if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE or cfg.MODEL.TRANSFORMER.PER_NODE_EMBED:
                 unimal_ids = self.envs.get_unimal_idx()
             else:
                 unimal_ids = [0 for _ in range(cfg.PPO.NUM_ENVS)]
@@ -217,7 +222,6 @@ class PPO:
                 and cfg.LOG_PERIOD > 0
             ):
                 self._log_stats(cur_iter)
-                self.save_model(cur_iter)
 
                 file_name = "{}_results.json".format(self.file_prefix)
                 path = os.path.join(cfg.OUT_DIR, file_name)
@@ -226,6 +230,9 @@ class PPO:
                 stats["fps"] = self.fps
                 fu.save_json(stats, path)
                 print (cfg.OUT_DIR)
+            
+            if cur_iter > 0 and cur_iter % 100 == 0:
+                self.save_model(cur_iter)
 
         print("Finished Training: {}".format(self.file_prefix))
 
@@ -252,6 +259,7 @@ class PPO:
                 #     print (ratio.detach().cpu().numpy().ravel())
 
                 if cfg.PPO.KL_TARGET_COEF is not None and approx_kl > cfg.PPO.KL_TARGET_COEF * 0.01:
+                # if approx_kl > self.kl_threshold:
                     self.train_meter.add_train_stat("approx_kl", approx_kl)
                     if cfg.SAVE_HIST_RATIO:
                         with open(os.path.join(cfg.OUT_DIR, 'ratio_hist', f'ratio_hist_{cur_iter}.pkl'), 'wb') as f:
@@ -401,16 +409,35 @@ class PPO:
         )
         
         obs = env.reset()
+        # obs_record = {"body_xpos": [], "body_xvelp": [], "body_xvelr": [],"qpos": [], "qvel": []}
+        # action_history = []
+        # reset_step = []
+        # returns = []
 
-        for _ in range(cfg.PPO.VIDEO_LENGTH + 1):
+        for t in range(cfg.PPO.VIDEO_LENGTH + 1):
+
+            # obs_reshape = obs['proprioceptive'].reshape(-1, 52)[(1. - obs["obs_padding_mask"]).bool().reshape(-1)].detach().cpu().numpy()
+            # obs_record['body_xpos'].append(obs_reshape[:, :3])
+            # obs_record['body_xvelp'].append(obs_reshape[:, 3:6])
+            # obs_record['body_xvelr'].append(obs_reshape[:, 6:9])
+            # obs_record['qpos'].append(obs_reshape[:, [30, 39]])
+            # obs_record['qvel'].append(obs_reshape[:, [31, 40]])
+            
             _, act, _, _, _ = self.agent.act(obs)
             obs, _, _, infos = env.step(act)
+
+            # x = act[(1. - obs["act_padding_mask"]).bool()].detach().cpu().numpy().ravel()
+            # action_history.append(x)
+
             if 'episode' in infos[0]:
+                reset_step.append(t)
                 print (infos[0]['episode']['r'])
+                # returns.append(infos[0]['episode']['r'])
 
         env.close()
         # remove annoying meta file created by monitor
         os.remove(os.path.join(save_dir, "{}_video.meta.json".format(self.file_prefix)))
+        # return action_history, obs_record, reset_step, returns
 
     def save_sampled_agent_seq(self, cur_iter):
         num_agents = len(cfg.ENV.WALKERS)
