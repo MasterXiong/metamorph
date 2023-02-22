@@ -17,6 +17,172 @@ import time
 import matplotlib.pyplot as plt
 
 
+class MLPValueNetwork(nn.Module):
+    def __init__(self, obs_space):
+        super(MLPValueNetwork, self).__init__()
+        self.model_args = cfg.MODEL.MLP
+        self.seq_len = cfg.MODEL.MAX_LIMBS
+        self.limb_obs_size = limb_obs_size = obs_space["proprioceptive"].shape[0] // self.seq_len
+
+        # set the input layer
+        if self.model_args.MODE == 'HN':
+            context_obs_size = obs_space["context"].shape[0] // self.seq_len
+            context_encoder_dim = [context_obs_size] + [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE for _ in range(cfg.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM + 1)]
+            self.context_encoder_for_input = tu.make_mlp_default(context_encoder_dim)
+
+            HN_input_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE
+            self.hnet_input_weight = nn.Linear(HN_input_dim, limb_obs_size * self.model_args.HIDDEN_DIM)
+            self.hnet_input_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
+        else:
+            # vanilla MLP
+            self.input_layer = nn.Linear(obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM)
+        
+        # hidden_dims also include the output layer
+        hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)] + [1]
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
+            hidden_dims[0] = self.model_args.HIDDEN_DIM + self.hfield_encoder.obs_feat_dim
+        self.hidden_layers = tu.make_mlp_default(hidden_dims, final_nonlinearity=False)
+
+        if self.model_args.MODE == 'HN':
+            # initrange = cfg.MODEL.TRANSFORMER.HN_EMBED_INIT
+            # self.context_embed_HN.weight.data.uniform_(-initrange, initrange)
+
+            # initialize the hypernet following Jake's paper
+            # set the initrange at the same scall as vanilla MLP, which is 1/sqrt(in_feature_dim)
+            initrange = 0.04
+            self.hnet_input_weight.weight.data.zero_()
+            self.hnet_input_weight.bias.data.uniform_(-initrange, initrange)
+            self.hnet_input_bias.weight.data.zero_()
+            self.hnet_input_bias.bias.data.zero_()
+
+    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, dropout_mask=None, unimal_ids=None):
+
+        # input layer
+        if self.model_args.MODE == 'HN':
+            batch_size = obs.shape[0]
+            obs_context = obs_context.reshape(batch_size, self.seq_len, -1)
+            context_embedding = self.context_encoder_for_input(obs_context)
+
+            obs = obs.reshape(batch_size, self.seq_len, -1)
+            input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
+            input_bias = self.hnet_input_bias(context_embedding)
+            embedding = (obs[:, :, :, None] * input_weight).sum(dim=-2) + input_bias
+            embedding = embedding.mean(dim=1)
+            # embedding = embedding.sum(dim=1)
+        else:
+            embedding = self.input_layer(obs)
+        embedding = F.relu(embedding)
+
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+            embedding = torch.cat([embedding, hfield_embedding], 1)
+        
+        # hidden layers and output layer
+        output = self.hidden_layers(embedding)
+
+        return output, None, 0.
+
+
+class MLPModel(nn.Module):
+    def __init__(self, obs_space, out_dim):
+        super(MLPModel, self).__init__()
+        self.model_args = cfg.MODEL.MLP
+        self.seq_len = cfg.MODEL.MAX_LIMBS
+        self.limb_obs_size = limb_obs_size = obs_space["proprioceptive"].shape[0] // self.seq_len
+        self.limb_out_dim = out_dim // self.seq_len
+
+        # set the input and output layer
+        if self.model_args.MODE == 'HN':
+            context_obs_size = obs_space["context"].shape[0] // self.seq_len
+            context_encoder_dim = [context_obs_size] + [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE for _ in range(cfg.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM + 1)]
+            self.context_encoder_for_input = tu.make_mlp_default(context_encoder_dim)
+            self.context_encoder_for_output = tu.make_mlp_default(context_encoder_dim)
+
+            HN_input_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE
+            self.hnet_input_weight = nn.Linear(HN_input_dim, limb_obs_size * self.model_args.HIDDEN_DIM)
+            self.hnet_input_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
+            self.hnet_output_weight = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM * self.limb_out_dim)
+            self.hnet_output_bias = nn.Linear(HN_input_dim, self.limb_out_dim)
+
+        elif self.model_args.MODE == 'share':
+            self.input_layer = nn.Linear(limb_obs_size, self.model_args.HIDDEN_DIM)
+            self.output_layer = nn.Linear(self.model_args.HIDDEN_DIM, 1)
+
+        else:
+            # vanilla MLP
+            self.input_layer = nn.Linear(obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM)
+            self.output_layer = nn.Linear(self.model_args.HIDDEN_DIM, out_dim)
+        
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
+            hidden_dims = [self.model_args.HIDDEN_DIM + self.hfield_encoder.obs_feat_dim] + [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM - 1)]
+            self.hidden_layers = tu.make_mlp_default(hidden_dims)
+        else:
+            hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
+            self.hidden_layers = tu.make_mlp_default(hidden_dims)
+
+        if self.model_args.MODE == 'HN':
+            # initrange = cfg.MODEL.TRANSFORMER.HN_EMBED_INIT
+            # self.context_embed_HN.weight.data.uniform_(-initrange, initrange)
+
+            # initialize the hypernet following Jake's paper
+            initrange = 0.04
+            self.hnet_input_weight.weight.data.zero_()
+            self.hnet_input_weight.bias.data.uniform_(-initrange, initrange)
+            self.hnet_input_bias.weight.data.zero_()
+            self.hnet_input_bias.bias.data.zero_()
+
+            initrange = 1. / 16
+            self.hnet_output_weight.weight.data.zero_()
+            self.hnet_output_weight.bias.data.uniform_(-initrange, initrange)
+            self.hnet_output_bias.weight.data.zero_()
+            self.hnet_output_bias.bias.data.zero_()
+
+    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, dropout_mask=None, unimal_ids=None):
+
+        # input layer
+        if self.model_args.MODE == 'HN':
+            batch_size = obs.shape[0]
+            obs_context = obs_context.reshape(batch_size, self.seq_len, -1)
+            context_embedding = self.context_encoder_for_input(obs_context)
+
+            obs = obs.reshape(batch_size, self.seq_len, -1)
+            input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
+            input_bias = self.hnet_input_bias(context_embedding)
+            embedding = (obs[:, :, :, None] * input_weight).sum(dim=-2) + input_bias
+            embedding = embedding.mean(dim=1)
+            # embedding = embedding.sum(dim=1)
+        elif self.model_args.MODE == 'share':
+            obs = obs.reshape(batch_size, self.seq_len, -1)
+            embedding = self.input_layer(obs).sum(dim=1)
+        else:
+            embedding = self.input_layer(obs)
+        embedding = F.relu(embedding)
+
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+            embedding = torch.cat([embedding, hfield_embedding], 1)
+        
+        # hidden layers
+        embedding = self.hidden_layers(embedding)
+        
+        # output layer
+        if self.model_args.MODE == 'HN':
+            context_embedding = self.context_encoder_for_output(obs_context)
+            output_weight = self.hnet_output_weight(context_embedding).reshape(batch_size, self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim)
+            output_bias = self.hnet_output_bias(context_embedding)
+            output = (embedding[:, None, :, None] * output_weight).sum(dim=-2) + output_bias
+            output = output.reshape(batch_size, -1)
+        elif self.model_args.MODE == 'share':
+            obs = obs.reshape(batch_size, self.seq_len, -1)
+            # TODO: the output is the same for all the nodes
+            output = self.output_layer(embedding[:, None, :])
+        else:
+            output = self.output_layer(embedding)
+
+        return output, None, 0.
+
 # J: Max num joints between two limbs. 1 for 2D envs, 2 for unimal
 class TransformerModel(nn.Module):
     def __init__(self, obs_space, decoder_out_dim):
@@ -377,7 +543,7 @@ class TransformerModel(nn.Module):
         # self.count += 1
 
         # add PE
-        if self.model_args.POS_EMBEDDING in ["learnt", "abs"] and self.model_args.PE_POSITION == 'base':
+        if self.model_args.POS_EMBEDDING in ["learnt", "abs"]:
             obs_embed = self.pos_embedding(obs_embed)
         if self.model_args.CONTEXT_PE:
             obs_embed = obs_embed + context_embedding_PE
@@ -576,10 +742,19 @@ class ActorCritic(nn.Module):
     def __init__(self, obs_space, action_space):
         super(ActorCritic, self).__init__()
         self.seq_len = cfg.MODEL.MAX_LIMBS
-        self.v_net = TransformerModel(obs_space, 1)
+        if cfg.MODEL.TYPE == 'transformer':
+            self.v_net = TransformerModel(obs_space, 1)
+        else:
+            if cfg.MODEL.MLP.SINGLE_VALUE:
+                self.v_net = MLPValueNetwork(obs_space)
+            else:
+                self.v_net = MLPModel(obs_space, cfg.MODEL.MAX_LIMBS)
 
         if cfg.ENV_NAME == "Unimal-v0":
-            self.mu_net = TransformerModel(obs_space, 2)
+            if cfg.MODEL.TYPE == 'transformer':
+                self.mu_net = TransformerModel(obs_space, 2)
+            else:
+                self.mu_net = MLPModel(obs_space, cfg.MODEL.MAX_LIMBS * 2)
             self.num_actions = cfg.MODEL.MAX_LIMBS * 2
         else:
             raise ValueError("Unsupported ENV_NAME")
@@ -642,11 +817,14 @@ class ActorCritic(nn.Module):
         obs_mask = obs_mask.bool()
         act_mask = act_mask.bool()
 
-        obs = obs.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
-        obs_context = obs_context.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
-        if cfg.MODEL.BASE_CONTEXT_NORM == 'fixed':
-            obs[:, :, self.context_index] = obs_context.clone()
-        # print (obs[:, :, self.context_index].min(), obs[:, :, self.context_index].max())
+        # reshape the obs for transformer input
+        if cfg.MODEL.TYPE == 'transformer':
+            obs = obs.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
+            obs_context = obs_context.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
+            if cfg.MODEL.BASE_CONTEXT_NORM == 'fixed':
+                obs[:, :, self.context_index] = obs_context.clone()
+            # print (obs[:, :, self.context_index].min(), obs[:, :, self.context_index].max())
+
         if compute_val:
             # Per limb critic values
             limb_vals, v_attention_maps, dropout_mask_v = self.v_net(
@@ -654,11 +832,14 @@ class ActorCritic(nn.Module):
                 return_attention=return_attention, dropout_mask=dropout_mask_v, 
                 unimal_ids=unimal_ids, 
             )
-            # Zero out mask values
-            limb_vals = limb_vals * (1 - obs_mask.int())
-            # Use avg/max to keep the magnitidue same instead of sum
-            num_limbs = self.seq_len - torch.sum(obs_mask.int(), dim=1, keepdim=True)
-            val = torch.divide(torch.sum(limb_vals, dim=1, keepdim=True), num_limbs)
+            if cfg.MODEL.MLP.SINGLE_VALUE:
+                val = limb_vals
+            else:
+                # Zero out mask values
+                limb_vals = limb_vals * (1 - obs_mask.int())
+                # Use avg/max to keep the magnitidue same instead of sum
+                num_limbs = self.seq_len - torch.sum(obs_mask.int(), dim=1, keepdim=True)
+                val = torch.divide(torch.sum(limb_vals, dim=1, keepdim=True), num_limbs)
         else:
             val, v_attention_maps, dropout_mask_v = 0., None, 0.
 

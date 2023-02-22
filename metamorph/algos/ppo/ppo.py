@@ -221,7 +221,7 @@ class PPO:
                 norm = nn.utils.clip_grad_norm_(
                     self.actor_critic.parameters(), cfg.PPO.MAX_GRAD_NORM
                 )
-                print (f'epoch {i}, batch {j}, gradient norm: {norm}, approx_kl: {approx_kl}')
+                # print (f'epoch {i}, batch {j}, gradient norm: {norm}, approx_kl: {approx_kl}')
                 self.train_meter.add_train_stat("grad_norm", norm.item())
 
                 log_std = (

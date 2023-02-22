@@ -388,6 +388,18 @@ _C.MODEL.WRAPPERS = ["MultiUnimalNodeCentricObservation", "MultiUnimalNodeCentri
 # --------------------------------------------------------------------------- #
 # Transformer Options
 # --------------------------------------------------------------------------- #
+# model type
+_C.MODEL.TYPE = 'transformer'
+# hyperparameters for MLP model
+_C.MODEL.MLP = CN()
+_C.MODEL.MLP.HIDDEN_DIM = 128
+_C.MODEL.MLP.LAYER_NUM = 2
+# architecture choice: 'normal', 'HN', 'share'
+_C.MODEL.MLP.MODE = 'normal'
+# architecture for the value network
+_C.MODEL.MLP.SINGLE_VALUE = False
+
+# hyperparameters for transformers
 _C.MODEL.TRANSFORMER = CN()
 
 # Number of attention heads in TransformerEncoderLayer (nhead)
