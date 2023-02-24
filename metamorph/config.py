@@ -396,6 +396,9 @@ _C.MODEL.MLP.HIDDEN_DIM = 128
 _C.MODEL.MLP.LAYER_NUM = 2
 # architecture choice: 'normal', 'HN', 'share'
 _C.MODEL.MLP.MODE = 'normal'
+_C.MODEL.MLP.HN_INPUT = False
+_C.MODEL.MLP.HN_OUTPUT = False
+_C.MODEL.MLP.SHARE_INPUT = False
 # architecture for the value network
 _C.MODEL.MLP.SINGLE_VALUE = False
 

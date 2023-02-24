@@ -17,71 +17,71 @@ import time
 import matplotlib.pyplot as plt
 
 
-class MLPValueNetwork(nn.Module):
-    def __init__(self, obs_space):
-        super(MLPValueNetwork, self).__init__()
-        self.model_args = cfg.MODEL.MLP
-        self.seq_len = cfg.MODEL.MAX_LIMBS
-        self.limb_obs_size = limb_obs_size = obs_space["proprioceptive"].shape[0] // self.seq_len
+# class MLPValueNetwork(nn.Module):
+#     def __init__(self, obs_space):
+#         super(MLPValueNetwork, self).__init__()
+#         self.model_args = cfg.MODEL.MLP
+#         self.seq_len = cfg.MODEL.MAX_LIMBS
+#         self.limb_obs_size = limb_obs_size = obs_space["proprioceptive"].shape[0] // self.seq_len
 
-        # set the input layer
-        if self.model_args.MODE == 'HN':
-            context_obs_size = obs_space["context"].shape[0] // self.seq_len
-            context_encoder_dim = [context_obs_size] + [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE for _ in range(cfg.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM + 1)]
-            self.context_encoder_for_input = tu.make_mlp_default(context_encoder_dim)
+#         # set the input layer
+#         if self.model_args.MODE == 'HN':
+#             context_obs_size = obs_space["context"].shape[0] // self.seq_len
+#             context_encoder_dim = [context_obs_size] + [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE for _ in range(cfg.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM + 1)]
+#             self.context_encoder_for_input = tu.make_mlp_default(context_encoder_dim)
 
-            HN_input_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE
-            self.hnet_input_weight = nn.Linear(HN_input_dim, limb_obs_size * self.model_args.HIDDEN_DIM)
-            self.hnet_input_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
-        else:
-            # vanilla MLP
-            self.input_layer = nn.Linear(obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM)
+#             HN_input_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE
+#             self.hnet_input_weight = nn.Linear(HN_input_dim, limb_obs_size * self.model_args.HIDDEN_DIM)
+#             self.hnet_input_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
+#         else:
+#             # vanilla MLP
+#             self.input_layer = nn.Linear(obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM)
         
-        # hidden_dims also include the output layer
-        hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)] + [1]
-        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-            self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
-            hidden_dims[0] = self.model_args.HIDDEN_DIM + self.hfield_encoder.obs_feat_dim
-        self.hidden_layers = tu.make_mlp_default(hidden_dims, final_nonlinearity=False)
+#         # hidden_dims also include the output layer
+#         hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)] + [1]
+#         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+#             self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
+#             hidden_dims[0] = self.model_args.HIDDEN_DIM + self.hfield_encoder.obs_feat_dim
+#         self.hidden_layers = tu.make_mlp_default(hidden_dims, final_nonlinearity=False)
 
-        if self.model_args.MODE == 'HN':
-            # initrange = cfg.MODEL.TRANSFORMER.HN_EMBED_INIT
-            # self.context_embed_HN.weight.data.uniform_(-initrange, initrange)
+#         if self.model_args.MODE == 'HN':
+#             # initrange = cfg.MODEL.TRANSFORMER.HN_EMBED_INIT
+#             # self.context_embed_HN.weight.data.uniform_(-initrange, initrange)
 
-            # initialize the hypernet following Jake's paper
-            # set the initrange at the same scall as vanilla MLP, which is 1/sqrt(in_feature_dim)
-            initrange = 0.04
-            self.hnet_input_weight.weight.data.zero_()
-            self.hnet_input_weight.bias.data.uniform_(-initrange, initrange)
-            self.hnet_input_bias.weight.data.zero_()
-            self.hnet_input_bias.bias.data.zero_()
+#             # initialize the hypernet following Jake's paper
+#             # set the initrange at the same scall as vanilla MLP, which is 1/sqrt(in_feature_dim)
+#             initrange = 0.04
+#             self.hnet_input_weight.weight.data.zero_()
+#             self.hnet_input_weight.bias.data.uniform_(-initrange, initrange)
+#             self.hnet_input_bias.weight.data.zero_()
+#             self.hnet_input_bias.bias.data.zero_()
 
-    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, dropout_mask=None, unimal_ids=None):
+#     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, dropout_mask=None, unimal_ids=None):
 
-        # input layer
-        if self.model_args.MODE == 'HN':
-            batch_size = obs.shape[0]
-            obs_context = obs_context.reshape(batch_size, self.seq_len, -1)
-            context_embedding = self.context_encoder_for_input(obs_context)
+#         # input layer
+#         if self.model_args.MODE == 'HN':
+#             batch_size = obs.shape[0]
+#             obs_context = obs_context.reshape(batch_size, self.seq_len, -1)
+#             context_embedding = self.context_encoder_for_input(obs_context)
 
-            obs = obs.reshape(batch_size, self.seq_len, -1)
-            input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
-            input_bias = self.hnet_input_bias(context_embedding)
-            embedding = (obs[:, :, :, None] * input_weight).sum(dim=-2) + input_bias
-            embedding = embedding.mean(dim=1)
-            # embedding = embedding.sum(dim=1)
-        else:
-            embedding = self.input_layer(obs)
-        embedding = F.relu(embedding)
+#             obs = obs.reshape(batch_size, self.seq_len, -1)
+#             input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
+#             input_bias = self.hnet_input_bias(context_embedding)
+#             embedding = (obs[:, :, :, None] * input_weight).sum(dim=-2) + input_bias
+#             embedding = embedding.mean(dim=1)
+#             # embedding = embedding.sum(dim=1)
+#         else:
+#             embedding = self.input_layer(obs)
+#         embedding = F.relu(embedding)
 
-        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-            hfield_embedding = self.hfield_encoder(obs_env["hfield"])
-            embedding = torch.cat([embedding, hfield_embedding], 1)
+#         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+#             hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+#             embedding = torch.cat([embedding, hfield_embedding], 1)
         
-        # hidden layers and output layer
-        output = self.hidden_layers(embedding)
+#         # hidden layers and output layer
+#         output = self.hidden_layers(embedding)
 
-        return output, None, 0.
+#         return output, None, 0.
 
 
 class MLPModel(nn.Module):
@@ -92,27 +92,65 @@ class MLPModel(nn.Module):
         self.limb_obs_size = limb_obs_size = obs_space["proprioceptive"].shape[0] // self.seq_len
         self.limb_out_dim = out_dim // self.seq_len
 
-        # set the input and output layer
-        if self.model_args.MODE == 'HN':
-            context_obs_size = obs_space["context"].shape[0] // self.seq_len
-            context_encoder_dim = [context_obs_size] + [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE for _ in range(cfg.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM + 1)]
-            self.context_encoder_for_input = tu.make_mlp_default(context_encoder_dim)
-            self.context_encoder_for_output = tu.make_mlp_default(context_encoder_dim)
+        context_obs_size = obs_space["context"].shape[0] // self.seq_len
+        context_encoder_dim = [context_obs_size] + [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE for _ in range(cfg.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM + 1)]
+        HN_input_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE
 
-            HN_input_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE
+        # set the input and output layer
+        if self.model_args.HN_INPUT:
+            print ('use HN for input layer')
+            self.context_encoder_for_input = tu.make_mlp_default(context_encoder_dim)
             self.hnet_input_weight = nn.Linear(HN_input_dim, limb_obs_size * self.model_args.HIDDEN_DIM)
             self.hnet_input_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
+            
+            initrange = 0.04
+            self.hnet_input_weight.weight.data.zero_()
+            self.hnet_input_weight.bias.data.uniform_(-initrange, initrange)
+            self.hnet_input_bias.weight.data.zero_()
+            self.hnet_input_bias.bias.data.zero_()
+        elif self.model_args.SHARE_INPUT:
+            print ('use shared input layer')
+            self.shared_input_layer = nn.Linear(self.limb_obs_size, self.model_args.HIDDEN_DIM)
+            # initrange = 1. / np.sqrt(obs_space["proprioceptive"].shape[0])
+            # self.shared_input_layer.weight.data.uniform_(-initrange, initrange)
+            # self.shared_input_layer.bias.data.uniform_(-initrange, initrange)
+        else:
+            self.input_layer = nn.Linear(obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM)
+
+        if self.model_args.HN_OUTPUT:
+            print ('use HN for output layer')
+            self.context_encoder_for_output = tu.make_mlp_default(context_encoder_dim)
             self.hnet_output_weight = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM * self.limb_out_dim)
             self.hnet_output_bias = nn.Linear(HN_input_dim, self.limb_out_dim)
 
-        elif self.model_args.MODE == 'share':
-            self.input_layer = nn.Linear(limb_obs_size, self.model_args.HIDDEN_DIM)
-            self.output_layer = nn.Linear(self.model_args.HIDDEN_DIM, 1)
-
+            initrange = 1. / 16
+            self.hnet_output_weight.weight.data.zero_()
+            self.hnet_output_weight.bias.data.uniform_(-initrange, initrange)
+            self.hnet_output_bias.weight.data.zero_()
+            self.hnet_output_bias.bias.data.zero_()
         else:
-            # vanilla MLP
-            self.input_layer = nn.Linear(obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM)
             self.output_layer = nn.Linear(self.model_args.HIDDEN_DIM, out_dim)
+
+        # if self.model_args.MODE == 'HN':
+        #     context_obs_size = obs_space["context"].shape[0] // self.seq_len
+        #     context_encoder_dim = [context_obs_size] + [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE for _ in range(cfg.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM + 1)]
+        #     self.context_encoder_for_input = tu.make_mlp_default(context_encoder_dim)
+        #     self.context_encoder_for_output = tu.make_mlp_default(context_encoder_dim)
+
+        #     HN_input_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE
+        #     self.hnet_input_weight = nn.Linear(HN_input_dim, limb_obs_size * self.model_args.HIDDEN_DIM)
+        #     self.hnet_input_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
+        #     self.hnet_output_weight = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM * self.limb_out_dim)
+        #     self.hnet_output_bias = nn.Linear(HN_input_dim, self.limb_out_dim)
+
+        # elif self.model_args.MODE == 'share':
+        #     self.input_layer = nn.Linear(limb_obs_size, self.model_args.HIDDEN_DIM)
+        #     self.output_layer = nn.Linear(self.model_args.HIDDEN_DIM, 1)
+
+        # else:
+        #     # vanilla MLP
+        #     self.input_layer = nn.Linear(obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM)
+        #     self.output_layer = nn.Linear(self.model_args.HIDDEN_DIM, out_dim)
         
         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
             self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
@@ -122,43 +160,44 @@ class MLPModel(nn.Module):
             hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
             self.hidden_layers = tu.make_mlp_default(hidden_dims)
 
-        if self.model_args.MODE == 'HN':
-            # initrange = cfg.MODEL.TRANSFORMER.HN_EMBED_INIT
-            # self.context_embed_HN.weight.data.uniform_(-initrange, initrange)
+        # if self.model_args.MODE == 'HN':
+        #     # initrange = cfg.MODEL.TRANSFORMER.HN_EMBED_INIT
+        #     # self.context_embed_HN.weight.data.uniform_(-initrange, initrange)
 
-            # initialize the hypernet following Jake's paper
-            initrange = 0.04
-            self.hnet_input_weight.weight.data.zero_()
-            self.hnet_input_weight.bias.data.uniform_(-initrange, initrange)
-            self.hnet_input_bias.weight.data.zero_()
-            self.hnet_input_bias.bias.data.zero_()
+        #     # initialize the hypernet following Jake's paper
+        #     initrange = 0.04
+        #     self.hnet_input_weight.weight.data.zero_()
+        #     self.hnet_input_weight.bias.data.uniform_(-initrange, initrange)
+        #     self.hnet_input_bias.weight.data.zero_()
+        #     self.hnet_input_bias.bias.data.zero_()
 
-            initrange = 1. / 16
-            self.hnet_output_weight.weight.data.zero_()
-            self.hnet_output_weight.bias.data.uniform_(-initrange, initrange)
-            self.hnet_output_bias.weight.data.zero_()
-            self.hnet_output_bias.bias.data.zero_()
+        #     initrange = 1. / 16
+        #     self.hnet_output_weight.weight.data.zero_()
+        #     self.hnet_output_weight.bias.data.uniform_(-initrange, initrange)
+        #     self.hnet_output_bias.weight.data.zero_()
+        #     self.hnet_output_bias.bias.data.zero_()
 
     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, dropout_mask=None, unimal_ids=None):
 
+        batch_size = obs.shape[0]
         # input layer
-        if self.model_args.MODE == 'HN':
-            batch_size = obs.shape[0]
-            obs_context = obs_context.reshape(batch_size, self.seq_len, -1)
-            context_embedding = self.context_encoder_for_input(obs_context)
-
+        # if self.model_args.MODE == 'HN':
+        if self.model_args.HN_INPUT:
+            context_embedding = self.context_encoder_for_input(obs_context.reshape(batch_size, self.seq_len, -1))
             obs = obs.reshape(batch_size, self.seq_len, -1)
             input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
             input_bias = self.hnet_input_bias(context_embedding)
             embedding = (obs[:, :, :, None] * input_weight).sum(dim=-2) + input_bias
             embedding = embedding.mean(dim=1)
-            # embedding = embedding.sum(dim=1)
-        elif self.model_args.MODE == 'share':
+            embedding = F.relu(embedding)
+        elif self.model_args.SHARE_INPUT:
             obs = obs.reshape(batch_size, self.seq_len, -1)
-            embedding = self.input_layer(obs).sum(dim=1)
+            embedding = self.shared_input_layer(obs)
+            embedding = F.relu(embedding)
+            embedding = embedding.mean(dim=1)
         else:
             embedding = self.input_layer(obs)
-        embedding = F.relu(embedding)
+            embedding = F.relu(embedding)
 
         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
             hfield_embedding = self.hfield_encoder(obs_env["hfield"])
@@ -168,16 +207,17 @@ class MLPModel(nn.Module):
         embedding = self.hidden_layers(embedding)
         
         # output layer
-        if self.model_args.MODE == 'HN':
-            context_embedding = self.context_encoder_for_output(obs_context)
+        # if self.model_args.MODE == 'HN':
+        if self.model_args.HN_OUTPUT:
+            context_embedding = self.context_encoder_for_output(obs_context.reshape(batch_size, self.seq_len, -1))
             output_weight = self.hnet_output_weight(context_embedding).reshape(batch_size, self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim)
             output_bias = self.hnet_output_bias(context_embedding)
             output = (embedding[:, None, :, None] * output_weight).sum(dim=-2) + output_bias
             output = output.reshape(batch_size, -1)
-        elif self.model_args.MODE == 'share':
-            obs = obs.reshape(batch_size, self.seq_len, -1)
-            # TODO: the output is the same for all the nodes
-            output = self.output_layer(embedding[:, None, :])
+        # elif self.model_args.MODE == 'share':
+        #     obs = obs.reshape(batch_size, self.seq_len, -1)
+        #     # TODO: the output is the same for all the nodes
+        #     output = self.output_layer(embedding[:, None, :])
         else:
             output = self.output_layer(embedding)
 
@@ -770,7 +810,7 @@ class ActorCritic(nn.Module):
         # hard code the index of context features if they are included in proprioceptive features
         limb_context_index = np.arange(13, 13 + 17)
         # two joints features for each node
-        joint_context_index = np.concatenate([np.arange(2, 2 + 9), np.arange(11 + 2, 11 + 2 + 9)])
+        joint_context_index = np.concatenate([np.arange(2, 2 + 9), np.arange(11 + 2, 11 + 2 + 9)]) + 30
         self.context_index = np.concatenate([limb_context_index, joint_context_index])
 
     def forward(self, obs, act=None, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None, unimal_ids=None, compute_val=True):
