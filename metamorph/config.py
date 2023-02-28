@@ -394,11 +394,11 @@ _C.MODEL.TYPE = 'transformer'
 _C.MODEL.MLP = CN()
 _C.MODEL.MLP.HIDDEN_DIM = 128
 _C.MODEL.MLP.LAYER_NUM = 2
-# architecture choice: 'normal', 'HN', 'share'
-_C.MODEL.MLP.MODE = 'normal'
+# architecture choice
 _C.MODEL.MLP.HN_INPUT = False
 _C.MODEL.MLP.HN_OUTPUT = False
 _C.MODEL.MLP.SHARE_INPUT = False
+_C.MODEL.MLP.SHARE_INPUT_INIT = False
 # architecture for the value network
 _C.MODEL.MLP.SINGLE_VALUE = False
 

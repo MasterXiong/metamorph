@@ -99,6 +99,8 @@ class PPO:
             lr = ou.get_iter_lr(cur_iter)
             ou.set_lr(self.optimizer, lr)
 
+            # print (self.agent.ac.v_net.hnet_input_weight.weight.data[:6, :6])
+
             for step in range(cfg.PPO.TIMESTEPS):
                 # Sample actions
                 if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE or cfg.MODEL.TRANSFORMER.PER_NODE_EMBED:
@@ -155,7 +157,7 @@ class PPO:
                 fu.save_json(stats, path)
                 print (cfg.OUT_DIR)
             
-            if cur_iter > 0 and cur_iter % 100 == 0:
+            if cur_iter % 100 == 0:
                 self.save_model(cur_iter)
 
         print("Finished Training: {}".format(self.file_prefix))
