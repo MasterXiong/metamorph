@@ -89,7 +89,7 @@ class PPO:
         #     print(name, weight.requires_grad)
 
         self.fps = 0
-        os.system(f'mkdir {cfg.OUT_DIR}/ratio_hist')
+        # os.system(f'mkdir {cfg.OUT_DIR}/ratio_hist')
 
     def train(self):
         self.save_sampled_agent_seq(0)

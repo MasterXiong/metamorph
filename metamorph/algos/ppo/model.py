@@ -157,7 +157,7 @@ class MLPModel(nn.Module):
             # print (obs[0, obs_mask[0], :6])
             input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
             input_bias = self.hnet_input_bias(context_embedding)
-            self.input_weight = input_weight.detach().clone()
+            # self.input_weight = input_weight.detach().clone()
             embedding = (obs[:, :, :, None] * input_weight).sum(dim=-2) + input_bias
             # setting zero-padding limbs' values to 0
             # embedding shape: batch_size * limb_num * hidden_layer_dim
