@@ -56,8 +56,19 @@ class PPO:
         # Setup experience buffer
         self.buffer = Buffer(self.envs.observation_space, self.envs.action_space.shape)
         # Optimizer for both actor and critic
+        # self.optimizer = optim.Adam(
+        #     self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
+        # )
+        # scale the learning rate for HN in MLP
+        parameters = []
+        if cfg.MODEL.TYPE == 'mlp' and cfg.MODEL.MLP.HN_INPUT:
+            for name, param in self.actor_critic.named_parameters():
+                if 'context_encoder_for_input' in name or 'hnet_input' in name:
+                    parameters += [{'params': [param], 'lr': cfg.PPO.BASE_LR / cfg.MODEL.MAX_LIMBS}]
+                else:
+                    parameters += [{'params': [param]}]
         self.optimizer = optim.Adam(
-            self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
+            parameters, lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
         )
 
         self.train_meter = TrainMeter()
