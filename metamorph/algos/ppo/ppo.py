@@ -60,13 +60,16 @@ class PPO:
         #     self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
         # )
         # scale the learning rate for HN in MLP
-        parameters = []
+        parameters, self.lr_scale = [], []
         if cfg.MODEL.TYPE == 'mlp' and cfg.MODEL.MLP.HN_INPUT:
             for name, param in self.actor_critic.named_parameters():
                 if 'context_encoder_for_input' in name or 'hnet_input' in name:
                     parameters += [{'params': [param], 'lr': cfg.PPO.BASE_LR / cfg.MODEL.MAX_LIMBS}]
+                    self.lr_scale.append(1. / cfg.MODEL.MAX_LIMBS)
                 else:
                     parameters += [{'params': [param]}]
+                    self.lr_scale.append(1.)
+                print (name, self.lr_scale[-1])
         self.optimizer = optim.Adam(
             parameters, lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
         )
@@ -108,7 +111,7 @@ class PPO:
                 break
             
             lr = ou.get_iter_lr(cur_iter)
-            ou.set_lr(self.optimizer, lr)
+            ou.set_lr(self.optimizer, lr, self.lr_scale)
 
             # print (self.agent.ac.v_net.hnet_input_weight.weight.data[:6, :6])
 
