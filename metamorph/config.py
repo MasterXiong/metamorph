@@ -402,6 +402,7 @@ _C.MODEL.MLP.SHARE_INPUT_INIT = False
 # architecture for the value network
 _C.MODEL.MLP.SINGLE_VALUE = False
 _C.MODEL.MLP.RELU_AFTER_AGG = True
+_C.MODEL.MLP.AGG_FUNCTION = 'sum'
 
 # hyperparameters for transformers
 _C.MODEL.TRANSFORMER = CN()
