@@ -172,7 +172,7 @@ class MLPModel(nn.Module):
                     embedding = embedding.sum(dim=1)
                 else:
                     # scale with the number of existing limbs
-                    embedding = embedding.sum(dim=1) * self.seq_len / (self.seq_len - obs_mask.float().sum(dim=1))
+                    embedding = embedding.sum(dim=1) * self.seq_len / (self.seq_len - obs_mask.float().sum(dim=1))[:, None]
                 embedding = F.relu(embedding)
             else:
                 embedding = F.relu(embedding)
@@ -180,7 +180,7 @@ class MLPModel(nn.Module):
                     embedding = embedding.sum(dim=1)
                 else:
                     # scale with the number of existing limbs
-                    embedding = embedding.sum(dim=1) * self.seq_len / (self.seq_len - obs_mask.float().sum(dim=1))
+                    embedding = embedding.sum(dim=1) * self.seq_len / (self.seq_len - obs_mask.float().sum(dim=1))[:, None]
             # self.hidden_activation = embedding.detach().clone()
         elif self.model_args.SHARE_INPUT:
             obs = obs.reshape(batch_size, self.seq_len, -1)
