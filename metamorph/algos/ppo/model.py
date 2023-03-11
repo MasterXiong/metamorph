@@ -162,8 +162,8 @@ class MLPModel(nn.Module):
             input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
             input_bias = self.hnet_input_bias(context_embedding)
             if self.model_args.SQUASH_HN_OUTPUT:
-                input_weight = F.tanh(input_weight)
-                input_bias = F.tanh(input_bias)
+                input_weight = F.tanh(input_weight) * self.model_args.SQUASH_SCALE
+                input_bias = F.tanh(input_bias) * self.model_args.SQUASH_SCALE
             # self.input_weight = input_weight.detach().clone()
             embedding = (obs[:, :, :, None] * input_weight).sum(dim=-2) + input_bias
             # setting zero-padding limbs' values to 0

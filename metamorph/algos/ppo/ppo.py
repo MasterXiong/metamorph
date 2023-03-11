@@ -57,7 +57,7 @@ class PPO:
         # Setup experience buffer
         self.buffer = Buffer(self.envs.observation_space, self.envs.action_space.shape)
         # Optimizer for both actor and critic
-        if not MODEL.MLP.ANNEAL_HN_LR:
+        if not cfg.MODEL.MLP.ANNEAL_HN_LR:
             self.optimizer = optim.Adam(
                 self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
             )

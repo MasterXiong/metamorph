@@ -406,6 +406,7 @@ _C.MODEL.MLP.AGG_FUNCTION = 'sum'
 _C.MODEL.MLP.NORM = None
 _C.MODEL.MLP.ANNEAL_HN_LR = False
 _C.MODEL.MLP.SQUASH_HN_OUTPUT = False
+_C.MODEL.MLP.SQUASH_SCALE = 1.
 
 # hyperparameters for transformers
 _C.MODEL.TRANSFORMER = CN()
