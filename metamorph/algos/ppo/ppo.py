@@ -1,6 +1,7 @@
 import os
 import time
 import pickle
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -56,24 +57,26 @@ class PPO:
         # Setup experience buffer
         self.buffer = Buffer(self.envs.observation_space, self.envs.action_space.shape)
         # Optimizer for both actor and critic
-        self.optimizer = optim.Adam(
-            self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
-        )
-        self.lr_scale = [1. for _ in self.optimizer.param_groups]
-        # scale the learning rate for HN in MLP
-        # parameters, self.lr_scale = [], []
-        # if cfg.MODEL.TYPE == 'mlp' and cfg.MODEL.MLP.HN_INPUT:
-        #     for name, param in self.actor_critic.named_parameters():
-        #         if 'context_encoder_for_input' in name or 'hnet_input' in name:
-        #             parameters += [{'params': [param], 'lr': cfg.PPO.BASE_LR / cfg.MODEL.MAX_LIMBS}]
-        #             self.lr_scale.append(1. / cfg.MODEL.MAX_LIMBS)
-        #         else:
-        #             parameters += [{'params': [param]}]
-        #             self.lr_scale.append(1.)
-        #         print (name, self.lr_scale[-1])
-        # self.optimizer = optim.Adam(
-        #     parameters, lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
-        # )
+        if not MODEL.MLP.ANNEAL_HN_LR:
+            self.optimizer = optim.Adam(
+                self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
+            )
+            self.lr_scale = [1. for _ in self.optimizer.param_groups]
+        else:
+            # reduce the learning rate for HN in MLP
+            parameters, self.lr_scale = [], []
+            if cfg.MODEL.TYPE == 'mlp' and cfg.MODEL.MLP.HN_INPUT:
+                for name, param in self.actor_critic.named_parameters():
+                    if 'context_encoder_for_input' in name or 'hnet_input' in name:
+                        parameters += [{'params': [param], 'lr': cfg.PPO.BASE_LR}]
+                        self.lr_scale.append(1. / cfg.MODEL.MAX_LIMBS)
+                    else:
+                        parameters += [{'params': [param]}]
+                        self.lr_scale.append(1.)
+                    print (name, self.lr_scale[-1])
+            self.optimizer = optim.Adam(
+                parameters, lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
+            )
 
         self.train_meter = TrainMeter()
         self.writer = SummaryWriter(log_dir=os.path.join(cfg.OUT_DIR, "tensorboard"))
@@ -105,6 +108,8 @@ class PPO:
         init_context = obs['context'][0].clone()
         
         # old_values = self.agent.ac.v_net.context_embed.bias.detach().clone()
+
+        self.grad_record = defaultdict(list)
 
         for cur_iter in range(cfg.PPO.MAX_ITERS):
 
@@ -234,10 +239,25 @@ class PPO:
                 loss += -ent * cfg.PPO.ENTROPY_COEF
                 loss.backward()
 
+                # check gradient
+                # if i == 0 and j == 0:
+                #     for name, weight in self.actor_critic.named_parameters():
+                #         if weight.grad is None:
+                #             continue
+                #         if name.split('.')[-1] == 'bias':
+                #             continue
+                #         grad = weight.grad.cpu().numpy()
+                #         self.grad_record[name].append([grad.mean(), grad.std()])
+                #         print (f'{name}: mean: {grad.mean()}, std: {grad.std()}')
+                #     with open('grad_record.pkl', 'wb') as f:
+                #         pickle.dump(self.grad_record, f)
+
                 # Log training stats
                 norm = nn.utils.clip_grad_norm_(
                     self.actor_critic.parameters(), cfg.PPO.MAX_GRAD_NORM
                 )
+                # if i == 0 and j == 0:
+                #     print (norm)
                 # print (f'epoch {i}, batch {j}, gradient norm: {norm}, approx_kl: {approx_kl}')
                 self.train_meter.add_train_stat("grad_norm", norm.item())
 

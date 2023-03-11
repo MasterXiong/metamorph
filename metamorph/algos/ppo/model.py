@@ -146,6 +146,10 @@ class MLPModel(nn.Module):
         else:
             hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
             self.hidden_layers = tu.make_mlp_default(hidden_dims)
+        
+        if self.model_args.NORM == 'BN':
+            # TODO: consider hfield input
+            self.batch_norm = nn.BatchNorm1d(self.model_args.HIDDEN_DIM)
 
     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, dropout_mask=None, unimal_ids=None):
 
@@ -157,6 +161,9 @@ class MLPModel(nn.Module):
             # print (obs[0, obs_mask[0], :6])
             input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
             input_bias = self.hnet_input_bias(context_embedding)
+            if self.model_args.SQUASH_HN_OUTPUT:
+                input_weight = F.tanh(input_weight)
+                input_bias = F.tanh(input_bias)
             # self.input_weight = input_weight.detach().clone()
             embedding = (obs[:, :, :, None] * input_weight).sum(dim=-2) + input_bias
             # setting zero-padding limbs' values to 0
@@ -172,15 +179,18 @@ class MLPModel(nn.Module):
                     embedding = embedding.sum(dim=1)
                 else:
                     # scale with the number of existing limbs
-                    embedding = embedding.sum(dim=1) * self.seq_len / (self.seq_len - obs_mask.float().sum(dim=1))[:, None]
+                    embedding = embedding.sum(dim=1) / (self.seq_len - obs_mask.float().sum(dim=1))[:, None]
                 embedding = F.relu(embedding)
             else:
+                if self.model_args.NORM == 'BN':
+                    embedding = self.batch_norm(embedding)
                 embedding = F.relu(embedding)
                 if self.model_args.AGG_FUNCTION == 'sum':
                     embedding = embedding.sum(dim=1)
                 else:
                     # scale with the number of existing limbs
-                    embedding = embedding.sum(dim=1) * self.seq_len / (self.seq_len - obs_mask.float().sum(dim=1))[:, None]
+                    embedding = embedding.sum(dim=1) / (self.seq_len - obs_mask.float().sum(dim=1))[:, None]
+                    # embedding = embedding.sum(dim=1) * self.seq_len / (self.seq_len - obs_mask.float().sum(dim=1))[:, None]
             # self.hidden_activation = embedding.detach().clone()
         elif self.model_args.SHARE_INPUT:
             obs = obs.reshape(batch_size, self.seq_len, -1)
