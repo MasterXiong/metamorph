@@ -427,16 +427,16 @@ if __name__ == '__main__':
 
     # classify_train_test_context()
 
-    # example command: python tools/evaluate.py --policy_path test --test_folder kinematics --task FT
+    # example command: python tools/evaluate.py --policy_path ft_baseline_KL_5_wo_PE+dropout --test_folder kinematics --seed 1409
     parser = argparse.ArgumentParser(description="Train a RL agent")
-    parser.add_argument("--policy_path", required=True, type=str)
+    parser.add_argument("--policy_path", default=None, type=str)
     parser.add_argument("--policy_name", default='Unimal-v0', type=str)
     parser.add_argument("--terminate_on_fall", action="store_true")
     parser.add_argument("--deterministic", action="store_true")
     parser.add_argument("--seed", default=None, type=int)
     # which folder used for evaluation
     parser.add_argument("--test_folder", default='test', type=str)
-    parser.add_argument("--task", required=True, type=str)
+    parser.add_argument("--task", default=None, type=str)
     # parser.add_argument("--suffix", default=None, type=str)
     args = parser.parse_args()
 
@@ -477,6 +477,11 @@ if __name__ == '__main__':
         'exploration_HN_KL_3_wo_PE+dropout', 
     ]
 
+    if args.policy_path is None:
+        eval_folders = folders[args.task]
+    else:
+        eval_folders = [args.policy_path]
+
     # example command: python tools/evaluate.py --policy_path best_models/ft_HN+FA_KL_5_wo_PE+dropout --test_folder dynamics
     # example command: python tools/evaluate.py --seed 1409 --policy_path output/log_fix_attention_wo_PE --terminate_on_fall --deterministic
     suffix = []
@@ -497,7 +502,7 @@ if __name__ == '__main__':
     else:
         seeds = ['1409', '1410', '1411']
 
-    for folder in folders[args.task]:
+    for folder in eval_folders:
         policy_path = f'best_models/{folder}'
         for seed in seeds:
             model_path = os.path.join(policy_path, seed, args.policy_name + '.pt')
