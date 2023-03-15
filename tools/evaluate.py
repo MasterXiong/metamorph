@@ -103,7 +103,47 @@ def evaluate(policy, env, agent):
         #     plt.hist(x[x != 0], bins=100)
         #     plt.savefig(cfg.OUT_DIR + f'/obs_dist_{agent}_{t}.png')
         #     plt.close()
-        _, act, _, _, _ = policy.act(obs, return_attention=False)
+        # _, act, _, _, _ = policy.act(obs, return_attention=True, compute_val=True)
+        _, act, _, _, _ = policy.act(obs, return_attention=False, compute_val=False)
+        # plt.figure(figsize=(16, 9))
+        # plt.subplot(2, 2, 1)
+        # v_embed_weight = policy.ac.v_net.HN_embed_weight[:, 0].detach().cpu().numpy().ravel()
+        # plt.hist(v_embed_weight, bins=100)
+        # plt.title(f'v net embed weight: mean={v_embed_weight.mean():.2f}, std={v_embed_weight.std():.2f}')
+        # plt.subplot(2, 2, 2)
+        # v_decoder_weight = policy.ac.v_net.HN_decoder_weight[:, 0].detach().cpu().numpy().ravel()
+        # plt.hist(v_decoder_weight, bins=100)
+        # plt.title(f'v net decoder weight: mean={v_decoder_weight.mean():.2f}, std={v_decoder_weight.std():.2f}')
+        # plt.subplot(2, 2, 3)
+        # mu_embed_weight = policy.ac.mu_net.HN_embed_weight[:, 0].detach().cpu().numpy().ravel()
+        # plt.hist(mu_embed_weight, bins=100)
+        # plt.title(f'mu net embed weight: mean={mu_embed_weight.mean():.2f}, std={mu_embed_weight.std():.2f}')
+        # plt.subplot(2, 2, 4)
+        # mu_decoder_weight = policy.ac.mu_net.HN_decoder_weight[:, 0].detach().cpu().numpy().ravel()
+        # plt.hist(mu_decoder_weight, bins=100)
+        # plt.title(f'mu net decoder weight: mean={mu_decoder_weight.mean():.2f}, std={mu_decoder_weight.std():.2f}')
+        # plt.savefig(f'figures/HN_weight_check/HN_wo_scaling_{agent}.png')
+        # plt.close()
+        # v_attn_map = policy.v_attention_maps
+        # mu_attn_map = policy.mu_attention_maps
+        # print ('value attention map')
+        # print (torch.stack([m[0, :6, :6] for m in v_attn_map]).mean(0))
+        # # for i in range(5):
+        #     # print (v_attn_map[i][0, :6, :6])
+        # print ('action attention map')
+        # print (torch.stack([m[0, :6, :6] for m in mu_attn_map]).mean(0))
+        # for i in range(5):
+            # print (mu_attn_map[i][0, :6, :6])
+        # plt.figure()
+        # for i in range(5):
+        #     plt.subplot(2, 5, i + 1)
+        #     plt.imshow(v_attn_map[i][0].detach().cpu().numpy())
+        # for i in range(5):
+        #     plt.subplot(2, 5, i + 6)
+        #     plt.imshow(mu_attn_map[i][0].detach().cpu().numpy())
+        # plt.savefig(f'figures/attn_weight/{agent}.png')
+        # plt.close()
+        # break
         obs, reward, done, infos = env.step(act)
         # for i in range(5):
             # attention_curve[i].append(policy.v_attention_maps[i].cpu().numpy())
@@ -250,7 +290,7 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
 
     test_agents = [x.split('.')[0] for x in os.listdir(f'{agent_path}/xml')]
 
-    cfg.merge_from_file('./configs/ft.yaml')
+    print (policy_folder)
     cfg.merge_from_file(f'{policy_folder}/config.yaml')
     cfg.PPO.CHECKPOINT_PATH = model_path
     cfg.ENV.WALKERS = []
@@ -259,12 +299,33 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
     # do not include terminating on falling during evaluation
     cfg.TERMINATE_ON_FALL = terminate_on_fall
     cfg.DETERMINISTIC = deterministic
-    cfg.PPO.NUM_ENVS = 64
+    cfg.PPO.NUM_ENVS = 32
     set_cfg_options()
     ppo_trainer = PPO()
     policy = ppo_trainer.agent
     # change to eval mode as we have dropout in the model
     policy.ac.eval()
+
+    # plt.figure(figsize=(16, 9))
+    # plt.subplot(2, 2, 1)
+    # v_embed_weight = policy.ac.v_net.limb_embed.weight.data.detach().cpu().numpy().ravel()
+    # plt.hist(v_embed_weight, bins=100)
+    # plt.title(f'v net embed weight: mean={v_embed_weight.mean():.2f}, std={v_embed_weight.std():.2f}')
+    # plt.subplot(2, 2, 2)
+    # v_decoder_weight = policy.ac.v_net.decoder[-1].weight.data.detach().cpu().numpy().ravel()
+    # plt.hist(v_decoder_weight, bins=100)
+    # plt.title(f'v net decoder weight: mean={v_decoder_weight.mean():.2f}, std={v_decoder_weight.std():.2f}')
+    # plt.subplot(2, 2, 3)
+    # mu_embed_weight = policy.ac.mu_net.limb_embed.weight.data.detach().cpu().numpy().ravel()
+    # plt.hist(mu_embed_weight, bins=100)
+    # plt.title(f'mu net embed weight: mean={mu_embed_weight.mean():.2f}, std={mu_embed_weight.std():.2f}')
+    # plt.subplot(2, 2, 4)
+    # mu_decoder_weight = policy.ac.mu_net.decoder[-1].weight.data.detach().cpu().numpy().ravel()
+    # plt.hist(mu_decoder_weight, bins=100)
+    # plt.title(f'mu net decoder weight: mean={mu_decoder_weight.mean():.2f}, std={mu_decoder_weight.std():.2f}')
+    # plt.savefig(f'figures/HN_weight_check/baseline.png')
+    # plt.close()
+    # return
 
     eval_result = {}
     ood_list = np.zeros(len(test_agents))
@@ -277,12 +338,19 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
         output_name = f'{output_name}_{suffix}'
     for i, agent in enumerate(test_agents):
         # start = time.time()
+        # with open(f'{cfg.ENV.WALKER_DIR}/metadata/{agent}.json', 'r') as f:
+        #     data = json.load(f)
+        # if data['num_limbs'] > 5:
+        #     continue
+        # else:
+        #     n = data['num_limbs']
+        #     print (f'{agent} has {n} limbs')
         envs = make_vec_envs(xml_file=agent, training=False, norm_rew=False, render_policy=True)
         set_ob_rms(envs, get_ob_rms(ppo_trainer.envs))
         episode_return, ood_ratio = evaluate(policy, envs, agent)
         envs.close()
-        print (agent, f'{episode_return.mean():.2f} +- {episode_return.std():.2f}')
-        eval_result[agent] = episode_return
+        print (agent, f'{episode_return.mean():.2f} +- {episode_return.std():.2f}', f'OOD ratio: {ood_ratio}')
+        eval_result[agent] = [episode_return, ood_ratio]
         ood_list[i] = ood_ratio
         avg_score.append(np.array(episode_return).mean())
         with open(f'eval/{output_name}.pkl', 'wb') as f:
@@ -359,31 +427,100 @@ if __name__ == '__main__':
 
     # classify_train_test_context()
 
+    # example command: python tools/evaluate.py --policy_path test --test_folder kinematics --task FT
     parser = argparse.ArgumentParser(description="Train a RL agent")
     parser.add_argument("--policy_path", required=True, type=str)
     parser.add_argument("--policy_name", default='Unimal-v0', type=str)
     parser.add_argument("--terminate_on_fall", action="store_true")
     parser.add_argument("--deterministic", action="store_true")
+    parser.add_argument("--seed", default=None, type=int)
+    # which folder used for evaluation
+    parser.add_argument("--test_folder", default='test', type=str)
+    parser.add_argument("--task", required=True, type=str)
     # parser.add_argument("--suffix", default=None, type=str)
     args = parser.parse_args()
-    
-    # example command: python tools/evaluate.py --policy_path output/log_fix_attention_wo_PE/1409 --terminate_on_fall --deterministic
-    model_path = os.path.join(args.policy_path, args.policy_name + '.pt')
+
+    folders = {}
+    folders['FT'] = [
+        'ft_baseline_KL_5_wo_PE+dropout', 
+        'ft_HN+FA_KL_5_wo_PE+dropout', 
+        'ft_baseline', 
+        'ft_FA_KL_5_wo_PE+dropout', 
+        'ft_HN_KL_5_wo_PE+dropout', 
+    ]
+    folders['VT'] = [
+        'csr_200M_baseline_KL_3_wo_PE+dropout', 
+        'csr_200M_HN+FA_KL_3_wo_PE+dropout', 
+        'csr_200M_baseline', 
+        'csr_200M_FA_KL_3_wo_PE+dropout', 
+        'csr_200M_HN_KL_3_wo_PE+dropout', 
+    ]
+    folders['Obstacles'] = [
+        'obstacle_200M_baseline_KL_3_wo_PE+dropout', 
+        'obstacle_200M_HN+FA_KL_3_wo_PE+dropout', 
+        'obstacle_200M_baseline', 
+        'obstacle_200M_FA_KL_3_wo_PE+dropout', 
+        'obstacle_200M_HN_KL_3_wo_PE+dropout', 
+    ]
+    folders['Incline'] = [
+        'incline_baseline_KL_3_wo_PE+dropout', 
+        'incline_HN+FA_KL_5_wo_PE+dropout', 
+        'incline_baseline', 
+        'incline_FA_KL_5_wo_PE+dropout', 
+        'incline_HN_KL_5_wo_PE+dropout', 
+    ]
+    folders['Exploration'] = [
+        'exploration_baseline_KL_3_wo_PE+dropout', 
+        'exploration_HN+FA_KL_3_wo_PE+dropout', 
+        'exploration_baseline', 
+        'exploration_FA_KL_3_wo_PE+dropout', 
+        'exploration_HN_KL_3_wo_PE+dropout', 
+    ]
+
+    # example command: python tools/evaluate.py --policy_path best_models/ft_HN+FA_KL_5_wo_PE+dropout --test_folder dynamics
+    # example command: python tools/evaluate.py --seed 1409 --policy_path output/log_fix_attention_wo_PE --terminate_on_fall --deterministic
     suffix = []
     if args.terminate_on_fall:
         suffix.append('terminate_on_fall')
     if args.deterministic:
         suffix.append('deterministic')
+    if args.test_folder != 'test':
+        suffix.append(args.test_folder)
     if len(suffix) == 0:
         suffix = None
     else:
         suffix = '_'.join(suffix)
-    evaluate_model(model_path, 'unimals_100/test', args.policy_path, suffix=suffix, terminate_on_fall=args.terminate_on_fall, deterministic=args.deterministic)
+    print (suffix)
+
+    if args.seed is not None:
+        seeds = [str(args.seed)]
+    else:
+        seeds = ['1409', '1410', '1411']
+
+    for folder in folders[args.task]:
+        policy_path = f'best_models/{folder}'
+        for seed in seeds:
+            model_path = os.path.join(policy_path, seed, args.policy_name + '.pt')
+            evaluate_model(model_path, f'unimals_100/{args.test_folder}', os.path.join(policy_path, seed), suffix=suffix, terminate_on_fall=args.terminate_on_fall, deterministic=args.deterministic)
+
+
+    # if args.seed is not None:
+    #     seeds = [str(args.seed)]
+    # else:
+    #     seeds = os.listdir(args.policy_path)
+    # for seed in seeds:
+    #     # for idx in range(100, 1300, 100):
+    #     #     model_path = os.path.join(args.policy_path, seed, f'checkpoint_{idx}.pt')
+    #     #     suffix = str(idx)
+    #     #     evaluate_model(model_path, 'unimals_100/test', os.path.join(args.policy_path, seed), suffix=suffix, terminate_on_fall=args.terminate_on_fall, deterministic=args.deterministic)
+    #     model_path = os.path.join(args.policy_path, seed, args.policy_name + '.pt')
+    #     evaluate_model(model_path, f'unimals_100/{args.test_folder}', os.path.join(args.policy_path, seed), suffix=suffix, terminate_on_fall=args.terminate_on_fall, deterministic=args.deterministic)
+        # evaluate_model(model_path, 'unimals_100/train', os.path.join(args.policy_path, seed), suffix=suffix, terminate_on_fall=args.terminate_on_fall, deterministic=args.deterministic)
 
     # record videos of zero-shot transfer to test robots
-    # folder = 'log_baseline_wo_PE'
-    # model_path = f'output/{folder}/1409/Unimal-v0.pt'
-    # config_path = f'output/{folder}/1409/config.yaml'
+    # folder = args.policy_path
+    # model_path = f'{folder}/Unimal-v0.pt'
+    # config_path = f'{folder}/config.yaml'
     # for agent in os.listdir('unimals_single_task'):
     #     test_folder = os.path.join('unimals_single_task', agent)
     #     output_path = f'output/video/{folder}/{agent}'
