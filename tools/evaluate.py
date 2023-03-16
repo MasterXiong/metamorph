@@ -327,7 +327,6 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
     # plt.close()
     # return
 
-    eval_result = {}
     ood_list = np.zeros(len(test_agents))
     avg_score = []
     if len(policy_folder.split('/')) == 3:
@@ -336,7 +335,16 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
         output_name = policy_folder.split('/')[1]
     if suffix is not None:
         output_name = f'{output_name}_{suffix}'
+
+    if os.path.exists(f'eval/{output_name}.pkl'):
+        with open(f'eval/{output_name}.pkl', 'rb') as f:
+            eval_result = pickle.load(f)
+    else:
+        eval_result = {}
+
     for i, agent in enumerate(test_agents):
+        if agent in eval_result:
+            continue
         # start = time.time()
         # with open(f'{cfg.ENV.WALKER_DIR}/metadata/{agent}.json', 'r') as f:
         #     data = json.load(f)
@@ -427,7 +435,7 @@ if __name__ == '__main__':
 
     # classify_train_test_context()
 
-    # example command: python tools/evaluate.py --policy_path ft_baseline_KL_5_wo_PE+dropout --test_folder kinematics --seed 1409
+    # example command: python tools/evaluate.py --policy_path exploration_HN+FA_KL_3_wo_PE+dropout --test_folder dynamics --seed 1409
     parser = argparse.ArgumentParser(description="Train a RL agent")
     parser.add_argument("--policy_path", default=None, type=str)
     parser.add_argument("--policy_name", default='Unimal-v0', type=str)
