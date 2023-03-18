@@ -75,6 +75,16 @@ def maybe_infer_walkers():
     ]
 
 
+def handle_errors(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except:
+            pass
+    return wrapper
+
+
+@handle_errors
 def evaluate(policy, env, agent):
     episode_return = np.zeros(cfg.PPO.NUM_ENVS)
     not_done = np.ones(cfg.PPO.NUM_ENVS)
@@ -355,10 +365,7 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
         #     print (f'{agent} has {n} limbs')
         envs = make_vec_envs(xml_file=agent, training=False, norm_rew=False, render_policy=True)
         set_ob_rms(envs, get_ob_rms(ppo_trainer.envs))
-        try:
-            episode_return, ood_ratio = evaluate(policy, envs, agent)
-        except:
-            continue
+        episode_return, ood_ratio = evaluate(policy, envs, agent)
         envs.close()
         print (agent, f'{episode_return.mean():.2f} +- {episode_return.std():.2f}', f'OOD ratio: {ood_ratio}')
         eval_result[agent] = [episode_return, ood_ratio]
