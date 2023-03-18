@@ -193,7 +193,10 @@ class Agent:
         traversals = swat.getTraversal(parents)
 
         children = swat.getChildrens(parents)
-        relational_features = swat.getGraphDict(parents)
+        if cfg.MODEL.TRANSFORMER.USE_SWAT_RE:
+            relational_features = swat.getGraphDict(parents)
+        else:
+            relational_features = np.zeros([cfg.MODEL.MAX_LIMBS, cfg.MODEL.MAX_LIMBS, 3])
         # generate node feature sequence from root to each node
         self.tree_path = [[] for _ in range(len(children))]
         for i in range(len(self.tree_path)):

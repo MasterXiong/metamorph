@@ -355,7 +355,10 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
         #     print (f'{agent} has {n} limbs')
         envs = make_vec_envs(xml_file=agent, training=False, norm_rew=False, render_policy=True)
         set_ob_rms(envs, get_ob_rms(ppo_trainer.envs))
-        episode_return, ood_ratio = evaluate(policy, envs, agent)
+        try:
+            episode_return, ood_ratio = evaluate(policy, envs, agent)
+        except:
+            continue
         envs.close()
         print (agent, f'{episode_return.mean():.2f} +- {episode_return.std():.2f}', f'OOD ratio: {ood_ratio}')
         eval_result[agent] = [episode_return, ood_ratio]
@@ -435,7 +438,7 @@ if __name__ == '__main__':
 
     # classify_train_test_context()
 
-    # example command: python tools/evaluate.py --policy_path exploration_HN+FA_KL_3_wo_PE+dropout --test_folder dynamics --seed 1409
+    # example command: python tools/evaluate.py --policy_path csr_200M_baseline --test_folder kinematics --seed 1409
     parser = argparse.ArgumentParser(description="Train a RL agent")
     parser.add_argument("--policy_path", default=None, type=str)
     parser.add_argument("--policy_name", default='Unimal-v0', type=str)
