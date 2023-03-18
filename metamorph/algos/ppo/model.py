@@ -639,6 +639,9 @@ class TransformerModel(nn.Module):
         if self.model_args.USE_CONNECTIVITY_IN_ATTENTION:
             attn_mask = torch.cat([morphology_info['connectivity'][:, :, :, i] for i in range(4)], 0)
             src_key_padding_mask = None
+        elif self.model_args.USE_SWAT_RE:
+            attn_mask = morphology_info['SWAT_RE']
+            src_key_padding_mask = None            
         else:
             attn_mask = None
             src_key_padding_mask = obs_mask
@@ -856,8 +859,7 @@ class ActorCritic(nn.Module):
             morphology_info['traversals'] = obs_dict['traversals'].permute(1, 0, 2).long()
         if cfg.MODEL.TRANSFORMER.USE_SWAT_RE:
             # (batch_size, seq_len, traversal_num) ->(seq_len, batch_size, traversal_num)
-            print (obs_dict['SWAT_RE'].size())
-            # morphology_info['traversals'] = obs_dict['SWAT_RE'].permute(1, 0, 2).long()
+            morphology_info['SWAT_RE'] = obs_dict['SWAT_RE']
         if cfg.MODEL.TRANSFORMER.RNN_CONTEXT:
             morphology_info['node_path_length'] = obs_dict['node_path_length']
             morphology_info['node_path_mask'] = obs_dict['node_path_mask'].bool()

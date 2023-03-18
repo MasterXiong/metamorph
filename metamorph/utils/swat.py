@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 from metamorph.config import cfg
 
@@ -110,31 +111,42 @@ def PPR(transition, start=None, damping=0.9, max_iter=1000):
     return ppr  # (N, 1)
 
 
+def getDistance(adjacency):
+    def bfs(adjacency, root):
+        dist = [-1] * adjacency.shape[0]
+        dist[root] = 0
+        Q = [(root, 0)]
+        while len(Q):
+            v, d = Q[0]; Q = Q[1:]
+            for u, is_adj in enumerate(adjacency[v]):
+                if is_adj and dist[u] == -1:
+                    dist[u] = d + 1
+                    Q.append((u, d+1))
+        return dist
+
+    return np.array([bfs(adjacency, i) for i in range(len(adjacency))]) / len(adjacency)
+
+
 def getGraphDict(parents, trav_types=[], rel_types=[], self_loop=True, ppr_damping=0.9, device=None):
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     if len(parents) == 1:
         return {'parents': parents}
 
     adjacency = getAdjacency(parents)
     transition = getGraphTransition(adjacency, self_loop)
-    mask = adjacency + torch.eye(len(parents))
-    mask = torch.zeros_like(mask).masked_fill(mask==0, -np.inf)
     degree = adjacency.sum(1)
     laplacian = torch.diag(degree) - adjacency
     sym_lap = torch.diag(degree**-0.5) @ laplacian @ torch.diag(degree**-0.5)
     distance = torch.from_numpy(getDistance(adjacency)).float()
     graph_dict = {
         'parents': parents,
-        'traversals': getTraversal(parents, trav_types, device),
         'ppr': torch.cat([
             PPR(transition, i, ppr_damping)
-            for i in range(len(parents))], dim=1).T.to(device),
-        'transition': transition.to(device),
-        'adjacency': adjacency.to(device),
-        'distance': distance.to(device),
-        'sym_lap': sym_lap.to(device),
-        'mask': mask.to(device),
+            for i in range(len(parents))], dim=1).T,
+        'transition': transition,
+        'adjacency': adjacency,
+        'distance': distance,
+        'sym_lap': sym_lap,
     }
     # TODO: define relation (PPR, Laplacian, ...)
     graph_dict['relation'] = torch.stack(
@@ -145,4 +157,7 @@ def getGraphDict(parents, trav_types=[], rel_types=[], self_loop=True, ppr_dampi
                         ], dim=2)
     # graph_dict['relation'] = graph_dict['ppr'].unsqueeze(-1)
     # graph_dict['ppr'][i] represents PPR(i, j) for all j (N,)
-    return graph_dict['relation']
+    relational_encoding = np.zeros([cfg.MODEL.MAX_LIMBS, cfg.MODEL.MAX_LIMBS, graph_dict['relation'].size(-1)])
+    limb_num = graph_dict['relation'].size(0)
+    relational_encoding[:limb_num, :limb_num, :] = graph_dict['relation'].numpy()
+    return relational_encoding

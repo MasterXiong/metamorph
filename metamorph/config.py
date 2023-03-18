@@ -374,6 +374,7 @@ _C.MODEL.OBS_TYPES = [
     "traversals", 
     'node_path_length', 
     'node_path_mask', 
+    'SWAT_RE', 
 ]
 
 # Observations to normalize via VecNormalize

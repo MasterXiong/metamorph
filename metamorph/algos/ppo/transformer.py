@@ -111,6 +111,8 @@ class TransformerEncoderLayerResidual(nn.Module):
                 nn.ReLU(), 
                 nn.Linear(16, nhead), 
             )
+        if cfg.MODEL.TRANSFORMER.USE_SWAT_RE:
+            self.RE_encoder = nn.Linear(3, nhead)
 
         self.activation = _get_activation_fn(activation)
 
@@ -128,6 +130,9 @@ class TransformerEncoderLayerResidual(nn.Module):
             src_mask = self.connectivity_encoder(morphology_info['connectivity'])
             # (batch_size, seq_len, seq_len, num_head) -> (batch_size * num_head, seq_len, seq_len)
             # stack the embedding for each head in the first dimension
+            src_mask = torch.cat([src_mask[:, :, :, i] for i in range(src_mask.size(-1))], 0)
+        elif cfg.MODEL.TRANSFORMER.USE_SWAT_RE:
+            src_mask = self.RE_encoder(morphology_info['SWAT_RE'])
             src_mask = torch.cat([src_mask[:, :, :, i] for i in range(src_mask.size(-1))], 0)
 
         if context is not None:
