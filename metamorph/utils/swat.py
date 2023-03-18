@@ -67,3 +67,82 @@ def getTraversal(parents, traversal_types=cfg.MODEL.TRANSFORMER.TRAVERSALS):
         traversals.append(indices)
     traversals = np.stack(traversals, axis=1)
     return traversals
+
+
+def getAdjacency(parents):
+    """Compute adjacency matrix of given graph"""
+    N = len(parents)
+    childrens = getChildrens(parents)
+    adj = torch.zeros(N, N) # no self-loop
+    for i, children in enumerate(childrens):
+        for child in children:
+            adj[i][child] = 1
+            adj[child][i] = 1
+    return adj  # (N, N)
+
+
+def getGraphTransition(adjacency, self_loop=True):
+    """Compute random walker transition in the given graph"""
+    N = len(adjacency)
+    if self_loop:
+        adjacency = adjacency + torch.eye(N)
+    degree = 1 / adjacency.sum(1).reshape(-1, 1) # for normalization
+    transition = (adjacency * degree).T # (N, N)
+    return transition
+
+
+def PPR(transition, start=None, damping=0.9, max_iter=1000):
+    """Compute Personalized PageRank vector"""
+    N = transition.size(0)
+    start = torch.ones(N, 1) / N \
+            if start is None \
+            else torch.eye(N)[start].reshape(N, 1)
+    if damping == 1:
+        prev_ppr = torch.ones(N, 1) / N
+        for i in range(max_iter):
+            ppr = damping * transition @ prev_ppr + (1 - damping) * start
+            if ((ppr - prev_ppr).abs() < 1e-8).all():
+                break
+            prev_ppr = ppr
+    else:
+        inv = torch.inverse(torch.eye(N) - damping * transition)
+        ppr = (1 - damping) * inv @ start
+    return ppr  # (N, 1)
+
+
+def getGraphDict(parents, trav_types=[], rel_types=[], self_loop=True, ppr_damping=0.9, device=None):
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if len(parents) == 1:
+        return {'parents': parents}
+
+    adjacency = getAdjacency(parents)
+    transition = getGraphTransition(adjacency, self_loop)
+    mask = adjacency + torch.eye(len(parents))
+    mask = torch.zeros_like(mask).masked_fill(mask==0, -np.inf)
+    degree = adjacency.sum(1)
+    laplacian = torch.diag(degree) - adjacency
+    sym_lap = torch.diag(degree**-0.5) @ laplacian @ torch.diag(degree**-0.5)
+    distance = torch.from_numpy(getDistance(adjacency)).float()
+    graph_dict = {
+        'parents': parents,
+        'traversals': getTraversal(parents, trav_types, device),
+        'ppr': torch.cat([
+            PPR(transition, i, ppr_damping)
+            for i in range(len(parents))], dim=1).T.to(device),
+        'transition': transition.to(device),
+        'adjacency': adjacency.to(device),
+        'distance': distance.to(device),
+        'sym_lap': sym_lap.to(device),
+        'mask': mask.to(device),
+    }
+    # TODO: define relation (PPR, Laplacian, ...)
+    graph_dict['relation'] = torch.stack(
+                        [
+                            graph_dict['ppr'],
+                            graph_dict['sym_lap'],
+                            graph_dict['distance']
+                        ], dim=2)
+    # graph_dict['relation'] = graph_dict['ppr'].unsqueeze(-1)
+    # graph_dict['ppr'][i] represents PPR(i, j) for all j (N,)
+    return graph_dict['relation']

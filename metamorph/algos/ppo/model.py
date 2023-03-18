@@ -854,6 +854,10 @@ class ActorCritic(nn.Module):
         if cfg.MODEL.TRANSFORMER.USE_SWAT_PE:
             # (batch_size, seq_len, traversal_num) ->(seq_len, batch_size, traversal_num)
             morphology_info['traversals'] = obs_dict['traversals'].permute(1, 0, 2).long()
+        if cfg.MODEL.TRANSFORMER.USE_SWAT_RE:
+            # (batch_size, seq_len, traversal_num) ->(seq_len, batch_size, traversal_num)
+            print (obs_dict['SWAT_RE'].size())
+            # morphology_info['traversals'] = obs_dict['SWAT_RE'].permute(1, 0, 2).long()
         if cfg.MODEL.TRANSFORMER.RNN_CONTEXT:
             morphology_info['node_path_length'] = obs_dict['node_path_length']
             morphology_info['node_path_mask'] = obs_dict['node_path_mask'].bool()

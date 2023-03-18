@@ -136,7 +136,7 @@ class Agent:
         self.limb_btm_sites = [
             site for site in env.metadata["agent_sites"] if "limb/btm" in site
         ]
-        self.edges, self.connectivity, self.traversals, self.tree_PE, self.graph_PE = self._get_edges(sim)
+        self.edges, self.connectivity, self.traversals, self.tree_PE, self.graph_PE, self.SWAT_RE = self._get_edges(sim)
         env.metadata["num_limbs"] = len(self.agent_body_idxs)
         env.metadata["num_joints"] = len(sim.model.joint_names) - 1
         # Useful for attention map analysis
@@ -193,6 +193,7 @@ class Agent:
         traversals = swat.getTraversal(parents)
 
         children = swat.getChildrens(parents)
+        relational_features = swat.getGraphDict(parents)
         # generate node feature sequence from root to each node
         self.tree_path = [[] for _ in range(len(children))]
         for i in range(len(self.tree_path)):
@@ -256,7 +257,7 @@ class Agent:
         adjacency_matrix = adjacency_matrix[idx, :][:, idx]
         graph_PE = pe.create_graph_PE(adjacency_matrix, cfg.MODEL.TRANSFORMER.GRAPH_PE_DIM)
 
-        return np.vstack((joint_to, joint_from)).T.flatten(), connectivity, traversals, tree_PE, graph_PE
+        return np.vstack((joint_to, joint_from)).T.flatten(), connectivity, traversals, tree_PE, graph_PE, relational_features
 
     def get_context(self, sim):
         context_limb = {}
@@ -409,6 +410,7 @@ class Agent:
             'traversals': self.traversals, 
             'node_path_length': node_path_length, 
             'node_path_mask': node_path_mask, 
+            'SWAT_RE': self.SWAT_RE, 
         }
 
     def _add_fixed_cameras(self, worldbody):
