@@ -638,13 +638,11 @@ class TransformerModel(nn.Module):
         
         if self.model_args.USE_CONNECTIVITY_IN_ATTENTION:
             attn_mask = torch.cat([morphology_info['connectivity'][:, :, :, i] for i in range(4)], 0)
-            src_key_padding_mask = None
         elif self.model_args.USE_SWAT_RE:
             attn_mask = morphology_info['SWAT_RE']
-            src_key_padding_mask = None            
         else:
             attn_mask = None
-            src_key_padding_mask = obs_mask
+        src_key_padding_mask = obs_mask
 
         if return_attention:
             obs_embed_t, attention_maps = self.transformer_encoder.get_attention_maps(
