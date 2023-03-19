@@ -717,8 +717,11 @@ class SWATPEEncoder(nn.Module):
         super().__init__()
         self.seq_len = seq_len
         self.d_model = d_model
-        self.swat_pe = nn.ModuleList([nn.Embedding(seq_len, d_model) for _ in cfg.MODEL.TRANSFORMER.TRAVERSALS])
-        self.compress_layer = nn.Linear(len(cfg.MODEL.TRANSFORMER.TRAVERSALS) * d_model, d_model)
+        self.pe_dim = [d_model // len(cfg.MODEL.TRANSFORMER.TRAVERSALS) for _ in cfg.MODEL.TRANSFORMER.TRAVERSALS]
+        self.pe_dim[-1] = d_model - self.pe_dim[0] * (len(cfg.MODEL.TRANSFORMER.TRAVERSALS) - 1)
+        print (self.pe_dim)
+        self.swat_pe = nn.ModuleList([nn.Embedding(seq_len, dim) for dim in self.pe_dim])
+        # self.compress_layer = nn.Linear(len(cfg.MODEL.TRANSFORMER.TRAVERSALS) * d_model, d_model)
 
     def forward(self, x, indexes):
         """
@@ -732,7 +735,8 @@ class SWATPEEncoder(nn.Module):
             pe = self.swat_pe[i](idx)
             embeddings.append(pe)
         embeddings = torch.cat(embeddings, dim=-1)
-        x = x + self.compress_layer(embeddings)
+        # x = x + self.compress_layer(embeddings)
+        x = x + embeddings
         return x
 
 
