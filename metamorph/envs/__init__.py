@@ -12,4 +12,10 @@ register(
     max_episode_steps=1000,
 )
 
-CUSTOM_ENVS = ["Unimal-v0", "GeneralWalker2D-v0"]
+register(
+    id="Modular-v0",
+    entry_point="modular.ModularEnv:ModularEnv",
+    max_episode_steps=1000,
+)
+
+CUSTOM_ENVS = ["Unimal-v0", "GeneralWalker2D-v0", "Modular-v0"]

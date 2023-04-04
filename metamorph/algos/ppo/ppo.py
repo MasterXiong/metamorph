@@ -104,9 +104,7 @@ class PPO:
         print (type(obs), len(obs))
         for key in obs:
             print (key, obs[key].size())
-        
-        init_context = obs['context'][0].clone()
-        
+                
         # old_values = self.agent.ac.v_net.context_embed.bias.detach().clone()
 
         self.grad_record = defaultdict(list)

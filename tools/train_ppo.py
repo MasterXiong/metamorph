@@ -4,6 +4,8 @@ import sys
 
 import torch
 
+from gym.envs.registration import register
+
 from metamorph.algos.ppo.ppo import PPO
 from metamorph.config import cfg
 from metamorph.config import dump_cfg
@@ -19,28 +21,47 @@ def set_cfg_options():
 
 
 def calculate_max_limbs_joints():
-    if cfg.ENV_NAME != "Unimal-v0":
-        return
+    if cfg.ENV_NAME == "Unimal-v0":
 
-    num_joints, num_limbs = [], []
+        num_joints, num_limbs = [], []
 
-    metadata_paths = []
-    for agent in cfg.ENV.WALKERS:
-        metadata_paths.append(os.path.join(
-            cfg.ENV.WALKER_DIR, "metadata", "{}.json".format(agent)
-        ))
+        metadata_paths = []
+        for agent in cfg.ENV.WALKERS:
+            metadata_paths.append(os.path.join(
+                cfg.ENV.WALKER_DIR, "metadata", "{}.json".format(agent)
+            ))
 
-    for metadata_path in metadata_paths:
-        metadata = fu.load_json(metadata_path)
-        num_joints.append(metadata["dof"])
-        num_limbs.append(metadata["num_limbs"] + 1)
+        for metadata_path in metadata_paths:
+            metadata = fu.load_json(metadata_path)
+            num_joints.append(metadata["dof"])
+            num_limbs.append(metadata["num_limbs"] + 1)
 
-    # Add extra 1 for max_joints; needed for adding edge padding
-    cfg.MODEL.MAX_JOINTS = max(num_joints) + 1
-    cfg.MODEL.MAX_LIMBS = max(num_limbs) + 1
-    cfg.MODEL.MAX_JOINTS = 16
-    cfg.MODEL.MAX_LIMBS = 12
-    print (cfg.MODEL.MAX_JOINTS, cfg.MODEL.MAX_LIMBS)
+        # Add extra 1 for max_joints; needed for adding edge padding
+        cfg.MODEL.MAX_JOINTS = max(num_joints) + 1
+        cfg.MODEL.MAX_LIMBS = max(num_limbs) + 1
+        cfg.MODEL.MAX_JOINTS = 16
+        cfg.MODEL.MAX_LIMBS = 12
+        print (cfg.MODEL.MAX_JOINTS, cfg.MODEL.MAX_LIMBS)
+    
+    elif cfg.ENV_NAME == 'Modular-v0':
+
+        num_joints, num_limbs = [], []
+
+        metadata_paths = []
+        print (cfg.ENV.WALKERS)
+        for agent in cfg.ENV.WALKERS:
+            metadata_paths.append(os.path.join(
+                cfg.ENV.WALKER_DIR, "metadata", "{}.json".format(agent)
+            ))
+
+        for metadata_path in metadata_paths:
+            metadata = fu.load_json(metadata_path)
+            num_joints.append(metadata["dof"])
+            num_limbs.append(metadata["num_limbs"])
+
+        # Add extra 1 for max_joints; needed for adding edge padding
+        cfg.MODEL.MAX_LIMBS = max(num_limbs)
+        cfg.MODEL.MAX_JOINTS = cfg.MODEL.MAX_LIMBS
 
 
 def calculate_max_iters():
@@ -54,7 +75,7 @@ def calculate_max_iters():
 
 
 def maybe_infer_walkers():
-    if cfg.ENV_NAME != "Unimal-v0":
+    if cfg.ENV_NAME not in ["Unimal-v0", "Modular-v0"]:
         return
 
     # Only infer the walkers if this option was not specified
@@ -65,6 +86,34 @@ def maybe_infer_walkers():
         xml_file.split(".")[0]
         for xml_file in os.listdir(os.path.join(cfg.ENV.WALKER_DIR, "xml"))
     ]
+
+    if cfg.ENV_NAME == 'Modular-v0':
+        register_modular_envs()
+
+
+def register_modular_envs():
+    """register the MuJoCo envs with Gym and return the per-agent observation size and max action value (for modular policy training)"""
+    # register each env
+    for agent in cfg.ENV.WALKERS:
+        # create a copy of modular environment for custom xml model
+        # if not os.path.exists(os.path.join(ENV_DIR, "{}.py".format(env_name))):
+        #     # create a duplicate of gym environment file for each env (necessary for avoiding bug in gym)
+        #     copyfile(
+        #         BASE_MODULAR_ENV_PATH, "{}.py".format(os.path.join(ENV_DIR, env_name))
+        #     )
+        xml = os.path.join(cfg.ENV.WALKER_DIR, 'xml', agent + '.xml')
+        params = {"xml": os.path.abspath(xml)}
+        register(
+            id=f"{agent}-v0",
+            max_episode_steps=1000,
+            entry_point=f"modular.{agent}:make_env",
+            kwargs=params,
+        )
+    #     env = wrappers.IdentityWrapper(gym.make(f"{agent}-v0"))
+    #     # the following is the same for each env
+    #     agent_obs_size = env.agent_obs_size
+    #     max_action = env.max_action
+    # return agent_obs_size, max_action
 
 
 def get_hparams():

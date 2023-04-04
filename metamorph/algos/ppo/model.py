@@ -810,6 +810,12 @@ class ActorCritic(nn.Module):
             else:
                 self.mu_net = MLPModel(obs_space, cfg.MODEL.MAX_LIMBS * 2)
             self.num_actions = cfg.MODEL.MAX_LIMBS * 2
+        elif cfg.ENV_NAME == 'Modular-v0':
+            if cfg.MODEL.TYPE == 'transformer':
+                self.mu_net = TransformerModel(obs_space, 1)
+            else:
+                self.mu_net = MLPModel(obs_space, cfg.MODEL.MAX_LIMBS)
+            self.num_actions = cfg.MODEL.MAX_LIMBS
         else:
             raise ValueError("Unsupported ENV_NAME")
 

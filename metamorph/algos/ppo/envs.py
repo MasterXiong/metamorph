@@ -14,11 +14,16 @@ from metamorph.envs.vec_env.subproc_vec_env import SubprocVecEnv
 from metamorph.envs.vec_env.vec_normalize import VecNormalize
 from metamorph.envs.wrappers.multi_env_wrapper import MultiEnvWrapper
 
+from modular.wrappers import ModularObservationPadding, ModularActionPadding
+
 
 def make_env(env_id, seed, rank, xml_file=None):
     def _thunk():
         if env_id in CUSTOM_ENVS:
-            env = gym.make(env_id, agent_name=xml_file)
+            if env_id == 'Unimal-v0':
+                env = gym.make(env_id, agent_name=xml_file)
+            elif env_id == 'Modular-v0':
+                env = gym.make(f"{xml_file}-v0")
         else:
             env = gym.make(env_id)
         # Note this does not change the global seeds. It creates a numpy
@@ -77,9 +82,17 @@ def make_vec_envs(
         xml_file = cfg.ENV.WALKERS[0]
         print (xml_file)
         envs = []
-        for idx in range(num_env):
-            _env = make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file)()
-            envs.append(env_func_wrapper(MultiEnvWrapper(_env, idx)))
+        if cfg.ENV_NAME == 'Unimal-v0':
+            for idx in range(num_env):
+                _env = make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file)()
+                envs.append(env_func_wrapper(MultiEnvWrapper(_env, idx)))
+        elif cfg.ENV_NAME == 'Modular-v0':
+            for xml in cfg.ENV.WALKERS:
+                _env = make_env(cfg.ENV_NAME, seed, 0, xml_file=xml)()
+                envs.append(env_func_wrapper(_env))
+                _env = make_env(cfg.ENV_NAME, seed, 1, xml_file=xml)()
+                envs.append(env_func_wrapper(_env))
+            cfg.PPO.NUM_ENVS = len(envs)
         print (_env)
 
     #if save_video or render_policy:
