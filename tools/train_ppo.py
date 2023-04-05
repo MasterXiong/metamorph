@@ -44,24 +44,34 @@ def calculate_max_limbs_joints():
         print (cfg.MODEL.MAX_JOINTS, cfg.MODEL.MAX_LIMBS)
     
     elif cfg.ENV_NAME == 'Modular-v0':
+        # hardcode this part
+        if 'hopper' in cfg.ENV.WALKER_DIR:
+            cfg.MODEL.MAX_LIMBS = 5
+            cfg.MODEL.MAX_JOINTS = 5
+        if 'walker' in cfg.ENV.WALKER_DIR:
+            cfg.MODEL.MAX_LIMBS = 7
+            cfg.MODEL.MAX_JOINTS = 7
+        if 'humanoid' in cfg.ENV.WALKER_DIR:
+            cfg.MODEL.MAX_LIMBS = 9
+            cfg.MODEL.MAX_JOINTS = 9
 
-        num_joints, num_limbs = [], []
+        # num_joints, num_limbs = [], []
 
-        metadata_paths = []
-        print (cfg.ENV.WALKERS)
-        for agent in cfg.ENV.WALKERS:
-            metadata_paths.append(os.path.join(
-                cfg.ENV.WALKER_DIR, "metadata", "{}.json".format(agent)
-            ))
+        # metadata_paths = []
+        # print (cfg.ENV.WALKERS)
+        # for agent in cfg.ENV.WALKERS:
+        #     metadata_paths.append(os.path.join(
+        #         cfg.ENV.WALKER_DIR, "metadata", "{}.json".format(agent)
+        #     ))
 
-        for metadata_path in metadata_paths:
-            metadata = fu.load_json(metadata_path)
-            num_joints.append(metadata["dof"])
-            num_limbs.append(metadata["num_limbs"])
+        # for metadata_path in metadata_paths:
+        #     metadata = fu.load_json(metadata_path)
+        #     num_joints.append(metadata["dof"])
+        #     num_limbs.append(metadata["num_limbs"])
 
-        # Add extra 1 for max_joints; needed for adding edge padding
-        cfg.MODEL.MAX_LIMBS = max(num_limbs)
-        cfg.MODEL.MAX_JOINTS = cfg.MODEL.MAX_LIMBS
+        # # Add extra 1 for max_joints; needed for adding edge padding
+        # cfg.MODEL.MAX_LIMBS = max(num_limbs)
+        # cfg.MODEL.MAX_JOINTS = cfg.MODEL.MAX_LIMBS
 
 
 def calculate_max_iters():

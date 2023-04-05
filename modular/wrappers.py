@@ -63,7 +63,42 @@ class ModularObservationPadding(gym.ObservationWrapper):
         return self.observation(observation)
 
 
+class ConsistentModularObservationPadding(ModularObservationPadding):
+
+    def __init__(self, env):
+
+        super().__init__(env)
+
+        agent_limb_names = env.agent_limb_names
+        full_limb_names = env.full_limb_names
+        self.limb_index = [full_limb_names.index(name) for name in agent_limb_names]
+
+        self.obs_padding_mask = np.asarray([True] * self.max_limbs)
+        self.obs_padding_mask[self.limb_index] = False
+
+        self.act_padding_mask = np.asarray([True] * self.max_limbs)
+        self.act_padding_mask[self.limb_index] = False
+        # torso has no action
+        self.act_padding_mask[0] = True
+
+    def observation(self, obs):
+
+        padded_obs = np.zeros([self.max_limbs, self.limb_obs_size])
+        padded_obs[self.limb_index] = obs.reshape(-1, self.limb_obs_size)
+        padded_obs = padded_obs.ravel()
+
+        obs_dict = dict()
+        obs_dict["proprioceptive"] = padded_obs
+        obs_dict["context"] = padded_obs
+        obs_dict["obs_padding_mask"] = self.obs_padding_mask
+        obs_dict["act_padding_mask"] = self.act_padding_mask
+        obs_dict["edges"] = np.zeros(self.max_joints * 2)
+
+        return obs_dict
+
+
 class ModularActionPadding(gym.ActionWrapper):
+
     def __init__(self, env):
         super().__init__(env)
         self.max_limbs = cfg.MODEL.MAX_LIMBS
@@ -73,10 +108,39 @@ class ModularActionPadding(gym.ActionWrapper):
         self.act_padding_mask = np.asarray(act_padding_mask)
 
     def _update_action_space(self):
-        num_pads = self.max_limbs - self.metadata["num_limbs"] - 1
+        num_pads = self.max_limbs - self.metadata["num_limbs"]
         low, high = self.action_space.low, self.action_space.high
         low = np.concatenate([[-1.], low, [-1.] * num_pads]).astype(np.float32)
         high = np.concatenate([[-1.], high, [-1.] * num_pads]).astype(np.float32)
+        self.action_space = spaces.Box(low=low, high=high, dtype=np.float32)
+
+    def action(self, action):
+        new_action = action[~self.act_padding_mask]
+        return new_action
+
+
+class ConsistentModularActionPadding(gym.ActionWrapper):
+
+    def __init__(self, env):
+        super().__init__(env)
+        self.max_limbs = cfg.MODEL.MAX_LIMBS
+        self.max_joints = cfg.MODEL.MAX_LIMBS
+
+        agent_limb_names = env.agent_limb_names
+        full_limb_names = env.full_limb_names
+        self.joint_index = [full_limb_names.index(name) for name in agent_limb_names]
+        # torso has no joint action
+        self.joint_index.remove(0)
+
+        self._update_action_space()
+
+        self.act_padding_mask = np.asarray([True] * self.max_limbs)
+        self.act_padding_mask[self.joint_index] = False
+
+    def _update_action_space(self):
+        low = -1. * np.ones(self.max_limbs, dtype=np.float32)
+        high = -1. * np.ones(self.max_limbs, dtype=np.float32)
+        high[self.joint_index] = 1.
         self.action_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
     def action(self, action):

@@ -12,46 +12,22 @@ class ModularEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         mujoco_env.MujocoEnv.__init__(self, xml, 4)
         utils.EzPickle.__init__(self)
 
-        self.metadata['num_limbs'] = 4
-        self.metadata['num_joints'] = 3
+        self.metadata['num_limbs'] = 7
+        self.metadata['num_joints'] = 6
 
         self.agent_limb_names = self.model.body_names[1:]
-        self.full_limb_names = ['torso', 'thigh', 'leg', 'lower_leg', 'foot']
-        print (self.agent_limb_names)
-
-    def step(self, a):
-        posbefore = self.sim.data.qpos[0]
-        self.do_simulation(a, self.frame_skip)
-        posafter = self.sim.data.qpos[0]
-        torso_height, torso_ang = self.sim.data.qpos[1:3]
-        alive_bonus = 1.0
-        reward = (posafter - posbefore) / self.dt
-        reward += alive_bonus
-        reward -= 1e-3 * np.square(a).sum()
-        s = self.state_vector()
-        done = not (
-            np.isfinite(s).all()
-            and (np.abs(s[2:]) < 100).all()
-            and (torso_height > 0.6)
-            and (abs(torso_ang) < 1)
-        )
-        ob = self._get_obs()
-
-        info = {
-            'name': 'hopper_4', 
-        }
-
-        return ob, reward, done, info
+        self.full_limb_names = ['torso', 'right_thigh', 'right_shin', 'left_thigh', 'left_shin', 'right_upper_arm', 'right_lower_arm', 'left_upper_arm', 'left_lower_arm']
+        print ([self.full_limb_names.index(name) for name in self.agent_limb_names])
 
     def _get_obs(self):
         def _get_obs_per_limb(b):
-            if b == "torso":
+            if "hip" in b:
                 limb_type_vec = np.array((1, 0, 0, 0))
-            elif "thigh" in b:
+            elif "knee" in b:
                 limb_type_vec = np.array((0, 1, 0, 0))
-            elif "leg" in b:
+            elif "shoulder" in b:
                 limb_type_vec = np.array((0, 0, 1, 0))
-            elif "foot" in b:
+            elif "elbow" in b:
                 limb_type_vec = np.array((0, 0, 0, 1))
             else:
                 limb_type_vec = np.array((0, 0, 0, 0))
@@ -96,23 +72,37 @@ class ModularEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         full_obs = np.concatenate(
             [_get_obs_per_limb(b) for b in self.model.body_names[1:]]
         )
-
         return full_obs.ravel()
 
+    def step(self, a):
+        posbefore = self.sim.data.qpos[0]
+        self.do_simulation(a, self.frame_skip)
+        posafter, height, ang = self.sim.data.qpos[0:3]
+        alive_bonus = 1.0
+        reward = (posafter - posbefore) / self.dt
+        reward += alive_bonus
+        reward -= 1e-3 * np.square(a).sum()
+        qpos = self.sim.data.qpos
+        done = not (height > 0.4 and height < 2.1 and ang > -1.0 and ang < 1.0)
+
+        info = {
+            'name': 'humanoid_2d_7_right_leg', 
+        }
+        return self._get_obs(), reward, done, info
+
     def reset_model(self):
-        qpos = self.init_qpos + self.np_random.uniform(
-            low=-0.005, high=0.005, size=self.model.nq
+        self.set_state(
+            self.init_qpos
+            + self.np_random.uniform(low=-0.005, high=0.005, size=self.model.nq),
+            self.init_qvel
+            + self.np_random.uniform(low=-0.005, high=0.005, size=self.model.nv),
         )
-        qvel = self.init_qvel + self.np_random.uniform(
-            low=-0.005, high=0.005, size=self.model.nv
-        )
-        self.set_state(qpos, qvel)
         return self._get_obs()
 
     def viewer_setup(self):
-        self.viewer.cam.trackbodyid = 2
-        self.viewer.cam.distance = self.model.stat.extent * 0.75
-        self.viewer.cam.lookat[2] = 1.15
+        self.viewer.cam.trackbodyid = 1
+        self.viewer.cam.distance = self.model.stat.extent * 1.0
+        self.viewer.cam.lookat[2] = 2.0
         self.viewer.cam.elevation = -20
 
 

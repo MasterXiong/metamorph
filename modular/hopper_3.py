@@ -3,6 +3,7 @@ from gym.envs.mujoco import mujoco_env
 
 from modular.utils import *
 from modular.wrappers import *
+from metamorph.config import cfg
 
 
 class ModularEnv(mujoco_env.MujocoEnv, utils.EzPickle):
@@ -13,6 +14,10 @@ class ModularEnv(mujoco_env.MujocoEnv, utils.EzPickle):
 
         self.metadata['num_limbs'] = 3
         self.metadata['num_joints'] = 2
+
+        self.agent_limb_names = self.model.body_names[1:]
+        self.full_limb_names = ['torso', 'thigh', 'leg', 'lower_leg', 'foot']
+        print (self.agent_limb_names)
 
     def step(self, a):
         posbefore = self.sim.data.qpos[0]
@@ -113,6 +118,10 @@ class ModularEnv(mujoco_env.MujocoEnv, utils.EzPickle):
 
 def make_env(xml):
     env = ModularEnv(xml)
-    env = ModularObservationPadding(env)
-    env = ModularActionPadding(env)
+    if cfg.MODEL.MLP.CONSISTENT_PADDING:
+        env = ConsistentModularObservationPadding(env)
+        env = ConsistentModularActionPadding(env)
+    else:
+        env = ModularObservationPadding(env)
+        env = ModularActionPadding(env)
     return env
