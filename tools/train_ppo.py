@@ -54,6 +54,9 @@ def calculate_max_limbs_joints():
         if 'humanoid' in cfg.ENV.WALKER_DIR:
             cfg.MODEL.MAX_LIMBS = 9
             cfg.MODEL.MAX_JOINTS = 9
+        if 'all' in cfg.ENV.WALKER_DIR:
+            cfg.MODEL.MAX_LIMBS = 9
+            cfg.MODEL.MAX_JOINTS = 9
 
         # num_joints, num_limbs = [], []
 

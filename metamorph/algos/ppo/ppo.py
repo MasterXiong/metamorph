@@ -370,7 +370,7 @@ class PPO:
             # action_history.append(x)
 
             if 'episode' in infos[0]:
-                reset_step.append(t)
+                # reset_step.append(t)
                 print (infos[0]['episode']['r'])
                 # returns.append(infos[0]['episode']['r'])
 
