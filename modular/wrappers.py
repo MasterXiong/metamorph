@@ -70,7 +70,14 @@ class ConsistentModularObservationPadding(ModularObservationPadding):
         super().__init__(env)
 
         agent_limb_names = env.agent_limb_names
-        full_limb_names = env.full_limb_names
+        if 'all_train' in cfg.ENV.WALKER_DIR:
+            full_limb_names = [
+                'torso', 'thigh', 'leg', 'lower_leg', 'foot', 
+                'left1', 'left2', 'left3', 'right1', 'right2', 'right3', 
+                'right_thigh', 'right_shin', 'left_thigh', 'left_shin', 'right_upper_arm', 'right_lower_arm', 'left_upper_arm', 'left_lower_arm', 
+            ]
+        else:
+            full_limb_names = env.full_limb_names
         self.limb_index = [full_limb_names.index(name) for name in agent_limb_names]
 
         self.obs_padding_mask = np.asarray([True] * self.max_limbs)
@@ -127,7 +134,14 @@ class ConsistentModularActionPadding(gym.ActionWrapper):
         self.max_joints = cfg.MODEL.MAX_LIMBS
 
         agent_limb_names = env.agent_limb_names
-        full_limb_names = env.full_limb_names
+        if 'all_train' in cfg.ENV.WALKER_DIR:
+            full_limb_names = [
+                'torso', 'thigh', 'leg', 'lower_leg', 'foot', 
+                'left1', 'left2', 'left3', 'right1', 'right2', 'right3', 
+                'right_thigh', 'right_shin', 'left_thigh', 'left_shin', 'right_upper_arm', 'right_lower_arm', 'left_upper_arm', 'left_lower_arm', 
+            ]
+        else:
+            full_limb_names = env.full_limb_names
         self.joint_index = [full_limb_names.index(name) for name in agent_limb_names]
         # torso has no joint action
         self.joint_index.remove(0)

@@ -17,7 +17,6 @@ class ModularEnv(mujoco_env.MujocoEnv, utils.EzPickle):
 
         self.agent_limb_names = self.model.body_names[1:]
         self.full_limb_names = ['torso', 'left1', 'left2', 'left3', 'right1', 'right2', 'right3']
-        print (self.agent_limb_names)
 
     def step(self, a):
         qpos_before = self.sim.data.qpos

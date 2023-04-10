@@ -55,8 +55,12 @@ def calculate_max_limbs_joints():
             cfg.MODEL.MAX_LIMBS = 9
             cfg.MODEL.MAX_JOINTS = 9
         if 'all' in cfg.ENV.WALKER_DIR:
-            cfg.MODEL.MAX_LIMBS = 9
-            cfg.MODEL.MAX_JOINTS = 9
+            if cfg.MODEL.MLP.CONSISTENT_PADDING:
+                cfg.MODEL.MAX_LIMBS = 19
+                cfg.MODEL.MAX_JOINTS = 19
+            else:
+                cfg.MODEL.MAX_LIMBS = 9
+                cfg.MODEL.MAX_JOINTS = 9
 
         # num_joints, num_limbs = [], []
 
@@ -116,12 +120,15 @@ def register_modular_envs():
         #     )
         xml = os.path.join(cfg.ENV.WALKER_DIR, 'xml', agent + '.xml')
         params = {"xml": os.path.abspath(xml)}
-        register(
-            id=f"{agent}-v0",
-            max_episode_steps=1000,
-            entry_point=f"modular.{agent}:make_env",
-            kwargs=params,
-        )
+        try:
+            register(
+                id=f"{agent}-v0",
+                max_episode_steps=1000,
+                entry_point=f"modular.{agent}:make_env",
+                kwargs=params,
+            )
+        except:
+            continue
     #     env = wrappers.IdentityWrapper(gym.make(f"{agent}-v0"))
     #     # the following is the same for each env
     #     agent_obs_size = env.agent_obs_size

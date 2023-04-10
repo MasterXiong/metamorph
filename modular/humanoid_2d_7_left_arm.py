@@ -17,7 +17,6 @@ class ModularEnv(mujoco_env.MujocoEnv, utils.EzPickle):
 
         self.agent_limb_names = self.model.body_names[1:]
         self.full_limb_names = ['torso', 'right_thigh', 'right_shin', 'left_thigh', 'left_shin', 'right_upper_arm', 'right_lower_arm', 'left_upper_arm', 'left_lower_arm']
-        print ([self.full_limb_names.index(name) for name in self.agent_limb_names])
 
     def _get_obs(self):
         def _get_obs_per_limb(b):
