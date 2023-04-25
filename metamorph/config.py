@@ -275,7 +275,7 @@ _C.PPO.NUM_ENVS = 32
 _C.PPO.BASE_LR = 3e-4
 _C.PPO.MIN_LR = 0.0
 
-# Learning rate policy select from {'cos', 'lin'}
+# Learning rate policy select from {'cos', 'lin', 'constant'}
 _C.PPO.LR_POLICY = "cos"
 
 # Start the warm up from OPTIM.BASE_LR * OPTIM.WARMUP_FACTOR
@@ -286,6 +286,8 @@ _C.PPO.WARMUP_ITERS = 5
 
 # EPS for Adam/RMSProp
 _C.PPO.EPS = 1e-5
+
+_C.PPO.WEIGHT_DECAY = 0.
 
 # Value to clip the gradient via clip_grad_norm_
 _C.PPO.MAX_GRAD_NORM = 0.5
@@ -409,6 +411,8 @@ _C.MODEL.MLP.NORM = None
 _C.MODEL.MLP.ANNEAL_HN_LR = False
 _C.MODEL.MLP.SQUASH_HN_OUTPUT = False
 _C.MODEL.MLP.SQUASH_SCALE = 1.
+# scale embedding by limb number
+_C.MODEL.MLP.SCALE_BY_LIMB_NUM = False
 
 # hyperparameters for transformers
 _C.MODEL.TRANSFORMER = CN()
@@ -579,6 +583,7 @@ _C.UNIMAL_TEMPLATE = "./metamorph/envs/assets/unimal.xml"
 # Save histogram weights
 _C.SAVE_HIST_WEIGHTS = False
 _C.SAVE_HIST_RATIO = False
+_C.PER_LIMB_GRAD = False
 
 # Optional description for exp
 _C.DESC = ""

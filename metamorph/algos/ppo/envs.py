@@ -80,7 +80,7 @@ def make_vec_envs(
     else:
         # Dummy init the actual xml_file will change on each reset
         xml_file = cfg.ENV.WALKERS[0]
-        print (xml_file)
+        # print (xml_file)
         envs = []
         if cfg.ENV_NAME == 'Unimal-v0':
             for idx in range(num_env):
@@ -93,7 +93,7 @@ def make_vec_envs(
                 _env = make_env(cfg.ENV_NAME, seed, 1, xml_file=xml)()
                 envs.append(env_func_wrapper(_env))
             cfg.PPO.NUM_ENVS = len(envs)
-        print (_env)
+        # print (_env)
 
     #if save_video or render_policy:
     if save_video:
@@ -105,10 +105,16 @@ def make_vec_envs(
     else:
         raise ValueError("VECENV: {} is not supported.".format(cfg.VECENV.TYPE))
 
+    # we may not use VecNorm for modular envs
+    if cfg.MODEL.OBS_TO_NORM == []:
+        print ('not use VecNorm')
+    else:
+        print ('use VecNorm')
     envs = VecNormalize(
         envs, gamma=cfg.PPO.GAMMA, training=training, ret=norm_rew,
         obs_to_norm=cfg.MODEL.OBS_TO_NORM
     )
+
     envs = VecPyTorch(envs, device)
     return envs
 

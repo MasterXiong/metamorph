@@ -203,9 +203,15 @@ class MLPModel(nn.Module):
             obs = obs.reshape(batch_size, self.seq_len, -1) * (1. - obs_mask.float())[:, :, None]
             obs = obs.reshape(batch_size, -1)
             embedding = self.input_layer(obs)
+            # rescale by limb number
+            # embedding = embedding * cfg.MODEL.MAX_LIMBS / (1. - obs_mask.float()).sum(dim=1)[:, None]
             # self.input_weight = self.input_layer.weight.data.detach().clone()
             # self.hidden_activation = embedding.detach().clone()
             embedding = F.relu(embedding)
+            self.embedding_record = embedding.clone().detach().cpu().numpy()
+        
+        if self.model_args.SCALE_BY_LIMB_NUM:
+            embedding = embedding * cfg.MODEL.MAX_LIMBS / (1. - obs_mask.float()).sum(dim=1)[:, None]
 
         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
             hfield_embedding = self.hfield_encoder(obs_env["hfield"])
@@ -920,6 +926,7 @@ class ActorCritic(nn.Module):
         if act is not None:
             logp = pi.log_prob(act)
             logp[act_mask] = 0.0
+            self.limb_logp = logp
             logp = logp.sum(-1, keepdim=True)
             entropy = pi.entropy()
             entropy[act_mask] = 0.0

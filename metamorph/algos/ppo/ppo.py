@@ -32,15 +32,18 @@ class PPO:
 
         self.device = torch.device(cfg.DEVICE)
 
-        print ('observation_space')
-        print (self.envs.observation_space)
-        print ('action_space')
-        print (self.envs.action_space)
-        print (self.envs)
+        # print ('observation_space')
+        # print (self.envs.observation_space)
+        # print ('action_space')
+        # print (self.envs.action_space)
+        # print (self.envs)
 
         self.actor_critic = globals()[cfg.MODEL.ACTOR_CRITIC](
             self.envs.observation_space, self.envs.action_space
         )
+        print ('action space')
+        print (self.envs.action_space.low)
+        print (self.envs.action_space.high)
 
         # Used while using train_ppo.py
         if cfg.PPO.CHECKPOINT_PATH:
@@ -59,7 +62,7 @@ class PPO:
         # Optimizer for both actor and critic
         if not cfg.MODEL.MLP.ANNEAL_HN_LR:
             self.optimizer = optim.Adam(
-                self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
+                self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS, weight_decay=cfg.PPO.WEIGHT_DECAY
             )
             self.lr_scale = [1. for _ in self.optimizer.param_groups]
         else:
@@ -93,6 +96,7 @@ class PPO:
 
         self.fps = 0
         # os.system(f'mkdir {cfg.OUT_DIR}/ratio_hist')
+        os.system(f'mkdir {cfg.OUT_DIR}/grad')
 
     def train(self):
         self.save_sampled_agent_seq(0)
@@ -185,6 +189,7 @@ class PPO:
         adv = (adv - adv.mean()) / (adv.std() + 1e-5)
 
         ratio_hist = [[] for _ in range(cfg.PPO.EPOCHS)]
+        grad_norm_dict, grad_correlation_dict = defaultdict(list), defaultdict(list)
 
         for i in range(cfg.PPO.EPOCHS):
             batch_sampler = self.buffer.get_sampler(adv)
@@ -206,6 +211,7 @@ class PPO:
                             pickle.dump(ratio_hist, f)
                     print (f'early stop iter {cur_iter} at epoch {i + 1}/{cfg.PPO.EPOCHS}, batch {j + 1} with approx_kl {approx_kl}')
                     return
+                    # TODO: change return to finishing the iterations
 
                 if cfg.SAVE_HIST_RATIO:
                     clipped_ratio = torch.clamp(ratio, 0., 2.0).detach()
@@ -230,25 +236,45 @@ class PPO:
                 else:
                     val_loss = 0.5 * (batch["ret"] - val).pow(2).mean()
 
+                if cfg.PER_LIMB_GRAD:
+                    # compute the grad of each limb's action logp
+                    self.optimizer.zero_grad()
+                    action_logp = self.actor_critic.limb_logp
+                    pi_loss.backward(retain_graph=True, inputs=action_logp)
+                    action_logp_grad = action_logp.grad.detach()
+                    # print ('backward action logp grad')
+                    # print (action_logp_grad[0])
+                    # print ('analytic action logp grad')
+                    # print (-surr1[0] / 5120.)
+                    per_limb_grad = defaultdict(list)
+                    for k in range(cfg.MODEL.MAX_LIMBS):
+                        self.optimizer.zero_grad()
+                        filter_grad = torch.zeros(action_logp.size()).cuda()
+                        filter_grad[:, (k*2):(k*2+2)] = action_logp_grad[:, (k*2):(k*2+2)]
+                        action_logp.backward(gradient=filter_grad, retain_graph=True)
+                        for name, param in self.actor_critic.named_parameters():
+                            if name == 'log_std' or 'v_net' in name:
+                                continue
+                            grad = param.grad.clone()
+                            per_limb_grad[name].append(grad)
+                    # self.optimizer.zero_grad()
+                    # action_logp.backward(gradient=action_logp_grad, retain_graph=True)
+                    # per_limb_grad = self.actor_critic.mu_net.decoder[0].weight.grad.clone()
+                    for name in per_limb_grad:
+                        all_limb_grad = torch.stack(per_limb_grad[name], dim=0).reshape(cfg.MODEL.MAX_LIMBS, -1)
+                        # compute the norm of each limb's grad
+                        norm = all_limb_grad.norm(dim=1)
+                        grad_norm_dict[name].append(norm.detach().cpu().numpy())
+                        # compute the correlation between different limbs' gradient
+                        correlation = torch.corrcoef(all_limb_grad).detach().cpu().numpy()
+                        grad_correlation_dict[name].append(correlation)
+
                 self.optimizer.zero_grad()
 
                 loss = val_loss * cfg.PPO.VALUE_COEF
                 loss += pi_loss
                 loss += -ent * cfg.PPO.ENTROPY_COEF
                 loss.backward()
-
-                # check gradient
-                # if i == 0 and j == 0:
-                #     for name, weight in self.actor_critic.named_parameters():
-                #         if weight.grad is None:
-                #             continue
-                #         if name.split('.')[-1] == 'bias':
-                #             continue
-                #         grad = weight.grad.cpu().numpy()
-                #         self.grad_record[name].append([grad.mean(), grad.std()])
-                #         print (f'{name}: mean: {grad.mean()}, std: {grad.std()}')
-                #     with open('grad_record.pkl', 'wb') as f:
-                #         pickle.dump(self.grad_record, f)
 
                 # Log training stats
                 norm = nn.utils.clip_grad_norm_(
@@ -274,6 +300,11 @@ class PPO:
                 self.train_meter.add_train_stat("clip_frac", clip_frac)
 
                 self.optimizer.step()
+
+        if cfg.PER_LIMB_GRAD:
+            # save the grad results
+            with open(f'{cfg.OUT_DIR}/grad/{cur_iter}.pkl', 'wb') as f:
+                pickle.dump([grad_norm_dict, grad_correlation_dict], f)
 
         if cfg.SAVE_HIST_RATIO:
             with open(os.path.join(cfg.OUT_DIR, 'ratio_hist', f'ratio_hist_{cur_iter}.pkl'), 'wb') as f:
@@ -336,8 +367,8 @@ class PPO:
 
         self.writer.close()
 
-    def save_video(self, save_dir):
-        env = make_vec_envs(training=False, norm_rew=False, save_video=True,)
+    def save_video(self, save_dir, xml=None):
+        env = make_vec_envs(training=False, norm_rew=False, save_video=True, xml_file=xml)
         set_ob_rms(env, get_ob_rms(self.envs))
         
         env = VecVideoRecorder(
@@ -345,7 +376,8 @@ class PPO:
             save_dir,
             record_video_trigger=lambda x: x == 0,
             video_length=cfg.PPO.VIDEO_LENGTH,
-            file_prefix=self.file_prefix,
+            # file_prefix=self.file_prefix,
+            file_prefix=xml,
         )
         
         obs = env.reset()
@@ -354,6 +386,7 @@ class PPO:
         # reset_step = []
         # returns = []
 
+        episode_count = 0
         for t in range(cfg.PPO.VIDEO_LENGTH + 1):
 
             # obs_reshape = obs['proprioceptive'].reshape(-1, 52)[(1. - obs["obs_padding_mask"]).bool().reshape(-1)].detach().cpu().numpy()
@@ -373,10 +406,13 @@ class PPO:
                 # reset_step.append(t)
                 print (infos[0]['episode']['r'])
                 # returns.append(infos[0]['episode']['r'])
+                episode_count += 1
+                if episode_count == 5:
+                    break
 
         env.close()
         # remove annoying meta file created by monitor
-        os.remove(os.path.join(save_dir, "{}_video.meta.json".format(self.file_prefix)))
+        os.remove(os.path.join(save_dir, f"{xml}_video.meta.json"))
         # return action_history, obs_record, reset_step, returns
 
     def save_sampled_agent_seq(self, cur_iter):
