@@ -946,11 +946,13 @@ class Agent:
     @torch.no_grad()
     def act(self, obs, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None, unimal_ids=None, compute_val=True):
         val, pi, v_attention_maps, mu_attention_maps, dropout_mask_v, dropout_mask_mu = self.ac(obs, return_attention=return_attention, dropout_mask_v=dropout_mask_v, dropout_mask_mu=dropout_mask_mu, unimal_ids=unimal_ids, compute_val=compute_val)
+        self.pi = pi
         if not cfg.DETERMINISTIC:
             act = pi.sample()
         else:
             act = pi.loc
         logp = pi.log_prob(act)
+        self.limb_logp = logp
         act_mask = obs["act_padding_mask"].bool()
         logp[act_mask] = 0.0
         logp = logp.sum(-1, keepdim=True)

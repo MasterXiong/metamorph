@@ -97,6 +97,7 @@ class PPO:
         self.fps = 0
         # os.system(f'mkdir {cfg.OUT_DIR}/ratio_hist')
         os.system(f'mkdir {cfg.OUT_DIR}/grad')
+        os.system(f'mkdir {cfg.OUT_DIR}/limb_ratio')
 
     def train(self):
         self.save_sampled_agent_seq(0)
@@ -131,6 +132,7 @@ class PPO:
                 else:
                     unimal_ids = [0 for _ in range(cfg.PPO.NUM_ENVS)]
                 val, act, logp, dropout_mask_v, dropout_mask_mu = self.agent.act(obs, unimal_ids=unimal_ids)
+                limb_logp = self.agent.limb_logp.detach()
 
                 next_obs, reward, done, infos = self.envs.step(act)
 
@@ -147,7 +149,7 @@ class PPO:
                     device=self.device,
                 )
 
-                self.buffer.insert(obs, act, logp, val, reward, masks, timeouts, dropout_mask_v, dropout_mask_mu, unimal_ids)
+                self.buffer.insert(obs, act, logp, val, reward, masks, timeouts, dropout_mask_v, dropout_mask_mu, unimal_ids, limb_logp)
                 obs = next_obs
 
             if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE or cfg.MODEL.TRANSFORMER.PER_NODE_EMBED:
@@ -195,6 +197,7 @@ class PPO:
 
         ratio_hist = [[] for _ in range(cfg.PPO.EPOCHS)]
         grad_norm_dict, grad_correlation_dict = defaultdict(list), defaultdict(list)
+        limb_ratio_record = []
 
         std_record = []
         for i in range(cfg.PPO.EPOCHS):
@@ -209,6 +212,11 @@ class PPO:
                 clip_ratio = cfg.PPO.CLIP_EPS
                 ratio = torch.exp(logp - batch["logp_old"])
                 approx_kl = (batch["logp_old"] - logp).mean().item()
+
+                # limb ratio
+                if cfg.SAVE_LIMB_RATIO:
+                    limb_ratio = torch.exp(self.actor_critic.limb_logp.detach() - batch["limb_logp_old"]).cpu().numpy()
+                    limb_ratio_record.append(limb_ratio)
 
                 if cfg.PPO.KL_TARGET_COEF is not None and approx_kl > cfg.PPO.KL_TARGET_COEF * 0.01:
                     self.train_meter.add_train_stat("approx_kl", approx_kl)
@@ -309,6 +317,11 @@ class PPO:
                 self.optimizer.step()
 
         self.std_record.append(std_record)
+
+        if cfg.SAVE_LIMB_RATIO and cur_iter % 10 == 0:
+            # save the grad results
+            with open(f'{cfg.OUT_DIR}/limb_ratio/{cur_iter}.pkl', 'wb') as f:
+                pickle.dump(limb_ratio_record, f)
 
         if cfg.PER_LIMB_GRAD:
             # save the grad results

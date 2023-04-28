@@ -95,10 +95,13 @@ if __name__ == '__main__':
     # python tools/train_single_task_transformer.py --model_type linear --task ft --output_folder MLP_ST_ft_512*6_constant_lr_KL_5 --kl 5. --lr 0.0003 --seed 1409 --start 0 --end 10
     # constant lr + learned std
     # python tools/train_single_task_transformer.py --model_type linear --task incline --output_folder MLP_ST_incline_1024*2_constant_lr_learnt_std_KL_5 --kl 5. --lr 0.0003 --std learn --seed 1409 --start 0 --end 5
-    # python tools/train_single_task_transformer.py --model_type transformer --task incline --output_folder MLP_ST_incline_1024*2_constant_lr_learnt_std_KL_5 --kl 5. --lr 0.0003 --std learn --seed 1409 --start 0 --end 5
+    # python tools/train_single_task_transformer.py --model_type transformer --task ft --output_folder TF_ST_ft_constant_lr_learnt_std_KL_5_wo_dropout --kl 5. --lr 0.0003 --std learn --seed 1409 --start 0 --end 5
     # change model size
     # python tools/train_single_task_transformer.py --model_type transformer --task incline --output_folder TF_ST_incline_2_layer_KL_5_wo_dropout --tf_num_layer 2 --kl 5. --seed 1409 --start 0 --end 5
     # python tools/train_single_task_transformer.py --model_type linear --task incline --output_folder MLP_ST_incline_1024*2_KL_5 --seed 1409 --start 0 --end 10
+    # check limb ratio
+    # python tools/train_single_task_transformer.py --model_type linear --task ft --output_folder MLP_ST_ft_1024*2_constant_lr_KL_5 --kl 5. --lr 0.0003 --save_limb_ratio --seed 1409 --start 0 --end 10
+    # python tools/train_single_task_transformer.py --model_type transformer --task ft --output_folder TF_ST_ft_constant_lr_KL_5_wo_dropout --kl 5. --lr 0.0003 --save_limb_ratio --seed 1409 --start 0 --end 5
     parser = argparse.ArgumentParser(description="Train a RL agent")
     parser.add_argument("--start", default=0, type=int)
     parser.add_argument("--end", default=100, type=int)
@@ -111,6 +114,7 @@ if __name__ == '__main__':
     parser.add_argument("--tf_num_layer", default=None, type=int)
     parser.add_argument("--lr", default=0.0003, type=float)
     parser.add_argument("--std", default='fixed', type=str)
+    parser.add_argument("--save_limb_ratio", action="store_true")
     args = parser.parse_args()
     
     # create_data('unimals_100/test', 'unimals_single_task_test')
@@ -151,6 +155,8 @@ if __name__ == '__main__':
     extra_args.append(f'PPO.BASE_LR {args.lr}')
     if args.std == 'learn':
         extra_args.append('MODEL.ACTION_STD_FIXED False')
+    if args.save_limb_ratio:
+        extra_args.append('SAVE_LIMB_RATIO True')
     # if args.task in ['ft', 'incline']:
     #     extra_args.append('PPO.KL_TARGET_COEF 5.')
     # else:

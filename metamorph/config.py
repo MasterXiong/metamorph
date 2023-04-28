@@ -584,6 +584,7 @@ _C.UNIMAL_TEMPLATE = "./metamorph/envs/assets/unimal.xml"
 _C.SAVE_HIST_WEIGHTS = False
 _C.SAVE_HIST_RATIO = False
 _C.PER_LIMB_GRAD = False
+_C.SAVE_LIMB_RATIO = False
 
 # Optional description for exp
 _C.DESC = ""
