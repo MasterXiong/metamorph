@@ -112,6 +112,7 @@ class PPO:
         # old_values = self.agent.ac.v_net.context_embed.bias.detach().clone()
 
         self.grad_record = defaultdict(list)
+        self.std_record = []
 
         for cur_iter in range(cfg.PPO.MAX_ITERS):
 
@@ -158,6 +159,10 @@ class PPO:
             self.train_on_batch(cur_iter)
             self.save_sampled_agent_seq(cur_iter)
 
+            # save std record
+            with open(os.path.join(cfg.OUT_DIR, 'std.pkl'), 'wb') as f:
+                pickle.dump(self.std_record, f)
+
             self.train_meter.update_mean()
             if len(self.train_meter.mean_ep_rews["reward"]):
                 cur_rew = self.train_meter.mean_ep_rews["reward"][-1]
@@ -191,6 +196,7 @@ class PPO:
         ratio_hist = [[] for _ in range(cfg.PPO.EPOCHS)]
         grad_norm_dict, grad_correlation_dict = defaultdict(list), defaultdict(list)
 
+        std_record = []
         for i in range(cfg.PPO.EPOCHS):
             batch_sampler = self.buffer.get_sampler(adv)
 
@@ -290,6 +296,7 @@ class PPO:
                 )
                 std = np.mean(np.exp(log_std))
                 self.train_meter.add_train_stat("std", float(std))
+                std_record.append(np.exp(log_std))
 
                 self.train_meter.add_train_stat("approx_kl", approx_kl)
                 self.train_meter.add_train_stat("pi_loss", pi_loss.item())
@@ -300,6 +307,8 @@ class PPO:
                 self.train_meter.add_train_stat("clip_frac", clip_frac)
 
                 self.optimizer.step()
+
+        self.std_record.append(std_record)
 
         if cfg.PER_LIMB_GRAD:
             # save the grad results
