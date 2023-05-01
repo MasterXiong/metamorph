@@ -115,6 +115,11 @@ class PPO:
         self.grad_record = defaultdict(list)
         self.std_record = []
 
+        if cfg.PPO.MAX_ITERS > 1000:
+            self.stat_save_freq = 100
+        else:
+            self.stat_save_freq = 10
+
         for cur_iter in range(cfg.PPO.MAX_ITERS):
 
             if cfg.PPO.EARLY_EXIT and cur_iter >= cfg.PPO.EARLY_EXIT_MAX_ITERS:
@@ -200,6 +205,7 @@ class PPO:
         limb_ratio_record = []
 
         std_record = []
+        early_stop = False
         for i in range(cfg.PPO.EPOCHS):
             batch_sampler = self.buffer.get_sampler(adv)
 
@@ -224,8 +230,8 @@ class PPO:
                         with open(os.path.join(cfg.OUT_DIR, 'ratio_hist', f'ratio_hist_{cur_iter}.pkl'), 'wb') as f:
                             pickle.dump(ratio_hist, f)
                     print (f'early stop iter {cur_iter} at epoch {i + 1}/{cfg.PPO.EPOCHS}, batch {j + 1} with approx_kl {approx_kl}')
-                    return
-                    # TODO: change return to finishing the iterations
+                    early_stop = True
+                    break
 
                 if cfg.SAVE_HIST_RATIO:
                     clipped_ratio = torch.clamp(ratio, 0., 2.0).detach()
@@ -315,10 +321,13 @@ class PPO:
                 self.train_meter.add_train_stat("clip_frac", clip_frac)
 
                 self.optimizer.step()
+            
+            if early_stop:
+                break
 
         self.std_record.append(std_record)
 
-        if cfg.SAVE_LIMB_RATIO and cur_iter % 10 == 0:
+        if cfg.SAVE_LIMB_RATIO and cur_iter % self.stat_save_freq == 0:
             # save the grad results
             with open(f'{cfg.OUT_DIR}/limb_ratio/{cur_iter}.pkl', 'wb') as f:
                 pickle.dump(limb_ratio_record, f)
