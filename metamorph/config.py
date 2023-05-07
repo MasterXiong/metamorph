@@ -89,6 +89,9 @@ _C.ENV.TASK_SAMPLING = "balanced_replay_buffer"
 # For floor env this should be false, leads to 3x speed up.
 _C.ENV.NEW_SIM_ON_RESET = True
 
+# whether to use a fixed env for each process
+_C.ENV.FIX_ENV  = False
+
 # ----------------------------------------------------------------------------#
 # Terrain Options
 # ----------------------------------------------------------------------------#
@@ -313,6 +316,10 @@ _C.PPO.EARLY_EXIT = False
 _C.PPO.EARLY_EXIT_STATE_ACTION_PAIRS = 1e8
 
 _C.PPO.EARLY_EXIT_MAX_ITERS = -1
+
+# my abs ratio idea
+_C.PPO.ABS_CLIP = False
+_C.PPO.ABS_CLIP_THRESHOLD = 0.2
 
 # --------------------------------------------------------------------------- #
 # Task sampling options

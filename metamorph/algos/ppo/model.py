@@ -952,9 +952,9 @@ class Agent:
         else:
             act = pi.loc
         logp = pi.log_prob(act)
-        self.limb_logp = logp
         act_mask = obs["act_padding_mask"].bool()
         logp[act_mask] = 0.0
+        self.limb_logp = logp
         logp = logp.sum(-1, keepdim=True)
         self.v_attention_maps = v_attention_maps
         self.mu_attention_maps = mu_attention_maps

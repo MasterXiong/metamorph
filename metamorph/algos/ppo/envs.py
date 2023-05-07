@@ -83,9 +83,17 @@ def make_vec_envs(
         # print (xml_file)
         envs = []
         if cfg.ENV_NAME == 'Unimal-v0':
-            for idx in range(num_env):
-                _env = make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file)()
-                envs.append(env_func_wrapper(MultiEnvWrapper(_env, idx)))
+            if not cfg.ENV.FIX_ENV:
+                for idx in range(num_env):
+                    _env = make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file)()
+                    envs.append(env_func_wrapper(MultiEnvWrapper(_env, idx)))
+            else:
+                for i, xml in enumerate(cfg.ENV.WALKERS):
+                    _env = make_env(cfg.ENV_NAME, seed, 2 * i, xml_file=xml)()
+                    envs.append(env_func_wrapper(_env))
+                    _env = make_env(cfg.ENV_NAME, seed, 2 * i + 1, xml_file=xml)()
+                    envs.append(env_func_wrapper(_env))
+                cfg.PPO.NUM_ENVS = len(envs)
         elif cfg.ENV_NAME == 'Modular-v0':
             for xml in cfg.ENV.WALKERS:
                 _env = make_env(cfg.ENV_NAME, seed, 0, xml_file=xml)()

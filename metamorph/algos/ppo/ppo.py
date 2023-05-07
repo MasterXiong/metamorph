@@ -206,6 +206,7 @@ class PPO:
 
         std_record = []
         early_stop = False
+        additional_clip_frac_record = []
         for i in range(cfg.PPO.EPOCHS):
             batch_sampler = self.buffer.get_sampler(adv)
 
@@ -238,14 +239,49 @@ class PPO:
                     hist, _ = np.histogram(clipped_ratio.cpu().numpy(), 100, range=(0., 2.))
                     ratio_hist[i].append(hist)
 
-                surr1 = ratio * batch["adv"]
+                if cfg.PPO.ABS_CLIP:
+                    # new_limb_logp = self.actor_critic.limb_logp.detach()
+                    # old_limb_logp = batch["limb_logp_old"]
+                    # abs_ratio = torch.maximum(new_limb_logp, old_limb_logp) - torch.minimum(new_limb_logp, old_limb_logp)
+                    # abs_ratio = torch.exp(abs_ratio.sum(-1, keepdim=True))
+                    # # pos_adv_clip = torch.logical_and(batch["adv"] > 0., abs_ratio > 1. + clip_ratio)
+                    # # neg_adv_clip = torch.logical_and(batch["adv"] < 0., abs_ratio < 1. - clip_ratio)
+                    # # clip_mask = torch.logical_or(pos_adv_clip, neg_adv_clip)
+                    # clip_mask = abs_ratio > (1. + clip_ratio)
+                    # # surr = ratio * batch['adv'] * (1. - clip_mask.float()).detach()
+                    # surr = ratio * batch['adv']
+                    # surr[clip_mask] = 0.
+                    # pi_loss = -surr.mean()
+                    # clip_frac = clip_mask.float().mean().item()
+                    # print (clip_frac)
 
-                surr2 = torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
-                clip_frac = (ratio != surr2).float().mean().item()
-                surr2 *= batch["adv"]
+                    surr = ratio * batch['adv']
+                    pos_adv_clip = torch.logical_and(batch["adv"] > 0., ratio > 1. + clip_ratio)
+                    neg_adv_clip = torch.logical_and(batch["adv"] < 0., ratio < 1. - clip_ratio)
+                    clip_mask = torch.logical_or(pos_adv_clip, neg_adv_clip)
+                    surr[clip_mask] = 0.
+                    
+                    # additional clip
+                    logp_divergence = self.actor_critic.limb_logp.detach() - batch["limb_logp_old"]
+                    gap = logp_divergence.abs().sum(dim=-1) - logp_divergence.sum(dim=-1).abs()
+                    additional_clip_mask = gap > cfg.PPO.ABS_CLIP_THRESHOLD
+                    surr[additional_clip_mask] = 0.
+                    additional_clip_ratio = (additional_clip_mask.float().mean() - torch.logical_and(clip_mask, additional_clip_mask).float().mean()).item()
+                    additional_clip_frac_record.append(additional_clip_ratio)
 
-                pi_loss = -torch.min(surr1, surr2).mean()
+                    pi_loss = -surr.mean()
+                    clip_frac = clip_mask.float().mean().item()
+                
+                else:
 
+                    surr1 = ratio * batch["adv"]
+
+                    surr2 = torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
+                    clip_frac = (ratio != surr2).float().mean().item()
+                    surr2 *= batch["adv"]
+
+                    pi_loss = -torch.min(surr1, surr2).mean()
+                
                 if cfg.PPO.USE_CLIP_VALUE_FUNC:
                     val_pred_clip = batch["val"] + (val - batch["val"]).clamp(
                         -clip_ratio, clip_ratio
@@ -316,14 +352,19 @@ class PPO:
                 self.train_meter.add_train_stat("pi_loss", pi_loss.item())
                 self.train_meter.add_train_stat("val_loss", val_loss.item())
                 self.train_meter.add_train_stat("ratio", ratio.mean().item())
-                self.train_meter.add_train_stat("surr1", surr1.mean().item())
-                self.train_meter.add_train_stat("surr2", surr2.mean().item())
+                if cfg.PPO.ABS_CLIP:
+                    self.train_meter.add_train_stat("surr", surr.mean().item())
+                else:
+                    self.train_meter.add_train_stat("surr1", surr1.mean().item())
+                    self.train_meter.add_train_stat("surr2", surr2.mean().item())
                 self.train_meter.add_train_stat("clip_frac", clip_frac)
 
                 self.optimizer.step()
             
             if early_stop:
                 break
+
+        print ('additional clip frac', np.array(additional_clip_frac_record).mean())
 
         self.std_record.append(std_record)
 
