@@ -749,7 +749,8 @@ class SeparatePEEncoder(nn.Module):
         super().__init__()
         self.seq_len = seq_len
         self.d_model = d_model
-        self.pe = nn.Parameter(torch.randn(seq_len, len(cfg.ENV.WALKERS), d_model))
+        # self.pe = nn.Parameter(torch.randn(seq_len, len(cfg.ENV.WALKERS), d_model))
+        self.pe = nn.Parameter(torch.zeros(seq_len, len(cfg.ENV.WALKERS), d_model))
 
     def forward(self, x, unimal_ids):
         """
