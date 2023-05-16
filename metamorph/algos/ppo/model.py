@@ -705,7 +705,8 @@ class PositionalEncoding(nn.Module):
         if batch_first:
             self.pe = nn.Parameter(torch.randn(1, seq_len, d_model))
         else:
-            self.pe = nn.Parameter(torch.randn(seq_len, 1, d_model))
+            # self.pe = nn.Parameter(torch.randn(seq_len, 1, d_model))
+            self.pe = nn.Parameter(torch.zeros(seq_len, 1, d_model))
 
     def forward(self, x):
         """

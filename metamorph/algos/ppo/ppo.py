@@ -364,7 +364,8 @@ class PPO:
             if early_stop:
                 break
 
-        print ('additional clip frac', np.array(additional_clip_frac_record).mean())
+        if cfg.PPO.ABS_CLIP:
+            print ('additional clip frac', np.array(additional_clip_frac_record).mean())
 
         self.std_record.append(std_record)
 
@@ -456,7 +457,7 @@ class PPO:
         # obs_record = {"body_xpos": [], "body_xvelp": [], "body_xvelr": [],"qpos": [], "qvel": []}
         # action_history = []
         # reset_step = []
-        # returns = []
+        returns = []
 
         episode_count = 0
         for t in range(cfg.PPO.VIDEO_LENGTH + 1):
@@ -477,14 +478,17 @@ class PPO:
             if 'episode' in infos[0]:
                 # reset_step.append(t)
                 print (infos[0]['episode']['r'])
-                # returns.append(infos[0]['episode']['r'])
+                returns.append(infos[0]['episode']['r'])
                 episode_count += 1
                 if episode_count == 5:
                     break
 
         env.close()
         # remove annoying meta file created by monitor
+        avg_return = int(np.array(returns).mean())
         os.remove(os.path.join(save_dir, f"{xml}_video.meta.json"))
+        os.rename(os.path.join(save_dir, f"{xml}_video.mp4"), os.path.join(save_dir, f"{xml}_video_{avg_return}.mp4"))
+        return returns
         # return action_history, obs_record, reset_step, returns
 
     def save_sampled_agent_seq(self, cur_iter):
