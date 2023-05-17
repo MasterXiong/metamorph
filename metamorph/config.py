@@ -392,6 +392,10 @@ _C.MODEL.OBS_TO_NORM = ["proprioceptive"]
 # Context normalization with RunningMeanStd or fixed range
 _C.MODEL.BASE_CONTEXT_NORM = 'running'
 
+# normalize over all limbs
+_C.MODEL.NORM_OVER_LIMB = False
+_C.MODEL.INCLUDE_PADDING_LIMB_IN_NORM = True
+
 # Wrappers to add specific to model
 _C.MODEL.WRAPPERS = ["MultiUnimalNodeCentricObservation", "MultiUnimalNodeCentricAction"]
 
@@ -490,6 +494,7 @@ _C.MODEL.TRANSFORMER.TRAVERSALS = ['pre', 'inlcrs', 'postlcrs']
 _C.MODEL.TRANSFORMER.USE_SWAT_RE = False
 # use separate PE
 _C.MODEL.TRANSFORMER.USE_SEPARATE_PE = False
+_C.MODEL.TRANSFORMER.SEPARATE_PE_UPDATE_ITER = 0
 # tree PE
 _C.MODEL.TRANSFORMER.TREE_PE_IN_CONTEXT = False
 _C.MODEL.TRANSFORMER.MAX_CHILD_NUM = 4
@@ -518,7 +523,7 @@ _C.MODEL.FINETUNE = CN()
 _C.MODEL.FINETUNE.FULL_MODEL = False
 
 # Name of layers to fine tune
-_C.MODEL.FINETUNE.LAYER_SUBSTRING = []
+_C.MODEL.FINETUNE.LAYER_SUBSTRING = ['separate_PE_encoder', 'pos_embedding']
 
 # --------------------------------------------------------------------------- #
 # Sampler (VecEnv) Options

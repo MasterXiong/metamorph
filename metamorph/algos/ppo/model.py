@@ -840,6 +840,7 @@ class ActorCritic(nn.Module):
         # two joints features for each node
         joint_context_index = np.concatenate([np.arange(2, 2 + 9), np.arange(11 + 2, 11 + 2 + 9)]) + 30
         self.context_index = np.concatenate([limb_context_index, joint_context_index])
+        print ('context index', self.context_index)
 
     def forward(self, obs, act=None, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None, unimal_ids=None, compute_val=True):
         
@@ -894,7 +895,6 @@ class ActorCritic(nn.Module):
             obs_context = obs_context.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
             if cfg.MODEL.BASE_CONTEXT_NORM == 'fixed':
                 obs[:, :, self.context_index] = obs_context.clone()
-            # print (obs[:, :, self.context_index].min(), obs[:, :, self.context_index].max())
 
         if compute_val:
             # Per limb critic values

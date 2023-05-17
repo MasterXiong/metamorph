@@ -115,12 +115,23 @@ class PPO:
         self.grad_record = defaultdict(list)
         self.std_record = []
 
+        # do not update separate PE at the beginning
+        if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE:
+            self.agent.ac.mu_net.separate_PE_encoder.pe.requires_grad = False
+            self.agent.ac.v_net.separate_PE_encoder.pe.requires_grad = False
+
         if cfg.PPO.MAX_ITERS > 1000:
             self.stat_save_freq = 100
         else:
             self.stat_save_freq = 10
 
+        obs_min_record, obs_max_record = [], []
         for cur_iter in range(cfg.PPO.MAX_ITERS):
+
+            if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE and cur_iter > cfg.MODEL.TRANSFORMER.SEPARATE_PE_UPDATE_ITER:
+                print ('start to tune separate PE')
+                self.agent.ac.mu_net.separate_PE_encoder.pe.requires_grad = True
+                self.agent.ac.v_net.separate_PE_encoder.pe.requires_grad = True
 
             if cfg.PPO.EARLY_EXIT and cur_iter >= cfg.PPO.EARLY_EXIT_MAX_ITERS:
                 break
@@ -131,6 +142,10 @@ class PPO:
             # print (self.agent.ac.v_net.hnet_input_weight.weight.data[:6, :6])
 
             for step in range(cfg.PPO.TIMESTEPS):
+                # obs_min = obs['proprioceptive'].reshape(-1, 52).min(dim=0).values.cpu().numpy()
+                # obs_min_record.append(obs_min)
+                # obs_max = obs['proprioceptive'].reshape(-1, 52).max(dim=0).values.cpu().numpy()
+                # obs_max_record.append(obs_max)
                 # Sample actions
                 if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE or cfg.MODEL.TRANSFORMER.PER_NODE_EMBED:
                     unimal_ids = self.envs.get_unimal_idx()
@@ -169,6 +184,11 @@ class PPO:
             # save std record
             with open(os.path.join(cfg.OUT_DIR, 'std.pkl'), 'wb') as f:
                 pickle.dump(self.std_record, f)
+
+            # with open(f'{cfg.OUT_DIR}/obs_min_record.pkl', 'wb') as f:
+            #     pickle.dump(obs_min_record, f)
+            # with open(f'{cfg.OUT_DIR}/obs_max_record.pkl', 'wb') as f:
+            #     pickle.dump(obs_max_record, f)
 
             self.train_meter.update_mean()
             if len(self.train_meter.mean_ep_rews["reward"]):

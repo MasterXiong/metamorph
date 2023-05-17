@@ -4,6 +4,8 @@ import numpy as np
 from .running_mean_std import RunningMeanStd
 from .vec_env import VecEnvWrapper
 
+from metamorph.config import cfg
+
 
 class VecNormalize(VecEnvWrapper):
     """
@@ -44,6 +46,8 @@ class VecNormalize(VecEnvWrapper):
         if isinstance(obs_space, gym.spaces.Dict):
             for obs_type in obs_to_norm:
                 shape = obs_space[obs_type].shape
+                if cfg.MODEL.NORM_OVER_LIMB:
+                    self.limb_dim = shape = shape[0] // cfg.MODEL.MAX_LIMBS
                 ob_rms[obs_type] = RunningMeanStd(shape=shape)
         else:
             shape = obs_space.shape
@@ -76,11 +80,19 @@ class VecNormalize(VecEnvWrapper):
     def _obfilt_helper(self, obs, obs_type, update=True):
         if isinstance(obs, dict):
             obs_p = obs[obs_type]
+            index = ~obs['obs_padding_mask'].reshape(-1)
         else:
             obs_p = obs
 
+        if cfg.MODEL.NORM_OVER_LIMB:
+            obs_p = obs_p.reshape(-1, self.limb_dim)
+
         if self.training and update:
-            self.ob_rms[obs_type].update(obs_p)
+            if cfg.MODEL.INCLUDE_PADDING_LIMB_IN_NORM:
+                self.ob_rms[obs_type].update(obs_p)
+            else:
+                # only update the running statistics with truly existing limbs
+                self.ob_rms[obs_type].update(obs_p[index])
 
         obs_p = np.clip(
             (obs_p - self.ob_rms[obs_type].mean)
@@ -88,6 +100,10 @@ class VecNormalize(VecEnvWrapper):
             -self.clipob,
             self.clipob,
         )
+
+        if self.training and update:
+            obs_p = obs_p.reshape(-1, self.limb_dim * cfg.MODEL.MAX_LIMBS)
+
         if isinstance(obs, dict):
             obs[obs_type] = obs_p
         else:
