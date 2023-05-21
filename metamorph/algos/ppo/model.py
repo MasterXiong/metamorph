@@ -842,6 +842,13 @@ class ActorCritic(nn.Module):
         self.context_index = np.concatenate([limb_context_index, joint_context_index])
         print ('context index', self.context_index)
 
+        # hard code fix-range normalization for state inputs
+        self.state_norm_index = np.concatenate([np.arange(9), np.array([30, 31, 41, 42])])
+        self.state_min = np.array([-1.6, -25, -1, -15, -15, -15, -50, -50, -50, -0.3, -35, -0.3, -35])
+        self.state_min = torch.Tensor(self.state_min.reshape(1, 1, -1)).cuda()
+        self.state_max = np.array([1.6, 25, 4, 15, 15, 15, 50, 50, 50, 1.3, 35, 1.3, 35])
+        self.state_max = torch.Tensor(self.state_max.reshape(1, 1, -1)).cuda()
+
     def forward(self, obs, act=None, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None, unimal_ids=None, compute_val=True):
         
         # all_start = time.time()
@@ -895,6 +902,10 @@ class ActorCritic(nn.Module):
             obs_context = obs_context.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
             if cfg.MODEL.BASE_CONTEXT_NORM == 'fixed':
                 obs[:, :, self.context_index] = obs_context.clone()
+            if cfg.MODEL.OBS_FIX_NORM:
+                normed_obs = obs.clone()
+                normed_obs[:, :, self.state_norm_index] = -1. + 2. * (obs[:, :, self.state_norm_index] - self.state_min) / (self.state_max - self.state_min)
+                obs = normed_obs
 
         if compute_val:
             # Per limb critic values

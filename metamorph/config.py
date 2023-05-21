@@ -392,6 +392,9 @@ _C.MODEL.OBS_TO_NORM = ["proprioceptive"]
 # Context normalization with RunningMeanStd or fixed range
 _C.MODEL.BASE_CONTEXT_NORM = 'running'
 
+# normalize state inputs with fixed range
+_C.MODEL.OBS_FIX_NORM = False
+
 # normalize over all limbs
 _C.MODEL.NORM_OVER_LIMB = False
 _C.MODEL.INCLUDE_PADDING_LIMB_IN_NORM = True

@@ -101,7 +101,7 @@ class VecNormalize(VecEnvWrapper):
             self.clipob,
         )
 
-        if self.training and update:
+        if cfg.MODEL.NORM_OVER_LIMB:
             obs_p = obs_p.reshape(-1, self.limb_dim * cfg.MODEL.MAX_LIMBS)
 
         if isinstance(obs, dict):

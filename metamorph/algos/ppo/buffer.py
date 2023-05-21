@@ -28,7 +28,7 @@ class Buffer(object):
         self.dropout_mask_v = torch.ones(T, P, 12, 128)
         self.dropout_mask_mu = torch.ones(T, P, 12, 128)
         self.unimal_ids = torch.zeros(T, P).long()
-        self.limb_logp = torch.zeros(T, P, *act_shape)
+        # self.limb_logp = torch.zeros(T, P, *act_shape)
 
         self.step = 0
 
@@ -48,7 +48,7 @@ class Buffer(object):
         self.dropout_mask_v = self.dropout_mask_v.to(device)
         self.dropout_mask_mu = self.dropout_mask_mu.to(device)
         self.unimal_ids = self.unimal_ids.to(device)
-        self.limb_logp = self.limb_logp.to(device)
+        # self.limb_logp = self.limb_logp.to(device)
 
     def insert(self, obs, act, logp, val, rew, masks, timeouts, dropout_mask_v, dropout_mask_mu, unimal_ids, limb_logp):
         if isinstance(obs, dict):
@@ -65,7 +65,7 @@ class Buffer(object):
         self.dropout_mask_v[self.step] = dropout_mask_v
         self.dropout_mask_mu[self.step] = dropout_mask_mu
         self.unimal_ids[self.step] = torch.LongTensor(unimal_ids)
-        self.limb_logp[self.step] = limb_logp
+        # self.limb_logp[self.step] = limb_logp
 
         self.step = (self.step + 1) % cfg.PPO.TIMESTEPS
 
@@ -120,5 +120,5 @@ class Buffer(object):
             batch["dropout_mask_v"] = self.dropout_mask_v.view(-1, 12, 128)[idxs]
             batch["dropout_mask_mu"] = self.dropout_mask_mu.view(-1, 12, 128)[idxs]
             batch["unimal_ids"] = self.unimal_ids.view(-1)[idxs]
-            batch["limb_logp_old"] = self.limb_logp.view(-1, 24)[idxs]
+            # batch["limb_logp_old"] = self.limb_logp.view(-1, 24)[idxs]
             yield batch
