@@ -522,19 +522,37 @@ class PPO:
         elif cfg.ENV.TASK_SAMPLING == "balanced_replay_buffer":
             # For a first couple of iterations do uniform sampling to ensure
             # we have good estimate of ep_lens
-            if cur_iter < 30:
-                ep_lens = [1000] * num_agents
+            if len(cfg.ENV.WALKERS) > 150:
+                # follow a different strategy if we use augmented training set
+                ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in cfg.ENV.WALKERS]
+                if min(ep_lens) == 10:
+                    print ('start to sample based on ema')
+                    if cfg.TASK_SAMPLING.AVG_TYPE == "ema":
+                        ep_lens = [
+                            np.mean(self.train_meter.agent_meters[agent].ep_len_ema)
+                            for agent in cfg.ENV.WALKERS
+                        ]
+                    elif cfg.TASK_SAMPLING.AVG_TYPE == "moving_window":
+                        ep_lens = [
+                            np.mean(self.train_meter.agent_meters[agent].ep_len)
+                            for agent in cfg.ENV.WALKERS
+                        ]
+                else:
+                    ep_lens = [l + 1 for l in ep_lens]
             else:
-                if cfg.TASK_SAMPLING.AVG_TYPE == "ema":
-                    ep_lens = [
-                        np.mean(self.train_meter.agent_meters[agent].ep_len_ema)
-                        for agent in cfg.ENV.WALKERS
-                    ]
-                elif cfg.TASK_SAMPLING.AVG_TYPE == "moving_window":
-                    ep_lens = [
-                        np.mean(self.train_meter.agent_meters[agent].ep_len)
-                        for agent in cfg.ENV.WALKERS
-                    ]
+                if cur_iter < 30:
+                    ep_lens = [1000] * num_agents
+                else:
+                    if cfg.TASK_SAMPLING.AVG_TYPE == "ema":
+                        ep_lens = [
+                            np.mean(self.train_meter.agent_meters[agent].ep_len_ema)
+                            for agent in cfg.ENV.WALKERS
+                        ]
+                    elif cfg.TASK_SAMPLING.AVG_TYPE == "moving_window":
+                        ep_lens = [
+                            np.mean(self.train_meter.agent_meters[agent].ep_len)
+                            for agent in cfg.ENV.WALKERS
+                        ]
 
         probs = [1000.0 / l for l in ep_lens]
         probs = np.power(probs, cfg.TASK_SAMPLING.PROB_ALPHA)

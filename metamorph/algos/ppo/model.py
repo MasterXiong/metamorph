@@ -442,6 +442,8 @@ class TransformerModel(nn.Module):
             self.swat_PE_encoder = SWATPEEncoder(self.d_model, self.seq_len)
         if self.model_args.USE_SEPARATE_PE:
             self.separate_PE_encoder = SeparatePEEncoder(self.d_model, self.seq_len)
+        if self.model_args.USE_SEMANTIC_PE:
+            self.semantic_PE_encoder = SemanticEncoding(self.d_model, self.seq_len)
 
         self.dropout = nn.Dropout(p=0.1)
 
@@ -585,6 +587,7 @@ class TransformerModel(nn.Module):
         
         if self.model_args.EMBEDDING_SCALE:
             obs_embed *= math.sqrt(self.d_model)
+        # self.embedding_record = obs_embed.clone()
 
         attention_maps = None
 
@@ -607,6 +610,8 @@ class TransformerModel(nn.Module):
             obs_embed = self.swat_PE_encoder(obs_embed, morphology_info['traversals'])
         if self.model_args.USE_SEPARATE_PE:
             obs_embed = self.separate_PE_encoder(obs_embed, unimal_ids)
+        if self.model_args.USE_SEMANTIC_PE:
+            obs_embed = self.semantic_PE_encoder(obs_embed, morphology_info['position_id'])
 
         # print (f'embedding after PE: mean: {obs_embed.detach().cpu().numpy().ravel().mean():.2f}, std:{obs_embed.detach().cpu().numpy().ravel().std():.2f}')
         # plt.hist(obs_embed.detach().cpu().numpy().ravel(), bins=100, range=(-5., 5.), histtype='step', label='after PE')
@@ -714,6 +719,21 @@ class PositionalEncoding(nn.Module):
             x: Tensor, shape [seq_len, batch_size, embedding_dim]
         """
         x = x + self.pe
+        return x
+
+
+class SemanticEncoding(nn.Module):
+    def __init__(self, d_model, seq_len):
+        super().__init__()
+        self.pe = nn.Parameter(torch.zeros(seq_len, 1, d_model))
+
+    def forward(self, x, index):
+        """
+        Args:
+            x: Tensor, shape [seq_len, batch_size, embedding_dim]
+        """
+        pe = self.pe[index.reshape(-1)].reshape(index.shape[0], index.shape[1], -1).permute(1, 0, 2)
+        x = x + pe
         return x
 
 
@@ -843,11 +863,22 @@ class ActorCritic(nn.Module):
         print ('context index', self.context_index)
 
         # hard code fix-range normalization for state inputs
-        self.state_norm_index = np.concatenate([np.arange(9), np.array([30, 31, 41, 42])])
-        self.state_min = np.array([-1.6, -25, -1, -15, -15, -15, -50, -50, -50, -0.3, -35, -0.3, -35])
-        self.state_min = torch.Tensor(self.state_min.reshape(1, 1, -1)).cuda()
-        self.state_max = np.array([1.6, 25, 4, 15, 15, 15, 50, 50, 50, 1.3, 35, 1.3, 35])
-        self.state_max = torch.Tensor(self.state_max.reshape(1, 1, -1)).cuda()
+        if cfg.ENV_NAME == "Unimal-v0":
+            self.state_norm_index = np.concatenate([np.arange(9), np.array([30, 31, 41, 42])])
+            self.state_min = np.array([-1.6, -25, -1, -15, -15, -15, -50, -50, -50, -0.3, -35, -0.3, -35])
+            self.state_min = torch.Tensor(self.state_min.reshape(1, 1, -1)).cuda()
+            self.state_max = np.array([1.6, 25, 4, 15, 15, 15, 50, 50, 50, 1.3, 35, 1.3, 35])
+            self.state_max = torch.Tensor(self.state_max.reshape(1, 1, -1)).cuda()
+        elif cfg.ENV_NAME == 'Modular-v0':
+            self.state_norm_index = np.arange(12)
+            if 'humanoid' in cfg.ENV.WALKER_DIR:
+                self.state_min = np.array([-1, -0.4, 0, -10, -10, -10, -1, -40, -1, -np.pi, -np.pi, -np.pi])
+                self.state_max = np.array([55, 0.4, 1.5, 10, 10, 10, 1, 40, 1, np.pi, np.pi, np.pi])
+            elif 'walker' in cfg.ENV.WALKER_DIR:
+                self.state_min = np.array([-1, -1, 0, -10, -10, -10, -1, -60, -1, -np.pi, -np.pi, -np.pi])
+                self.state_max = np.array([50, 1, 1.6, 10, 10, 10, 1, 60, 1, np.pi, np.pi, np.pi])
+            self.state_min = torch.Tensor(self.state_min.reshape(1, 1, -1)).cuda()
+            self.state_max = torch.Tensor(self.state_max.reshape(1, 1, -1)).cuda()
 
     def forward(self, obs, act=None, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None, unimal_ids=None, compute_val=True):
         
@@ -855,6 +886,7 @@ class ActorCritic(nn.Module):
         
         if act is not None:
             batch_size = cfg.PPO.BATCH_SIZE
+            batch_size = act.shape[0]
         else:
             batch_size = cfg.PPO.NUM_ENVS
 
@@ -887,6 +919,9 @@ class ActorCritic(nn.Module):
         if cfg.MODEL.TRANSFORMER.RNN_CONTEXT:
             morphology_info['node_path_length'] = obs_dict['node_path_length']
             morphology_info['node_path_mask'] = obs_dict['node_path_mask'].bool()
+        # semantic for modular robots
+        if cfg.MODEL.TRANSFORMER.USE_SEMANTIC_PE:
+            morphology_info['position_id'] = obs_dict['position_id'].long()
         
         if len(morphology_info.keys()) == 0:
             morphology_info = None

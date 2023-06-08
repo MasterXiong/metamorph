@@ -24,6 +24,8 @@ DEFAULT_CAMERA_CONFIG = {
     "elevation": -20.0,
 }
 
+JOINT_ANGLE_SET = np.array([[-30, 0], [0, 30], [-30, 30], [-45, 0], [0, 45], [-45, 45], [-60, 0], [0, 60], [-60, 60], [-90, 0], [0, 90], [-60, 30], [-30, 60]])
+
 
 class UnimalEnv(gym.Env):
     """Superclass for all Unimal tasks."""
@@ -96,6 +98,12 @@ class UnimalEnv(gym.Env):
 
         xml_str = xu.etree_to_str(root)
         model = mujoco_py.load_model_from_xml(xml_str)
+
+        # change hardware parameters
+        if cfg.ENV.CHANGE_JOINT_ANGLE:
+            idx = np.random.choice(JOINT_ANGLE_SET.shape[0], model.jnt_range.shape[0] - 1)
+            model.jnt_range[1:] = JOINT_ANGLE_SET[idx] * np.pi / 180.
+
         sim = mujoco_py.MjSim(model)
         # Update module fields which require sim
         for _, module in self.modules.items():

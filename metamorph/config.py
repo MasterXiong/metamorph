@@ -92,6 +92,9 @@ _C.ENV.NEW_SIM_ON_RESET = True
 # whether to use a fixed env for each process
 _C.ENV.FIX_ENV  = False
 
+# randomly change hardware parameters
+_C.ENV.CHANGE_JOINT_ANGLE = False
+
 # ----------------------------------------------------------------------------#
 # Terrain Options
 # ----------------------------------------------------------------------------#
@@ -409,8 +412,8 @@ _C.MODEL.WRAPPERS = ["MultiUnimalNodeCentricObservation", "MultiUnimalNodeCentri
 _C.MODEL.TYPE = 'transformer'
 # hyperparameters for MLP model
 _C.MODEL.MLP = CN()
-_C.MODEL.MLP.HIDDEN_DIM = 128
-_C.MODEL.MLP.LAYER_NUM = 2
+_C.MODEL.MLP.HIDDEN_DIM = 256
+_C.MODEL.MLP.LAYER_NUM = 3
 _C.MODEL.MLP.CONSISTENT_PADDING = False
 # architecture choice
 _C.MODEL.MLP.HN_INPUT = False
@@ -516,6 +519,8 @@ _C.MODEL.TRANSFORMER.USE_CONNECTIVITY_IN_ATTENTION = False
 # test per-node embed and decode
 _C.MODEL.TRANSFORMER.PER_NODE_EMBED = False
 _C.MODEL.TRANSFORMER.PER_NODE_DECODER = False
+# semantic PE
+_C.MODEL.TRANSFORMER.USE_SEMANTIC_PE = False
 
 # --------------------------------------------------------------------------- #
 # Finetuning Options

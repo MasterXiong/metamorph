@@ -57,6 +57,7 @@ class VecNormalize(VecEnvWrapper):
 
     def step_wait(self):
         obs, rews, news, infos = self.venv.step_wait()
+        self.original_obs = obs
         self.ret = self.ret * self.gamma + rews
         obs = self._obfilt(obs)
         if self.ret_rms:
@@ -80,7 +81,7 @@ class VecNormalize(VecEnvWrapper):
     def _obfilt_helper(self, obs, obs_type, update=True):
         if isinstance(obs, dict):
             obs_p = obs[obs_type]
-            index = ~obs['obs_padding_mask'].reshape(-1)
+            # index = ~obs['obs_padding_mask'].reshape(-1).bool()
         else:
             obs_p = obs
 
