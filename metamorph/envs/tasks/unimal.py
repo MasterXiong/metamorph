@@ -114,11 +114,14 @@ class UnimalEnv(gym.Env):
         self.metadata["unimal_id"] = unimal_id
         self.metadata["agent_idx"] = idx
         self.unimal_id = unimal_id
-        self.unimal_idx = cfg.ENV.WALKERS.index(unimal_id)
+        # self.unimal_idx = cfg.ENV.WALKERS.index(unimal_id)
+        self.unimal_idx = idx
         self.metadata["mirrored"] = su.sample_from_list(
             [True, False], self.np_random
         )
-        self.xml_str = self.unimal_xmls[idx]
+        # self.xml_str = self.unimal_xmls[idx]
+        xml_path = f"{cfg.ENV.WALKER_DIR}/xml/{unimal_id}.xml"
+        self.xml_str = create_agent_xml(xml_path)
 
     ###########################################################################
     # Functions to setup env attributes

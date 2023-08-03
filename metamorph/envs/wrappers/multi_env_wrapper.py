@@ -2,6 +2,7 @@
 
 import os
 import random
+import json
 
 import gym
 import numpy as np
@@ -24,6 +25,7 @@ class MultiEnvWrapper(utils.EzPickle):
         self._unimal_seq = None
         self._unimal_seq_idx = -1
         self.num_steps = 0
+        self.all_agents = cfg.ENV.WALKERS
 
     def __getattr__(self, name):
         return getattr(self._env, name)
@@ -34,8 +36,8 @@ class MultiEnvWrapper(utils.EzPickle):
             self._unimal_seq_idx = -1
 
         self._unimal_seq_idx += 1
-        self._active_unimal_idx = self._unimal_seq[self._unimal_seq_idx]
-        unimal_id = cfg.ENV.WALKERS[self._active_unimal_idx]
+        self._active_unimal_idx = self._unimal_seq[self._unimal_seq_idx % len(self._unimal_seq)]
+        unimal_id = self.all_agents[self._active_unimal_idx]
         self._env.update(unimal_id, self._active_unimal_idx)
         obs = self._env.reset()
 
@@ -46,6 +48,9 @@ class MultiEnvWrapper(utils.EzPickle):
         if self.num_steps % cfg.PPO.TIMESTEPS == 0:
             self._unimal_seq = self._get_unimal_seq()
             self._unimal_seq_idx = -1
+            # update the agent pool
+            with open(f'{cfg.OUT_DIR}/walkers.json', 'r') as f:
+                self.all_agents = json.load(f)
 
         return self._env.step(action)
 

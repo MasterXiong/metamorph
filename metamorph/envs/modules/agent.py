@@ -70,7 +70,7 @@ class Agent:
         env.metadata["orig_height"] = round(orig_height, 2)
         env.metadata["fall_threshold"] = orig_height * cfg.ENV.STAND_HEIGHT_RATIO
         self._change_order(env, root)
-        self.node_depth = self.get_tree_depth(root)
+        # self.node_depth = self.get_tree_depth(root)
 
     def _change_order(self, env, root):
         worldbody = root.findall("./worldbody")[0]
@@ -409,7 +409,7 @@ class Agent:
             "edges": self.edges, 
             "context": context_obs.flatten(), 
             "connectivity": self.connectivity, 
-            'node_depth': self.node_depth_padded, 
+            # 'node_depth': self.node_depth_padded, 
             'traversals': self.traversals, 
             'node_path_length': node_path_length, 
             'node_path_mask': node_path_mask, 

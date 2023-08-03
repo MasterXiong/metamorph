@@ -1,6 +1,7 @@
 import os
 import time
 import pickle
+import json
 from collections import defaultdict
 
 import numpy as np
@@ -23,6 +24,7 @@ from .envs import set_ob_rms
 from .inherit_weight import restore_from_checkpoint
 from .model import ActorCritic
 from .model import Agent
+from .ued import ACCEL
 
 class PPO:
     def __init__(self, print_model=True):
@@ -98,19 +100,28 @@ class PPO:
         # os.system(f'mkdir {cfg.OUT_DIR}/ratio_hist')
         os.system(f'mkdir {cfg.OUT_DIR}/grad')
         os.system(f'mkdir {cfg.OUT_DIR}/limb_ratio')
+        os.system(f'mkdir {cfg.OUT_DIR}/iter_sampled_agents')
+        os.system(f'mkdir {cfg.OUT_DIR}/iter_prob')
+        os.system(f'mkdir {cfg.OUT_DIR}/ACCEL_score')
+
+        self.ST_performance = None
+
+        if cfg.ENV.TASK_SAMPLING == 'UED':
+            self.agent_manager = ACCEL(cfg.ENV.WALKERS, mutation_agent_num=cfg.UED.MUTATION_AGENT_NUM)
 
     def train(self):
-        self.save_sampled_agent_seq(0)
+        self.save_sampled_agent_seq(-1)
         obs = self.envs.reset()
         self.buffer.to(self.device)
         self.start = time.time()
+
+        with open(f'{cfg.OUT_DIR}/walkers.json', 'w') as f:
+            json.dump(cfg.ENV.WALKERS, f)
 
         print ('obs')
         print (type(obs), len(obs))
         for key in obs:
             print (key, obs[key].size())
-                
-        # old_values = self.agent.ac.v_net.context_embed.bias.detach().clone()
 
         self.grad_record = defaultdict(list)
         self.std_record = []
@@ -124,9 +135,21 @@ class PPO:
             self.stat_save_freq = 100
         else:
             self.stat_save_freq = 10
+        
+        if cfg.PPO.MAX_ITERS > 500:
+            model_save_freq = 100
+        else:
+            model_save_freq = 50
 
         obs_min_record, obs_max_record = [], []
+        # a buffer to store each episode's GAE for UED
+        episode_value = np.zeros([cfg.PPO.NUM_ENVS, 1000])
+        episode_reward = np.zeros([cfg.PPO.NUM_ENVS, 1000])
+        episode_timestep = np.zeros(cfg.PPO.NUM_ENVS, dtype=int)
         for cur_iter in range(cfg.PPO.MAX_ITERS):
+
+            # store the agents sampled in each iteration for UED
+            self.sampled_agents = []
 
             if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE and cur_iter > cfg.MODEL.TRANSFORMER.SEPARATE_PE_UPDATE_ITER:
                 print ('start to tune separate PE')
@@ -139,13 +162,7 @@ class PPO:
             lr = ou.get_iter_lr(cur_iter)
             ou.set_lr(self.optimizer, lr, self.lr_scale)
 
-            # print (self.agent.ac.v_net.hnet_input_weight.weight.data[:6, :6])
-
             for step in range(cfg.PPO.TIMESTEPS):
-                # obs_min = obs['proprioceptive'].reshape(-1, 52).min(dim=0).values.cpu().numpy()
-                # obs_min_record.append(obs_min)
-                # obs_max = obs['proprioceptive'].reshape(-1, 52).max(dim=0).values.cpu().numpy()
-                # obs_max_record.append(obs_max)
                 # Sample actions
                 if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE or cfg.MODEL.TRANSFORMER.PER_NODE_EMBED:
                     unimal_ids = self.envs.get_unimal_idx()
@@ -156,7 +173,35 @@ class PPO:
 
                 next_obs, reward, done, infos = self.envs.step(act)
 
-                self.train_meter.add_ep_info(infos)
+                # store each episode's value and reward to compute the trajectory GAE
+                episode_value[np.arange(cfg.PPO.NUM_ENVS), episode_timestep] = val.cpu().numpy().ravel()
+                episode_reward[np.arange(cfg.PPO.NUM_ENVS), episode_timestep] = reward.ravel()
+                episode_timestep += 1
+                # check episode end
+                finished_episode_index = np.where(done)[0]
+                for idx in finished_episode_index:
+                    episode_len = episode_timestep[idx]
+                    delta = episode_reward[idx, :(episode_len - 1)] + cfg.PPO.GAMMA * episode_value[idx, 1:episode_len] - episode_value[idx, :(episode_len - 1)]
+                    # the last step's delta need additional process
+                    if 'timeout' in infos[idx]:
+                        delta = np.append(delta, 0.)
+                    else:
+                        delta = np.append(delta, episode_reward[idx, -1] - episode_value[idx, -1])
+                    # compute GAE
+                    gae = delta.copy()
+                    for i in reversed(range(gae.shape[0] - 1)):
+                        gae[i] = delta[i] + cfg.PPO.GAMMA * cfg.PPO.GAE_LAMBDA * gae[i + 1]
+                    learning_potential_score = np.maximum(gae, 0.).mean()
+                    infos[idx]['positive_gae'] = learning_potential_score
+                    # reset the episode record
+                    episode_value[idx] = 0.
+                    episode_reward[idx] = 0.
+                    episode_timestep[idx] = 0
+
+                self.train_meter.add_ep_info(infos, cur_iter)
+                # record agents that are done
+                finished_agents = [infos[i]['name'] for i in range(len(done)) if done[i]]
+                self.sampled_agents.extend(finished_agents)
 
                 masks = torch.tensor(
                     [[0.0] if done_ else [1.0] for done_ in done],
@@ -179,16 +224,49 @@ class PPO:
             next_val = self.agent.get_value(obs, unimal_ids=unimal_ids)
             self.buffer.compute_returns(next_val)
             self.train_on_batch(cur_iter)
+
+            with open(f'{cfg.OUT_DIR}/iter_sampled_agents/{cur_iter}.pkl', 'wb') as f:
+                pickle.dump(self.sampled_agents, f)
+
+            if cfg.ENV.TASK_SAMPLING == 'UED' and cfg.UED.SAMPLER == 'ACCEL':
+                # update UED scores of the agents sampled in the current iteration
+                for agent in set(self.sampled_agents):
+                    agent_id = cfg.ENV.WALKERS.index(agent)
+                    potential_score = np.mean(self.train_meter.agent_meters[agent].ep_positive_gae)
+                    self.agent_manager.potential_score[agent_id] = potential_score
+                    staleness_score = cur_iter
+                    # TODO: staleness score could be computed as EMA of the visited time before?
+                    self.agent_manager.staleness_score[agent_id] = staleness_score
+            
+            if cfg.ENV.TASK_SAMPLING == 'UED' and cfg.UED.GENERATE_NEW_AGENTS:
+                # generate new agents by mutating existing ones
+                if cur_iter >= 0 and cur_iter % cfg.UED.ADD_NEW_AGENTS_FREQ == 0:
+                    agent_scores = []
+                    for agent in cfg.ENV.WALKERS:
+                        scores = self.train_meter.agent_meters[agent].mean_ep_rews['reward']
+                        if len(scores) < 5:
+                            agent_scores.append(0.)
+                        else:
+                            agent_scores.append(np.array(scores[-5:]).mean())
+                    new_agents, new_agents_parent = self.agent_manager.generate_new_agents(set(self.sampled_agents), np.array(agent_scores))
+                    if len(new_agents) > 0:
+                        new_potential_score = [np.mean(self.train_meter.agent_meters[agent].ep_positive_gae) for agent in new_agents_parent]
+                        self.agent_manager.initialize_new_agents_score(new_agents, new_potential_score)
+                        cfg.ENV.WALKERS.extend(new_agents)
+                        num_agents = len(cfg.ENV.WALKERS)
+                        print (f'The agent pool now contains {num_agents} agents')
+                        with open(f'{cfg.OUT_DIR}/walkers.json', 'w') as f:
+                            json.dump(cfg.ENV.WALKERS, f)
+                        self.train_meter.add_new_agents(new_agents)
+                    else:
+                        print ('no new agents added in this iteration')
+            
+            # sample agents for next iteration
             self.save_sampled_agent_seq(cur_iter)
 
             # save std record
             with open(os.path.join(cfg.OUT_DIR, 'std.pkl'), 'wb') as f:
                 pickle.dump(self.std_record, f)
-
-            # with open(f'{cfg.OUT_DIR}/obs_min_record.pkl', 'wb') as f:
-            #     pickle.dump(obs_min_record, f)
-            # with open(f'{cfg.OUT_DIR}/obs_max_record.pkl', 'wb') as f:
-            #     pickle.dump(obs_max_record, f)
 
             self.train_meter.update_mean()
             if len(self.train_meter.mean_ep_rews["reward"]):
@@ -211,7 +289,7 @@ class PPO:
                 fu.save_json(stats, path)
                 print (cfg.OUT_DIR)
             
-            if cur_iter % 100 == 0:
+            if cur_iter % model_save_freq == 0:
                 self.save_model(cur_iter)
 
         print("Finished Training: {}".format(self.file_prefix))
@@ -225,7 +303,6 @@ class PPO:
         limb_ratio_record = []
 
         std_record = []
-        early_stop = False
         additional_clip_frac_record = []
         for i in range(cfg.PPO.EPOCHS):
             batch_sampler = self.buffer.get_sampler(adv)
@@ -251,56 +328,20 @@ class PPO:
                         with open(os.path.join(cfg.OUT_DIR, 'ratio_hist', f'ratio_hist_{cur_iter}.pkl'), 'wb') as f:
                             pickle.dump(ratio_hist, f)
                     print (f'early stop iter {cur_iter} at epoch {i + 1}/{cfg.PPO.EPOCHS}, batch {j + 1} with approx_kl {approx_kl}')
-                    early_stop = True
-                    break
+                    return
 
                 if cfg.SAVE_HIST_RATIO:
                     clipped_ratio = torch.clamp(ratio, 0., 2.0).detach()
                     hist, _ = np.histogram(clipped_ratio.cpu().numpy(), 100, range=(0., 2.))
                     ratio_hist[i].append(hist)
 
-                if cfg.PPO.ABS_CLIP:
-                    # new_limb_logp = self.actor_critic.limb_logp.detach()
-                    # old_limb_logp = batch["limb_logp_old"]
-                    # abs_ratio = torch.maximum(new_limb_logp, old_limb_logp) - torch.minimum(new_limb_logp, old_limb_logp)
-                    # abs_ratio = torch.exp(abs_ratio.sum(-1, keepdim=True))
-                    # # pos_adv_clip = torch.logical_and(batch["adv"] > 0., abs_ratio > 1. + clip_ratio)
-                    # # neg_adv_clip = torch.logical_and(batch["adv"] < 0., abs_ratio < 1. - clip_ratio)
-                    # # clip_mask = torch.logical_or(pos_adv_clip, neg_adv_clip)
-                    # clip_mask = abs_ratio > (1. + clip_ratio)
-                    # # surr = ratio * batch['adv'] * (1. - clip_mask.float()).detach()
-                    # surr = ratio * batch['adv']
-                    # surr[clip_mask] = 0.
-                    # pi_loss = -surr.mean()
-                    # clip_frac = clip_mask.float().mean().item()
-                    # print (clip_frac)
+                surr1 = ratio * batch["adv"]
 
-                    surr = ratio * batch['adv']
-                    pos_adv_clip = torch.logical_and(batch["adv"] > 0., ratio > 1. + clip_ratio)
-                    neg_adv_clip = torch.logical_and(batch["adv"] < 0., ratio < 1. - clip_ratio)
-                    clip_mask = torch.logical_or(pos_adv_clip, neg_adv_clip)
-                    surr[clip_mask] = 0.
-                    
-                    # additional clip
-                    logp_divergence = self.actor_critic.limb_logp.detach() - batch["limb_logp_old"]
-                    gap = logp_divergence.abs().sum(dim=-1) - logp_divergence.sum(dim=-1).abs()
-                    additional_clip_mask = gap > cfg.PPO.ABS_CLIP_THRESHOLD
-                    surr[additional_clip_mask] = 0.
-                    additional_clip_ratio = (additional_clip_mask.float().mean() - torch.logical_and(clip_mask, additional_clip_mask).float().mean()).item()
-                    additional_clip_frac_record.append(additional_clip_ratio)
+                surr2 = torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
+                clip_frac = (ratio != surr2).float().mean().item()
+                surr2 *= batch["adv"]
 
-                    pi_loss = -surr.mean()
-                    clip_frac = clip_mask.float().mean().item()
-                
-                else:
-
-                    surr1 = ratio * batch["adv"]
-
-                    surr2 = torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
-                    clip_frac = (ratio != surr2).float().mean().item()
-                    surr2 *= batch["adv"]
-
-                    pi_loss = -torch.min(surr1, surr2).mean()
+                pi_loss = -torch.min(surr1, surr2).mean()
                 
                 if cfg.PPO.USE_CLIP_VALUE_FUNC:
                     val_pred_clip = batch["val"] + (val - batch["val"]).clamp(
@@ -372,20 +413,11 @@ class PPO:
                 self.train_meter.add_train_stat("pi_loss", pi_loss.item())
                 self.train_meter.add_train_stat("val_loss", val_loss.item())
                 self.train_meter.add_train_stat("ratio", ratio.mean().item())
-                if cfg.PPO.ABS_CLIP:
-                    self.train_meter.add_train_stat("surr", surr.mean().item())
-                else:
-                    self.train_meter.add_train_stat("surr1", surr1.mean().item())
-                    self.train_meter.add_train_stat("surr2", surr2.mean().item())
+                self.train_meter.add_train_stat("surr1", surr1.mean().item())
+                self.train_meter.add_train_stat("surr2", surr2.mean().item())
                 self.train_meter.add_train_stat("clip_frac", clip_frac)
 
                 self.optimizer.step()
-            
-            if early_stop:
-                break
-
-        if cfg.PPO.ABS_CLIP:
-            print ('additional clip frac', np.array(additional_clip_frac_record).mean())
 
         self.std_record.append(std_record)
 
@@ -519,6 +551,8 @@ class PPO:
 
         if cfg.ENV.TASK_SAMPLING == "uniform_random_strategy":
             ep_lens = [1000] * num_agents
+            probs = [1000.0 / l for l in ep_lens]
+
         elif cfg.ENV.TASK_SAMPLING == "balanced_replay_buffer":
             # For a first couple of iterations do uniform sampling to ensure
             # we have good estimate of ep_lens
@@ -553,10 +587,62 @@ class PPO:
                             np.mean(self.train_meter.agent_meters[agent].ep_len)
                             for agent in cfg.ENV.WALKERS
                         ]
+            probs = [1000.0 / l for l in ep_lens]
 
-        probs = [1000.0 / l for l in ep_lens]
+        elif cfg.ENV.TASK_SAMPLING == "UED":
+            
+            if cfg.UED.SAMPLER == 'ACCEL':
+                # select new agents for the next learning iteration
+                if cur_iter >= 10:
+                    probs = self.agent_manager.get_sample_probs(cur_iter)
+                    with open(f'{cfg.OUT_DIR}/ACCEL_score/{cur_iter}.pkl', 'wb') as f:
+                        pickle.dump([self.agent_manager.potential_score, self.agent_manager.staleness_score], f)
+                else:
+                    probs = [1. for _ in cfg.ENV.WALKERS]
+            
+            elif cfg.UED.SAMPLER == 'regret':
+
+                if self.ST_performance is None:
+                    self.ST_performance = {}
+                    for agent in cfg.ENV.WALKERS:
+                        with open(f'{cfg.TASK_SAMPLING.ST_PATH}/{agent}/1409/Unimal-v0_results.json', 'r') as f:
+                            log = json.load(f)
+                        self.ST_performance[agent] = log[agent]['reward']['reward'][-1]
+
+                ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in cfg.ENV.WALKERS]
+                if min(ep_lens) == 10:
+                    print ('start to sample based on UED regret')
+                    # TODO: how to deal with negative regret
+                    # Issue: training score is computed based on an out-of-date model, 
+                    # which may not correctly reflect the current model's performance on a robot
+                    probs = [
+                        self.ST_performance[agent] - self.train_meter.agent_meters[agent].ep_len_ema 
+                        for agent in cfg.ENV.WALKERS
+                    ]
+                    probs = [max(p, 0.) for p in probs]
+                else:
+                    ep_lens = [l + 1 for l in ep_lens]
+                    probs = [1000.0 / l for l in ep_lens]
+            
+            elif cfg.UED.SAMPLER == 'learning_progress':
+                ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in cfg.ENV.WALKERS]
+                if min(ep_lens) == 10:
+                    print ('start to sample based on learning progress')
+                    probs = [self.train_meter.agent_meters[agent].get_learning_speed() for agent in cfg.ENV.WALKERS]
+                    print (probs)
+                else:
+                    ep_lens = [l + 1 for l in ep_lens]
+                    probs = [1000.0 / l for l in ep_lens]
+
+            else:
+                probs = [1. for _ in cfg.ENV.WALKERS]
+
+        # maybe use softmax here?
+        # probs = np.exp(probs)
         probs = np.power(probs, cfg.TASK_SAMPLING.PROB_ALPHA)
         probs = [p / sum(probs) for p in probs]
+        with open(f'{cfg.OUT_DIR}/iter_prob/{cur_iter}.pkl', 'wb') as f:
+            pickle.dump(probs, f)
 
         # Estimate approx number of episodes each subproc env can rollout
         avg_ep_len = np.mean([

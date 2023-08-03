@@ -66,6 +66,11 @@ def chunkify(list_, num_chunks, chunk_size=None):
     """Divide list into num_chunks."""
     if not chunk_size:
         chunk_size = int(math.ceil(len(list_) / num_chunks))
+    while (1):
+        if (len(list_) / chunk_size) < num_chunks - 0.5:
+            chunk_size -= 1
+        else:
+            break
     return [list_[i : i + chunk_size] for i in range(0, len(list_), chunk_size)]
 
 

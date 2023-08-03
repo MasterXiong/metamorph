@@ -83,6 +83,10 @@ _C.ENV.TASK = "locomotion"
 _C.ENV.WRAPPERS = []
 
 # Task sampling strategy for multi-task envs. See multi_env_wrapper.py
+# support: 
+#   - uniform_random_strategy (uniform sampling)
+#   - balanced_replay_buffer (the method proposed in MetaMorph)
+#   - UED (minimax regret sampling)
 _C.ENV.TASK_SAMPLING = "balanced_replay_buffer"
 
 # For envs which change on each reset e.g. vt and mvt this should be true.
@@ -94,6 +98,11 @@ _C.ENV.FIX_ENV  = False
 
 # randomly change hardware parameters
 _C.ENV.CHANGE_JOINT_ANGLE = False
+
+# filter walkers
+_C.ENV.FILTER_WALKERS = False
+_C.ENV.FILTER_SCORE_FOLDER = ''
+_C.ENV.FILTER_THRESHOLD = 0.
 
 # ----------------------------------------------------------------------------#
 # Terrain Options
@@ -336,6 +345,9 @@ _C.TASK_SAMPLING.PROB_ALPHA = 1.0
 
 _C.TASK_SAMPLING.AVG_TYPE = "ema"
 
+# the path to find the per-task performance upper-bound for UED
+_C.TASK_SAMPLING.ST_PATH = ''
+
 # --------------------------------------------------------------------------- #
 # Model Options
 # --------------------------------------------------------------------------- #
@@ -381,12 +393,12 @@ _C.MODEL.CONTEXT_OBS_TYPES = [
 _C.MODEL.OBS_TYPES = [
     "proprioceptive", "edges", "obs_padding_mask", "act_padding_mask", 
     "context", 
-    "connectivity", 
-    "node_depth", 
-    "traversals", 
-    'node_path_length', 
-    'node_path_mask', 
-    'SWAT_RE', 
+    # "connectivity", 
+    # "node_depth", 
+    # "traversals", 
+    # 'node_path_length', 
+    # 'node_path_mask', 
+    # 'SWAT_RE', 
 ]
 
 # Observations to normalize via VecNormalize
@@ -509,7 +521,7 @@ _C.MODEL.TRANSFORMER.GRAPH_PE_IN_CONTEXT = False
 _C.MODEL.TRANSFORMER.GRAPH_PE_DIM = 3
 # node depth PE
 _C.MODEL.TRANSFORMER.NODE_DEPTH_IN_CONTEXT = False
-_C.MODEL.TRANSFORMER.MAX_NODE_DEPTH = 6
+_C.MODEL.TRANSFORMER.MAX_NODE_DEPTH = 20
 # children number PE
 _C.MODEL.TRANSFORMER.CHILD_NUM_IN_CONTEXT = False
 # RNN PE
@@ -554,6 +566,21 @@ _C.CUDNN = CN()
 
 _C.CUDNN.BENCHMARK = False
 _C.CUDNN.DETERMINISTIC = True
+
+# UED options
+_C.UED = CN()
+
+# parameters of how to generate new agents
+_C.UED.GENERATE_NEW_AGENTS = False
+_C.UED.ADD_NEW_AGENTS_FREQ = 10
+_C.UED.MUTATION_AGENT_NUM = 10
+# immediate_children
+_C.UED.PARENT_SELECT_STRATEGY = None
+# only mutate agents with high enough scores
+_C.UED.MUTATE_THRESHOLD = None
+
+# UED method: 'regret', 'uniform', 'ACCEL'
+_C.UED.SAMPLER = 'regret'
 
 # ----------------------------------------------------------------------------#
 # Misc Options

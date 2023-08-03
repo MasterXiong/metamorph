@@ -23,12 +23,19 @@ class AgentMeter:
         self.ep_len = deque(maxlen=10)
         self.ep_len_ema = -1
 
-    def add_ep_info(self, infos):
+        # statistics for UED
+        self.ep_positive_gae = deque(maxlen=10)
+        self.iter_returns = []
+
+    def add_ep_info(self, infos, cur_iter):
         for info in infos:
             if info["name"] != self.name:
                 continue
             if "episode" in info.keys():
                 self.ep_rew["reward"].append(info["episode"]["r"])
+                if len(self.iter_returns) == cur_iter:
+                    self.iter_returns.append([])
+                self.iter_returns[-1].append(info["episode"]["r"])
                 self.ep_count += 1
                 self.ep_len.append(info["episode"]["l"])
                 if self.ep_count == 10:
@@ -49,6 +56,8 @@ class AgentMeter:
                     self.ep_vel.append(info["x_vel"])
                 if "metric" in info:
                     self.ep_metric.append(info["metric"])
+                
+                self.ep_positive_gae.append(info['positive_gae'])
 
     def update_mean(self):
         if len(self.ep_rew["reward"]) == 0:
@@ -83,6 +92,19 @@ class AgentMeter:
             )
         )
 
+    def get_learning_speed(self):
+        K = 10
+        xdata = np.concatenate([[i for _ in self.iter_returns[-K+i]] for i in range(K)])
+        ydata = np.concatenate(self.iter_returns[-K:])
+
+        def solve_linear_regression(X, y):
+            X_with_bias = np.c_[np.ones((X.shape[0], 1)), X.reshape(-1, 1)]
+            beta = np.linalg.inv(X_with_bias.T.dot(X_with_bias)).dot(X_with_bias.T).dot(y)
+            return beta.ravel()[1]
+        
+        r = abs(solve_linear_regression(xdata, ydata))
+        return r
+
 
 class TrainMeter:
     def __init__(self):
@@ -97,6 +119,11 @@ class TrainMeter:
         self.mean_vel = []
         self.mean_metric = []
         self.mean_ep_len = []
+
+    def add_new_agents(self, agents):
+        self.agents = cfg.ENV.WALKERS
+        for agent in agents:
+            self.agent_meters[agent] = AgentMeter(agent)
 
     def add_train_stat(self, stat_type, stat_value):
         self.train_stats[stat_type].append(stat_value)
