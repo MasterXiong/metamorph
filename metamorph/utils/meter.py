@@ -25,7 +25,8 @@ class AgentMeter:
 
         # statistics for UED
         self.ep_positive_gae = deque(maxlen=10)
-        self.iter_returns = []
+        self.return_buffer = deque(maxlen=50)
+        self.iter_buffer = deque(maxlen=50)
 
     def add_ep_info(self, infos, cur_iter):
         for info in infos:
@@ -33,9 +34,8 @@ class AgentMeter:
                 continue
             if "episode" in info.keys():
                 self.ep_rew["reward"].append(info["episode"]["r"])
-                if len(self.iter_returns) == cur_iter:
-                    self.iter_returns.append([])
-                self.iter_returns[-1].append(info["episode"]["r"])
+                self.return_buffer.append(info["episode"]["r"])
+                self.iter_buffer.append(cur_iter)
                 self.ep_count += 1
                 self.ep_len.append(info["episode"]["l"])
                 if self.ep_count == 10:
@@ -93,16 +93,23 @@ class AgentMeter:
         )
 
     def get_learning_speed(self):
-        K = 10
-        xdata = np.concatenate([[i for _ in self.iter_returns[-K+i]] for i in range(K)])
-        ydata = np.concatenate(self.iter_returns[-K:])
+        buffer_size = len(self.return_buffer)
 
         def solve_linear_regression(X, y):
-            X_with_bias = np.c_[np.ones((X.shape[0], 1)), X.reshape(-1, 1)]
+            X = np.array(X).reshape(-1, 1)
+            y = np.array(y)
+            X_with_bias = np.c_[np.ones((X.shape[0], 1)), X]
             beta = np.linalg.inv(X_with_bias.T.dot(X_with_bias)).dot(X_with_bias.T).dot(y)
             return beta.ravel()[1]
         
-        r = abs(solve_linear_regression(xdata, ydata))
+        slope = []
+        for i in range(10, 60, 10):
+            buffer_range = -min(i, buffer_size)
+            xdata = [self.iter_buffer[j] for j in range(buffer_range, 0)]
+            ydata = [self.return_buffer[j] for j in range(buffer_range, 0)]
+            slope.append(solve_linear_regression(xdata, ydata))
+        score = np.array([abs(x) for x in slope])
+        r = np.sort(score)[2]
         return r
 
 
@@ -128,9 +135,9 @@ class TrainMeter:
     def add_train_stat(self, stat_type, stat_value):
         self.train_stats[stat_type].append(stat_value)
 
-    def add_ep_info(self, infos):
+    def add_ep_info(self, infos, cur_iter):
         for _, agent_meter in self.agent_meters.items():
-            agent_meter.add_ep_info(infos)
+            agent_meter.add_ep_info(infos, cur_iter)
 
     def update_mean(self):
         for _, agent_meter in self.agent_meters.items():
