@@ -25,8 +25,15 @@ class AgentMeter:
 
         # statistics for UED
         self.ep_positive_gae = deque(maxlen=10)
-        self.return_buffer = deque(maxlen=50)
-        self.iter_buffer = deque(maxlen=50)
+        # self.return_buffer = deque(maxlen=50)
+        # self.iter_buffer = deque(maxlen=50)
+        # self.iter_returns = []
+        self.iter_mean_return = deque(maxlen=5)
+        self.iter_ep_num = deque(maxlen=5)
+        self.iter_idx = deque(maxlen=5)
+        self.LP = 0.
+        # this needs to be reset for every iteration
+        self.iter_ep_returns = []
 
     def add_ep_info(self, infos, cur_iter):
         for info in infos:
@@ -34,8 +41,13 @@ class AgentMeter:
                 continue
             if "episode" in info.keys():
                 self.ep_rew["reward"].append(info["episode"]["r"])
-                self.return_buffer.append(info["episode"]["r"])
-                self.iter_buffer.append(cur_iter)
+                self.iter_ep_returns.append(info["episode"]["r"])                
+                # self.return_buffer.append(info["episode"]["r"])
+                # self.iter_buffer.append(cur_iter)
+                # while (1):
+                #     if len(self.iter_returns) > cur_iter:
+                #         break
+                #     self.iter_returns.append([])
                 self.ep_count += 1
                 self.ep_len.append(info["episode"]["l"])
                 if self.ep_count == 10:
@@ -92,25 +104,54 @@ class AgentMeter:
             )
         )
 
-    def get_learning_speed(self):
-        buffer_size = len(self.return_buffer)
+    def update_iter_returns(self, cur_iter):
+        if len(self.iter_ep_returns) > 0:
+            self.iter_mean_return.append(np.mean(self.iter_ep_returns))
+            self.iter_ep_num.append(len(self.iter_ep_returns))
+            self.iter_idx.append(cur_iter)
+            self.iter_ep_returns = []
 
-        def solve_linear_regression(X, y):
+    def get_learning_speed(self):
+
+        def solve_linear_regression(X, y, w):
             X = np.array(X).reshape(-1, 1)
+            X = np.c_[np.ones((X.shape[0], 1)), X]
             y = np.array(y)
-            X_with_bias = np.c_[np.ones((X.shape[0], 1)), X]
-            beta = np.linalg.inv(X_with_bias.T.dot(X_with_bias)).dot(X_with_bias.T).dot(y)
+            weight = np.diag(w)
+            beta = np.linalg.inv(X.T.dot(weight).dot(X)).dot(X.T).dot(weight).dot(y)
             return beta.ravel()[1]
-        
-        slope = []
-        for i in range(10, 60, 10):
-            buffer_range = -min(i, buffer_size)
-            xdata = [self.iter_buffer[j] for j in range(buffer_range, 0)]
-            ydata = [self.return_buffer[j] for j in range(buffer_range, 0)]
-            slope.append(solve_linear_regression(xdata, ydata))
-        score = np.array([abs(x) for x in slope])
-        r = np.sort(score)[2]
-        return r
+
+        if len(self.iter_mean_return) == 1:
+            xdata = np.insert(np.array(self.iter_idx), 0, 0.)
+            ydata = np.insert(np.array(self.iter_mean_return), 0, 0.)
+            w = np.insert(np.array(self.iter_ep_num), 0, 0.)
+        else:
+            xdata = np.array(self.iter_idx)
+            ydata = np.array(self.iter_mean_return)
+            w = np.clip(np.array(self.iter_ep_num), None, 10.)
+        print (xdata, ydata, w)
+        self.LP = abs(solve_linear_regression(xdata, ydata, w))
+        return self.LP
+
+        # slope = []
+        # for i in range(10, 60, 10):
+        #     buffer_range = -min(i, buffer_size)
+        #     xdata = [self.iter_buffer[j] for j in range(buffer_range, 0)]
+        #     ydata = [self.return_buffer[j] for j in range(buffer_range, 0)]
+        #     slope.append(solve_linear_regression(xdata, ydata))
+        # score = np.array([abs(x) for x in slope])
+        # r = np.sort(score)[2]
+        # return r
+
+        # xdata, ydata = [], []
+        # for i in range(-5, 0):
+        #     if len(self.iter_returns[i]) == 0:
+        #         continue
+        #     xdata.append(i + 5)
+        #     ydata.append(np.array(self.iter_returns[i]).mean())
+        # print (xdata, ydata)
+        # slope = solve_linear_regression(xdata, ydata)
+        # return abs(slope)
 
 
 class TrainMeter:

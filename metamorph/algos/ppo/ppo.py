@@ -626,9 +626,12 @@ class PPO:
             
             elif cfg.UED.SAMPLER == 'learning_progress':
                 ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in cfg.ENV.WALKERS]
+                for agent in cfg.ENV.WALKERS:
+                    self.train_meter.agent_meters[agent].update_iter_returns(cur_iter)
                 if min(ep_lens) == 10:
                     print ('start to sample based on learning progress')
-                    probs = [self.train_meter.agent_meters[agent].get_learning_speed() for agent in cfg.ENV.WALKERS]
+                    LP_score = [self.train_meter.agent_meters[agent].get_learning_speed() for agent in cfg.ENV.WALKERS]
+                    probs = LP_score
                     print (probs)
                 else:
                     ep_lens = [l + 1 for l in ep_lens]
