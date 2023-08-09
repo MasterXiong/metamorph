@@ -127,9 +127,9 @@ class PPO:
         self.std_record = []
 
         # do not update separate PE at the beginning
-        if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE:
-            self.agent.ac.mu_net.separate_PE_encoder.pe.requires_grad = False
-            self.agent.ac.v_net.separate_PE_encoder.pe.requires_grad = False
+        # if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE:
+        #     self.agent.ac.mu_net.separate_PE_encoder.pe.requires_grad = False
+        #     self.agent.ac.v_net.separate_PE_encoder.pe.requires_grad = False
 
         if cfg.PPO.MAX_ITERS > 1000:
             self.stat_save_freq = 100
@@ -151,10 +151,10 @@ class PPO:
             # store the agents sampled in each iteration for UED
             self.sampled_agents = []
 
-            if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE and cur_iter > cfg.MODEL.TRANSFORMER.SEPARATE_PE_UPDATE_ITER:
-                print ('start to tune separate PE')
-                self.agent.ac.mu_net.separate_PE_encoder.pe.requires_grad = True
-                self.agent.ac.v_net.separate_PE_encoder.pe.requires_grad = True
+            # if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE and cur_iter >= cfg.MODEL.TRANSFORMER.SEPARATE_PE_UPDATE_ITER:
+            #     print ('start to tune separate PE')
+            #     self.agent.ac.mu_net.separate_PE_encoder.pe.requires_grad = True
+            #     self.agent.ac.v_net.separate_PE_encoder.pe.requires_grad = True
 
             if cfg.PPO.EARLY_EXIT and cur_iter >= cfg.PPO.EARLY_EXIT_MAX_ITERS:
                 break
@@ -169,36 +169,38 @@ class PPO:
                 else:
                     unimal_ids = [0 for _ in range(cfg.PPO.NUM_ENVS)]
                 val, act, logp, dropout_mask_v, dropout_mask_mu = self.agent.act(obs, unimal_ids=unimal_ids)
-                limb_logp = self.agent.limb_logp.detach()
+                # limb_logp = self.agent.limb_logp.detach()
+                limb_logp = None
 
                 next_obs, reward, done, infos = self.envs.step(act)
 
                 # store each episode's value and reward to compute the trajectory GAE
-                episode_value[np.arange(cfg.PPO.NUM_ENVS), episode_timestep] = val.cpu().numpy().ravel()
-                episode_reward[np.arange(cfg.PPO.NUM_ENVS), episode_timestep] = reward.ravel()
-                episode_timestep += 1
-                # check episode end
-                finished_episode_index = np.where(done)[0]
-                for idx in finished_episode_index:
-                    episode_len = episode_timestep[idx]
-                    delta = episode_reward[idx, :(episode_len - 1)] + cfg.PPO.GAMMA * episode_value[idx, 1:episode_len] - episode_value[idx, :(episode_len - 1)]
-                    # the last step's delta need additional process
-                    if 'timeout' in infos[idx]:
-                        delta = np.append(delta, 0.)
-                    else:
-                        delta = np.append(delta, episode_reward[idx, -1] - episode_value[idx, -1])
-                    # compute GAE
-                    gae = delta.copy()
-                    for i in reversed(range(gae.shape[0] - 1)):
-                        gae[i] = delta[i] + cfg.PPO.GAMMA * cfg.PPO.GAE_LAMBDA * gae[i + 1]
-                    learning_potential_score = np.maximum(gae, 0.).mean()
-                    infos[idx]['positive_gae'] = learning_potential_score
-                    # reset the episode record
-                    episode_value[idx] = 0.
-                    episode_reward[idx] = 0.
-                    episode_timestep[idx] = 0
+                # episode_value[np.arange(cfg.PPO.NUM_ENVS), episode_timestep] = val.cpu().numpy().ravel()
+                # episode_reward[np.arange(cfg.PPO.NUM_ENVS), episode_timestep] = reward.ravel()
+                # episode_timestep += 1
+                # # check episode end
+                # finished_episode_index = np.where(done)[0]
+                # for idx in finished_episode_index:
+                #     episode_len = episode_timestep[idx]
+                #     delta = episode_reward[idx, :(episode_len - 1)] + cfg.PPO.GAMMA * episode_value[idx, 1:episode_len] - episode_value[idx, :(episode_len - 1)]
+                #     # the last step's delta need additional process
+                #     if 'timeout' in infos[idx]:
+                #         delta = np.append(delta, 0.)
+                #     else:
+                #         delta = np.append(delta, episode_reward[idx, -1] - episode_value[idx, -1])
+                #     # compute GAE
+                #     gae = delta.copy()
+                #     for i in reversed(range(gae.shape[0] - 1)):
+                #         gae[i] = delta[i] + cfg.PPO.GAMMA * cfg.PPO.GAE_LAMBDA * gae[i + 1]
+                #     learning_potential_score = np.maximum(gae, 0.).mean()
+                #     infos[idx]['positive_gae'] = learning_potential_score
+                #     # reset the episode record
+                #     episode_value[idx] = 0.
+                #     episode_reward[idx] = 0.
+                #     episode_timestep[idx] = 0
 
-                self.train_meter.add_ep_info(infos, cur_iter)
+                finished_episode_index = np.where(done)[0]
+                self.train_meter.add_ep_info(infos, cur_iter, finished_episode_index)
                 # record agents that are done
                 finished_agents = [infos[i]['name'] for i in range(len(done)) if done[i]]
                 self.sampled_agents.extend(finished_agents)

@@ -35,41 +35,64 @@ class AgentMeter:
         # this needs to be reset for every iteration
         self.iter_ep_returns = []
 
-    def add_ep_info(self, infos, cur_iter):
-        for info in infos:
-            if info["name"] != self.name:
-                continue
-            if "episode" in info.keys():
-                self.ep_rew["reward"].append(info["episode"]["r"])
-                self.iter_ep_returns.append(info["episode"]["r"])                
-                # self.return_buffer.append(info["episode"]["r"])
-                # self.iter_buffer.append(cur_iter)
-                # while (1):
-                #     if len(self.iter_returns) > cur_iter:
-                #         break
-                #     self.iter_returns.append([])
-                self.ep_count += 1
-                self.ep_len.append(info["episode"]["l"])
-                if self.ep_count == 10:
-                    self.ep_len_ema = np.mean(self.ep_len)
-                elif self.ep_count >= 10:
-                    alpha = cfg.TASK_SAMPLING.EMA_ALPHA
-                    self.ep_len_ema = (
-                        alpha * self.ep_len[-1] + (1 - alpha) * self.ep_len_ema
-                    )
+    def add_ep_info(self, info, cur_iter):
+        # for info in infos:
+        #     if info["name"] != self.name:
+        #         continue
+        #     if "episode" in info.keys():
+        #         self.ep_rew["reward"].append(info["episode"]["r"])
+        #         self.iter_ep_returns.append(info["episode"]["r"])                
+        #         # self.return_buffer.append(info["episode"]["r"])
+        #         # self.iter_buffer.append(cur_iter)
+        #         # while (1):
+        #         #     if len(self.iter_returns) > cur_iter:
+        #         #         break
+        #         #     self.iter_returns.append([])
+        #         self.ep_count += 1
+        #         self.ep_len.append(info["episode"]["l"])
+        #         if self.ep_count == 10:
+        #             self.ep_len_ema = np.mean(self.ep_len)
+        #         elif self.ep_count >= 10:
+        #             alpha = cfg.TASK_SAMPLING.EMA_ALPHA
+        #             self.ep_len_ema = (
+        #                 alpha * self.ep_len[-1] + (1 - alpha) * self.ep_len_ema
+        #             )
 
-                for rew_type, rew_ in info["episode"].items():
-                    if "__reward__" in rew_type:
-                        self.ep_rew[rew_type].append(rew_)
+        #         for rew_type, rew_ in info["episode"].items():
+        #             if "__reward__" in rew_type:
+        #                 self.ep_rew[rew_type].append(rew_)
 
-                if "x_pos" in info:
-                    self.ep_pos.append(info["x_pos"])
-                if "x_vel" in info:
-                    self.ep_vel.append(info["x_vel"])
-                if "metric" in info:
-                    self.ep_metric.append(info["metric"])
+        #         if "x_pos" in info:
+        #             self.ep_pos.append(info["x_pos"])
+        #         if "x_vel" in info:
+        #             self.ep_vel.append(info["x_vel"])
+        #         if "metric" in info:
+        #             self.ep_metric.append(info["metric"])
                 
-                self.ep_positive_gae.append(info['positive_gae'])
+        #         self.ep_positive_gae.append(info['positive_gae'])
+
+        self.ep_rew["reward"].append(info["episode"]["r"])
+        self.iter_ep_returns.append(info["episode"]["r"])
+        self.ep_count += 1
+        self.ep_len.append(info["episode"]["l"])
+        if self.ep_count == 10:
+            self.ep_len_ema = np.mean(self.ep_len)
+        elif self.ep_count >= 10:
+            alpha = cfg.TASK_SAMPLING.EMA_ALPHA
+            self.ep_len_ema = (
+                alpha * self.ep_len[-1] + (1 - alpha) * self.ep_len_ema
+            )
+
+        for rew_type, rew_ in info["episode"].items():
+            if "__reward__" in rew_type:
+                self.ep_rew[rew_type].append(rew_)
+
+        if "x_pos" in info:
+            self.ep_pos.append(info["x_pos"])
+        if "x_vel" in info:
+            self.ep_vel.append(info["x_vel"])
+        if "metric" in info:
+            self.ep_metric.append(info["metric"])
 
     def update_mean(self):
         if len(self.ep_rew["reward"]) == 0:
@@ -176,9 +199,12 @@ class TrainMeter:
     def add_train_stat(self, stat_type, stat_value):
         self.train_stats[stat_type].append(stat_value)
 
-    def add_ep_info(self, infos, cur_iter):
-        for _, agent_meter in self.agent_meters.items():
-            agent_meter.add_ep_info(infos, cur_iter)
+    def add_ep_info(self, infos, cur_iter, done_index):
+        for idx in done_index:
+            agent = infos[idx]["name"]
+            self.agent_meters[agent].add_ep_info(infos[idx], cur_iter)
+        # for _, agent_meter in self.agent_meters.items():
+            # agent_meter.add_ep_info(infos, cur_iter)
 
     def update_mean(self):
         for _, agent_meter in self.agent_meters.items():
