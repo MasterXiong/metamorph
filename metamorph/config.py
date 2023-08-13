@@ -432,6 +432,8 @@ _C.MODEL.MLP.HN_INPUT = False
 _C.MODEL.MLP.HN_OUTPUT = False
 _C.MODEL.MLP.SHARE_INPUT = False
 _C.MODEL.MLP.SHARE_INPUT_INIT = False
+_C.MODEL.MLP.PER_NODE_EMBED = False
+_C.MODEL.MLP.PER_NODE_DECODER = False
 # architecture for the value network
 _C.MODEL.MLP.SINGLE_VALUE = False
 _C.MODEL.MLP.RELU_AFTER_AGG = True
@@ -581,6 +583,12 @@ _C.UED.MUTATE_THRESHOLD = None
 
 # UED method: 'regret', 'uniform', 'ACCEL'
 _C.UED.SAMPLER = 'regret'
+
+# expand by validation set
+_C.UED.USE_VALIDATION = False
+_C.UED.CHECK_TRAIN_FREQ = 10
+_C.UED.CHECK_VALID_FREQ = 10
+_C.UED.VALID_TIMESTEPS = 10000
 
 # ----------------------------------------------------------------------------#
 # Misc Options

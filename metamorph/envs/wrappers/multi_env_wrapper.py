@@ -17,7 +17,7 @@ from metamorph.utils import spaces as spu
 
 
 class MultiEnvWrapper(utils.EzPickle):
-    def __init__(self, env, env_idx):
+    def __init__(self, env, env_idx, env_type='train'):
         # Identify the idx of the env within N subproc envs
         self.multi_env_idx = env_idx
         self._env = env
@@ -25,32 +25,39 @@ class MultiEnvWrapper(utils.EzPickle):
         self._unimal_seq = None
         self._unimal_seq_idx = -1
         self.num_steps = 0
-        self.all_agents = cfg.ENV.WALKERS
+        self.env_type = env_type
+
+        if env_type == 'train':
+            self.resample_freq = cfg.PPO.TIMESTEPS
+        else:
+            self.resample_freq = cfg.UED.VALID_TIMESTEPS
 
     def __getattr__(self, name):
         return getattr(self._env, name)
 
+    def update_sampling_seq(self):
+        self._unimal_seq = self._get_unimal_seq()
+        self._unimal_seq_idx = -1
+        with open(f'{cfg.OUT_DIR}/walkers_{self.env_type}.json', 'r') as f:
+            self.all_agents = json.load(f)
+
     def reset(self):
         if self.num_steps == 0:
-            self._unimal_seq = self._get_unimal_seq()
-            self._unimal_seq_idx = -1
+            self.update_sampling_seq()
 
         self._unimal_seq_idx += 1
         self._active_unimal_idx = self._unimal_seq[self._unimal_seq_idx % len(self._unimal_seq)]
         unimal_id = self.all_agents[self._active_unimal_idx]
         self._env.update(unimal_id, self._active_unimal_idx)
         obs = self._env.reset()
+        # print ([obs[k].shape for k in obs], unimal_id)
 
         return obs
 
     def step(self, action):
+        if self.num_steps % self.resample_freq == 0 and self.num_steps != 0:
+            self.update_sampling_seq()
         self.num_steps += 1
-        if self.num_steps % cfg.PPO.TIMESTEPS == 0:
-            self._unimal_seq = self._get_unimal_seq()
-            self._unimal_seq_idx = -1
-            # update the agent pool
-            with open(f'{cfg.OUT_DIR}/walkers.json', 'r') as f:
-                self.all_agents = json.load(f)
 
         return self._env.step(action)
 
@@ -58,7 +65,7 @@ class MultiEnvWrapper(utils.EzPickle):
         self._env.close()
 
     def _get_unimal_seq(self):
-        path = os.path.join(cfg.OUT_DIR, "sampling.json")
+        path = os.path.join(f'{cfg.OUT_DIR}/sampling_{self.env_type}.json')
         env_seq = fu.load_json(path)
         chunks = fu.chunkify(env_seq, cfg.PPO.NUM_ENVS)
         return chunks[self.multi_env_idx]
@@ -144,7 +151,8 @@ class MultiUnimalNodeCentricObservation(gym.ObservationWrapper):
     def reset(self, **kwargs):
         observation = self.env.reset(**kwargs)
         self._create_padding_mask()
-        return self.observation(observation)
+        observation = self.observation(observation)
+        return observation
 
 
 class MultiUnimalNodeCentricAction(gym.ActionWrapper):

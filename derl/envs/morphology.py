@@ -358,9 +358,10 @@ class SymmetricUnimal:
             else:
                 limb_list.remove(limbs)
 
-    def mutate_delete_limb(self):
+    def mutate_delete_limb(self, limb_to_remove=None):
         # Select a child limb(s) to delete
-        limb_to_remove = self._sample_child_limb()
+        if limb_to_remove is None:
+            limb_to_remove = self._sample_child_limb()
         limb_names = set(["limb/{}".format(idx) for idx in limb_to_remove])
 
         # Remove body from xml
@@ -990,14 +991,15 @@ class SymmetricUnimal:
         self._update_joint_axis()
         self._exclude_permanent_contacts()
 
-    def save(self):
+    def save(self, folder):
         self._before_save()
-        xml_path = os.path.join(control_cfg.ENV.WALKER_DIR, "xml", "{}.xml".format(self.id))
+        xml_path = os.path.join(folder, "xml", "{}.xml".format(self.id))
         xu.save_etree_as_xml(self.tree, xml_path)
-        if self.parent_id:
-            mutation_op = self.curr_mutation
-        else:
-            mutation_op = ""
+        # if self.parent_id:
+        #     mutation_op = self.curr_mutation
+        # else:
+        #     mutation_op = ""
+        mutation_op = ""
         init_state = {
             "xml_path": xml_path,
             "contact_pairs": self.contact_pairs,
@@ -1015,6 +1017,6 @@ class SymmetricUnimal:
             "growth_torso": self.growth_torso,
         }
         save_path = os.path.join(
-            control_cfg.ENV.WALKER_DIR, "unimal_init", "{}.pkl".format(self.id)
+            folder, "unimal_init", "{}.pkl".format(self.id)
         )
-        fu.save_pickle(init_state, save_path)
+        fu.save_pickle(init_state, save_path)    

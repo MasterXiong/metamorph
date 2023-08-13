@@ -10,6 +10,63 @@ from derl.envs.morphology import SymmetricUnimal
 from derl.utils import xml as xu
 
 
+def find_removable_limbs(agent):
+    limb_list = agent.limb_list.copy()
+    removable_limbs = []
+    for limbs in limb_list:
+        body = xu.find_elem(agent.unimal, "body", "name", "limb/{}".format(limbs[0]))[0]
+        num_children = len(xu.find_elem(body, "body", child_only=True))
+        if num_children == 0:
+            removable_limbs.append(limbs)
+    return removable_limbs
+
+
+def mutate_robot(agent, folder):
+    mutated_agents = []
+    # generate all possible mutations by removing limb(s)
+    parent_unimal = SymmetricUnimal(agent, f'{folder}/unimal_init/{agent}.pkl')
+    limbs = find_removable_limbs(parent_unimal)
+    for i, l in enumerate(limbs):
+        if parent_unimal.num_limbs <= 3:
+            break
+        name = f'{agent}-mutate-remove-{i}'
+        unimal = SymmetricUnimal(name, f'{folder}/unimal_init/{agent}.pkl')
+        unimal.mutate_delete_limb(limb_to_remove=l)
+        if unimal.num_limbs <= 2:
+            continue
+        unimal.save(folder)
+        pickle_to_json(folder, unimal.id)
+        mutated_agents.append(name)
+
+    # add limbs
+    add_limb_mutation_num = 5 - len(mutated_agents)
+    i = 0
+    for i in range(add_limb_mutation_num):
+        new_agent = f'{agent}-mutate-add-{i}'
+        unimal = SymmetricUnimal(new_agent, f'{folder}/unimal_init/{agent}.pkl')
+        unimal.grow_limb()
+        if unimal.num_limbs == parent_unimal.num_limbs:
+            break
+        if unimal.num_limbs >= 12 or len(xu.find_elem(unimal.actuator, "motor")) > 16:
+            continue
+        unimal.save(folder)
+        pickle_to_json(folder, unimal.id)
+        mutated_agents.append(new_agent)
+
+    for op in ["limb_params", "gear", "dof", "joint_angle", "density"]:
+        new_agent = f'{agent}-mutate-{op}'
+        unimal = SymmetricUnimal(new_agent, f'{folder}/unimal_init/{agent}.pkl')
+        unimal.mutate(op=op)
+        if unimal.num_limbs >= 12 or len(xu.find_elem(unimal.actuator, "motor")) > 16:
+            continue
+        if unimal.num_limbs <= 2:
+            continue
+        unimal.save(folder)
+        pickle_to_json(folder, unimal.id)
+        mutated_agents.append(new_agent)
+    
+    return mutated_agents
+
 # def rollout(policy, env, agent, num_envs=16):
 #     episode_return = np.zeros(num_envs)
 #     not_done = np.ones(num_envs)
@@ -66,7 +123,7 @@ class ACCEL:
             parents = self.agents
             # prefer agents with less children
             children_num = np.array([self.children_num[x] for x in parents])
-            # prefer agents closer to the root
+            # prefer agents with smaller depth
             depth = [(len(x.split('-')) - 8) // 2 + 1 for x in parents]
             probs = 1. / ((children_num + 1.) * depth)
             probs /= probs.sum()

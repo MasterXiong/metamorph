@@ -54,6 +54,7 @@ def make_vec_envs(
     save_video=False,
     render_policy=False,
     seed=None,
+    env_type='train', 
 ):
     if not num_env:
         num_env = cfg.PPO.NUM_ENVS
@@ -86,7 +87,7 @@ def make_vec_envs(
             if not cfg.ENV.FIX_ENV:
                 for idx in range(num_env):
                     _env = make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file)()
-                    envs.append(env_func_wrapper(MultiEnvWrapper(_env, idx)))
+                    envs.append(env_func_wrapper(MultiEnvWrapper(_env, idx, env_type=env_type)))
             else:
                 for i, xml in enumerate(cfg.ENV.WALKERS):
                     _env = make_env(cfg.ENV_NAME, seed, 2 * i, xml_file=xml)()

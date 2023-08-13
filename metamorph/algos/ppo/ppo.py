@@ -24,7 +24,7 @@ from .envs import set_ob_rms
 from .inherit_weight import restore_from_checkpoint
 from .model import ActorCritic
 from .model import Agent
-from .ued import ACCEL
+from .ued import ACCEL, mutate_robot
 
 class PPO:
     def __init__(self, print_model=True):
@@ -110,13 +110,31 @@ class PPO:
             self.agent_manager = ACCEL(cfg.ENV.WALKERS, mutation_agent_num=cfg.UED.MUTATION_AGENT_NUM)
 
     def train(self):
+
+        if cfg.UED.USE_VALIDATION:
+            # generate mutations of default_100 to initialize the validation set
+            valid_agents = []
+            for agent in cfg.ENV.WALKERS:
+                valid_agents.extend(mutate_robot(agent, cfg.ENV.WALKER_DIR))
+            # hack for debug
+            # valid_agents = [x[:-4] for x in os.listdir('unimals_100/train_valid_1409_backup/xml') if x not in os.listdir('unimals_100/train/xml')]
+            # os.system('rm -r unimals_100/train_valid_1409')
+            # os.system('cp -r unimals_100/train_valid_1409_backup unimals_100/train_valid_1409')
+            self.valid_meter = TrainMeter(agents=valid_agents)
+            self.valid_envs = make_vec_envs(env_type='valid')
+            with open(f'{cfg.OUT_DIR}/walkers_valid.json', 'w') as f:
+                json.dump(self.valid_meter.agents, f)
+            self.save_valid_sampled_agent_seq()
+
+        # save initial train and valid agents
+        with open(f'{cfg.OUT_DIR}/walkers_train.json', 'w') as f:
+            json.dump(self.train_meter.agents, f)
+
         self.save_sampled_agent_seq(-1)
+
         obs = self.envs.reset()
         self.buffer.to(self.device)
         self.start = time.time()
-
-        with open(f'{cfg.OUT_DIR}/walkers.json', 'w') as f:
-            json.dump(cfg.ENV.WALKERS, f)
 
         print ('obs')
         print (type(obs), len(obs))
@@ -219,6 +237,8 @@ class PPO:
                 self.buffer.insert(obs, act, logp, val, reward, masks, timeouts, dropout_mask_v, dropout_mask_mu, unimal_ids, limb_logp)
                 obs = next_obs
 
+            self.train_meter.update_iter_returns(cur_iter)
+
             if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE or cfg.MODEL.TRANSFORMER.PER_NODE_EMBED:
                 unimal_ids = self.envs.get_unimal_idx()
             else:
@@ -262,9 +282,6 @@ class PPO:
                         self.train_meter.add_new_agents(new_agents)
                     else:
                         print ('no new agents added in this iteration')
-            
-            # sample agents for next iteration
-            self.save_sampled_agent_seq(cur_iter)
 
             # save std record
             with open(os.path.join(cfg.OUT_DIR, 'std.pkl'), 'wb') as f:
@@ -293,6 +310,64 @@ class PPO:
             
             if cur_iter % model_save_freq == 0:
                 self.save_model(cur_iter)
+            
+            if cfg.UED.USE_VALIDATION:
+
+                if cur_iter % cfg.UED.CHECK_VALID_FREQ == 0:
+                    print ('evaluate on the validation set')
+                    self.valid_envs.reset()
+                    for step in range(cfg.UED.VALID_TIMESTEPS):
+                        # Sample actions
+                        _, act, _, _, _ = self.agent.act(obs)
+                        next_obs, reward, done, infos = self.valid_envs.step(act)
+                        self.valid_meter.add_ep_info(infos, cur_iter, np.where(done)[0])
+                        obs = next_obs
+                    self.valid_meter.update_iter_returns(cur_iter)
+                    # move converged valid agents to the training set
+                    agents_to_move = []
+                    for agent in self.valid_meter.agents:
+                        agent_meter = self.valid_meter.agent_meters[agent]
+                        if len(agent_meter.iter_mean_return) == 0:
+                            continue
+                        if agent_meter.iter_mean_return[-1] < agent_meter.best_iter_return and cur_iter - agent_meter.best_iter >= 3 * cfg.UED.CHECK_VALID_FREQ:
+                            agents_to_move.append(agent)
+                    # move the converged validation agents to the training set
+                    print ('move the following agents to the training set')
+                    print (agents_to_move)
+                    self.valid_meter.delete_agents(agents_to_move)
+                    self.train_meter.add_new_agents(agents_to_move)
+                    cfg.ENV.WALKERS.extend(agents_to_move)
+                    # mutate the moved agents to get new validation agents
+                    new_valid_agents = []
+                    for agent in agents_to_move:
+                        new_valid_agents.extend(mutate_robot(agent, cfg.ENV.WALKER_DIR))
+                    self.valid_meter.add_new_agents(new_valid_agents)
+                    # save the updated validation set
+                    with open(f'{cfg.OUT_DIR}/walkers_valid.json', 'w') as f:
+                        json.dump(self.valid_meter.agents, f)
+                    self.save_valid_sampled_agent_seq()
+
+                if cur_iter % cfg.UED.CHECK_TRAIN_FREQ == 0:
+                    uncontrollable_agents = []
+                    for agent in self.train_meter.agents:
+                        agent_meter = self.train_meter.agent_meters[agent]
+                        # check performance convergencce
+                        if len(agent_meter.iter_mean_return) == 0:
+                            continue
+                        if agent_meter.iter_mean_return[-1] < agent_meter.best_iter_return and cur_iter - agent_meter.best_iter >= 3 * cfg.UED.CHECK_TRAIN_FREQ:
+                            # TODO: this is not reasonable at the early stage of training
+                            if agent_meter.best_iter_return < 500:
+                                uncontrollable_agents.append(agent)
+                    print ('remove the following agents from the training set')
+                    print (uncontrollable_agents)
+                    self.train_meter.delete_agents(uncontrollable_agents)
+                    for agent in uncontrollable_agents:
+                        cfg.ENV.WALKERS.remove(agent)
+
+            with open(f'{cfg.OUT_DIR}/walkers_train.json', 'w') as f:
+                json.dump(cfg.ENV.WALKERS, f)
+            # sample agents for next iteration
+            self.save_sampled_agent_seq(cur_iter)
 
         print("Finished Training: {}".format(self.file_prefix))
 
@@ -546,7 +621,8 @@ class PPO:
         # return action_history, obs_record, reset_step, returns
 
     def save_sampled_agent_seq(self, cur_iter):
-        num_agents = len(cfg.ENV.WALKERS)
+        agents = self.train_meter.agents
+        num_agents = len(agents)
 
         if num_agents <= 1:
             return
@@ -558,20 +634,20 @@ class PPO:
         elif cfg.ENV.TASK_SAMPLING == "balanced_replay_buffer":
             # For a first couple of iterations do uniform sampling to ensure
             # we have good estimate of ep_lens
-            if len(cfg.ENV.WALKERS) > 150:
+            if num_agents > 150:
                 # follow a different strategy if we use augmented training set
-                ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in cfg.ENV.WALKERS]
+                ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in agents]
                 if min(ep_lens) == 10:
                     print ('start to sample based on ema')
                     if cfg.TASK_SAMPLING.AVG_TYPE == "ema":
                         ep_lens = [
                             np.mean(self.train_meter.agent_meters[agent].ep_len_ema)
-                            for agent in cfg.ENV.WALKERS
+                            for agent in agents
                         ]
                     elif cfg.TASK_SAMPLING.AVG_TYPE == "moving_window":
                         ep_lens = [
                             np.mean(self.train_meter.agent_meters[agent].ep_len)
-                            for agent in cfg.ENV.WALKERS
+                            for agent in agents
                         ]
                 else:
                     ep_lens = [l + 1 for l in ep_lens]
@@ -582,12 +658,12 @@ class PPO:
                     if cfg.TASK_SAMPLING.AVG_TYPE == "ema":
                         ep_lens = [
                             np.mean(self.train_meter.agent_meters[agent].ep_len_ema)
-                            for agent in cfg.ENV.WALKERS
+                            for agent in agents
                         ]
                     elif cfg.TASK_SAMPLING.AVG_TYPE == "moving_window":
                         ep_lens = [
                             np.mean(self.train_meter.agent_meters[agent].ep_len)
-                            for agent in cfg.ENV.WALKERS
+                            for agent in agents
                         ]
             probs = [1000.0 / l for l in ep_lens]
 
@@ -600,18 +676,18 @@ class PPO:
                     with open(f'{cfg.OUT_DIR}/ACCEL_score/{cur_iter}.pkl', 'wb') as f:
                         pickle.dump([self.agent_manager.potential_score, self.agent_manager.staleness_score], f)
                 else:
-                    probs = [1. for _ in cfg.ENV.WALKERS]
+                    probs = [1. for _ in agents]
             
             elif cfg.UED.SAMPLER == 'regret':
 
                 if self.ST_performance is None:
                     self.ST_performance = {}
-                    for agent in cfg.ENV.WALKERS:
+                    for agent in agents:
                         with open(f'{cfg.TASK_SAMPLING.ST_PATH}/{agent}/1409/Unimal-v0_results.json', 'r') as f:
                             log = json.load(f)
                         self.ST_performance[agent] = log[agent]['reward']['reward'][-1]
 
-                ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in cfg.ENV.WALKERS]
+                ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in agents]
                 if min(ep_lens) == 10:
                     print ('start to sample based on UED regret')
                     # TODO: how to deal with negative regret
@@ -619,7 +695,7 @@ class PPO:
                     # which may not correctly reflect the current model's performance on a robot
                     probs = [
                         self.ST_performance[agent] - self.train_meter.agent_meters[agent].ep_len_ema 
-                        for agent in cfg.ENV.WALKERS
+                        for agent in agents
                     ]
                     probs = [max(p, 0.) for p in probs]
                 else:
@@ -627,12 +703,10 @@ class PPO:
                     probs = [1000.0 / l for l in ep_lens]
             
             elif cfg.UED.SAMPLER == 'learning_progress':
-                ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in cfg.ENV.WALKERS]
-                for agent in cfg.ENV.WALKERS:
-                    self.train_meter.agent_meters[agent].update_iter_returns(cur_iter)
+                ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in agents]
                 if min(ep_lens) == 10:
                     print ('start to sample based on learning progress')
-                    LP_score = [self.train_meter.agent_meters[agent].get_learning_speed() for agent in cfg.ENV.WALKERS]
+                    LP_score = [self.train_meter.agent_meters[agent].get_learning_speed() for agent in agents]
                     probs = LP_score
                     print (probs)
                 else:
@@ -640,7 +714,7 @@ class PPO:
                     probs = [1000.0 / l for l in ep_lens]
 
             else:
-                probs = [1. for _ in cfg.ENV.WALKERS]
+                probs = [1. for _ in agents]
 
         # maybe use softmax here?
         # probs = np.exp(probs)
@@ -652,7 +726,7 @@ class PPO:
         # Estimate approx number of episodes each subproc env can rollout
         avg_ep_len = np.mean([
             np.mean(self.train_meter.agent_meters[agent].ep_len)
-            for agent in cfg.ENV.WALKERS
+            for agent in agents
         ])
         # In the start the arrays will be empty
         if np.isnan(avg_ep_len):
@@ -662,5 +736,18 @@ class PPO:
         size = int(ep_per_env * cfg.PPO.NUM_ENVS * 50)
         task_list = np.random.choice(range(0, num_agents), size=size, p=probs)
         task_list = [int(_) for _ in task_list]
-        path = os.path.join(cfg.OUT_DIR, "sampling.json")
+        path = os.path.join(cfg.OUT_DIR, f"sampling_train.json")
+        fu.save_json(task_list, path)
+
+    def save_valid_sampled_agent_seq(self):
+
+        num_agents = len(self.valid_meter.agents)
+        probs = [1. / num_agents for _ in range(num_agents)]
+
+        ep_per_env = 100
+        # Task list size (multiply by 8 as padding)
+        size = int(ep_per_env * cfg.PPO.NUM_ENVS * 50)
+        task_list = np.random.choice(range(0, num_agents), size=size, p=probs)
+        task_list = [int(_) for _ in task_list]
+        path = os.path.join(cfg.OUT_DIR, f"sampling_valid.json")
         fu.save_json(task_list, path)

@@ -35,6 +35,9 @@ class AgentMeter:
         # this needs to be reset for every iteration
         self.iter_ep_returns = []
 
+        self.best_iter_return = -1e8
+        self.best_iter = 0
+
     def add_ep_info(self, info, cur_iter):
         # for info in infos:
         #     if info["name"] != self.name:
@@ -133,6 +136,9 @@ class AgentMeter:
             self.iter_ep_num.append(len(self.iter_ep_returns))
             self.iter_idx.append(cur_iter)
             self.iter_ep_returns = []
+            if self.iter_mean_return[-1] > self.best_iter_return:
+                self.best_iter_return = self.iter_mean_return[-1]
+                self.best_iter = cur_iter
 
     def get_learning_speed(self):
 
@@ -178,8 +184,11 @@ class AgentMeter:
 
 
 class TrainMeter:
-    def __init__(self):
-        self.agents = cfg.ENV.WALKERS
+    def __init__(self, agents=None):
+        if agents is None:
+            self.agents = cfg.ENV.WALKERS.copy()
+        else:
+            self.agents = agents.copy()
         self.max_name_len = max([len(a) for a in self.agents])
         self.agent_meters = {agent: AgentMeter(agent) for agent in self.agents}
 
@@ -192,9 +201,14 @@ class TrainMeter:
         self.mean_ep_len = []
 
     def add_new_agents(self, agents):
-        self.agents = cfg.ENV.WALKERS
+        self.agents.extend(agents)
         for agent in agents:
             self.agent_meters[agent] = AgentMeter(agent)
+
+    def delete_agents(self, agents):
+        for agent in agents:
+            self.agents.remove(agent)
+            del self.agent_meters[agent]
 
     def add_train_stat(self, stat_type, stat_value):
         self.train_stats[stat_type].append(stat_value)
@@ -202,6 +216,8 @@ class TrainMeter:
     def add_ep_info(self, infos, cur_iter, done_index):
         for idx in done_index:
             agent = infos[idx]["name"]
+            if agent not in self.agent_meters:
+                continue
             self.agent_meters[agent].add_ep_info(infos[idx], cur_iter)
         # for _, agent_meter in self.agent_meters.items():
             # agent_meter.add_ep_info(infos, cur_iter)
@@ -261,3 +277,7 @@ class TrainMeter:
         }
         stats["__env__"].update(dict(self.train_stats))
         return stats
+    
+    def update_iter_returns(self, cur_iter):
+        for agent in self.agent_meters:
+            self.agent_meters[agent].update_iter_returns(cur_iter)

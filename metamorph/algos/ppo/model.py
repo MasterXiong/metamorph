@@ -113,6 +113,11 @@ class MLPModel(nn.Module):
             self.hnet_input_bias.weight.data.zero_()
             # self.hnet_input_bias.weight.data.uniform_(-0.01, 0.01)
             self.hnet_input_bias.bias.data.zero_()
+        elif self.model_args.PER_NODE_EMBED:
+            print ('independent input weights for each node')
+            initrange = 0.01
+            self.limb_embed_weights = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+            self.limb_embed_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM))
         elif self.model_args.SHARE_INPUT:
             print ('use shared input layer')
             self.shared_input_layer = nn.Linear(self.limb_obs_size, self.model_args.HIDDEN_DIM)
@@ -136,6 +141,11 @@ class MLPModel(nn.Module):
             self.hnet_output_weight.bias.data.uniform_(-initrange, initrange)
             self.hnet_output_bias.weight.data.zero_()
             self.hnet_output_bias.bias.data.zero_()
+        elif self.model_args.PER_NODE_DECODER:
+            print ('independent output weights for each node')
+            initrange = 0.01
+            self.limb_output_weights = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM, out_dim).uniform_(-initrange, initrange))
+            self.limb_output_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), out_dim))
         else:
             self.output_layer = nn.Linear(self.model_args.HIDDEN_DIM, out_dim)
         
@@ -192,6 +202,12 @@ class MLPModel(nn.Module):
                     embedding = embedding.sum(dim=1) / (self.seq_len - obs_mask.float().sum(dim=1))[:, None]
                     # embedding = embedding.sum(dim=1) * self.seq_len / (self.seq_len - obs_mask.float().sum(dim=1))[:, None]
             # self.hidden_activation = embedding.detach().clone()
+        elif self.model_args.PER_NODE_EMBED:
+            obs = obs.reshape(batch_size, self.seq_len, -1) * (1. - obs_mask.float())[:, :, None]
+            obs = obs.reshape(batch_size, -1)
+            embedding = obs[:, :, None] * self.limb_embed_weights[unimal_ids, :, :]
+            embedding = embedding.sum(dim=-2, keepdim=False) + self.limb_embed_bias[unimal_ids, :]
+            embedding = F.relu(embedding)
         elif self.model_args.SHARE_INPUT:
             obs = obs.reshape(batch_size, self.seq_len, -1)
             embedding = self.shared_input_layer(obs)
@@ -233,6 +249,8 @@ class MLPModel(nn.Module):
         #     obs = obs.reshape(batch_size, self.seq_len, -1)
         #     # TODO: the output is the same for all the nodes
         #     output = self.output_layer(embedding[:, None, :])
+        elif self.model_args.PER_NODE_DECODER:
+            output = (embedding[:, :, None] * self.limb_output_weights[unimal_ids, :, :]).sum(dim=-2, keepdim=False) + self.limb_output_bias[unimal_ids]
         else:
             output = self.output_layer(embedding)
 
