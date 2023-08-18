@@ -24,7 +24,7 @@ from .envs import set_ob_rms
 from .inherit_weight import restore_from_checkpoint
 from .model import ActorCritic
 from .model import Agent
-from .ued import ACCEL, mutate_robot
+from .ued import TaskSampler, mutate_robot
 
 class PPO:
     def __init__(self, print_model=True):
@@ -107,7 +107,12 @@ class PPO:
         self.ST_performance = None
 
         if cfg.ENV.TASK_SAMPLING == 'UED':
-            self.agent_manager = ACCEL(cfg.ENV.WALKERS, mutation_agent_num=cfg.UED.MUTATION_AGENT_NUM)
+            self.task_sampler = TaskSampler(
+                cfg.ENV.WALKERS, 
+                mutation_agent_num=cfg.UED.MUTATION_AGENT_NUM, 
+                staleness_score_weight=cfg.UED.STALENESS_WEIGHT, 
+                potential_score_EMA_coef=cfg.UED.SCORE_EMA_COEF, 
+            )
 
     def train(self):
 
@@ -182,15 +187,15 @@ class PPO:
 
             for step in range(cfg.PPO.TIMESTEPS):
                 # Sample actions
-                if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE or cfg.MODEL.TRANSFORMER.PER_NODE_EMBED:
-                    unimal_ids = self.envs.get_unimal_idx()
-                else:
-                    unimal_ids = [0 for _ in range(cfg.PPO.NUM_ENVS)]
+                unimal_ids = self.envs.get_unimal_idx()
                 val, act, logp, dropout_mask_v, dropout_mask_mu = self.agent.act(obs, unimal_ids=unimal_ids)
                 # limb_logp = self.agent.limb_logp.detach()
                 limb_logp = None
 
-                next_obs, reward, done, infos = self.envs.step(act)
+                if cfg.PPO.TANH == 'action':
+                    next_obs, reward, done, infos = self.envs.step(torch.tanh(act))
+                else:
+                    next_obs, reward, done, infos = self.envs.step(act)
 
                 # store each episode's value and reward to compute the trajectory GAE
                 # episode_value[np.arange(cfg.PPO.NUM_ENVS), episode_timestep] = val.cpu().numpy().ravel()
@@ -239,26 +244,25 @@ class PPO:
 
             self.train_meter.update_iter_returns(cur_iter)
 
-            if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE or cfg.MODEL.TRANSFORMER.PER_NODE_EMBED:
-                unimal_ids = self.envs.get_unimal_idx()
-            else:
-                unimal_ids = [0 for _ in range(cfg.PPO.NUM_ENVS)]
+            unimal_ids = self.envs.get_unimal_idx()
             next_val = self.agent.get_value(obs, unimal_ids=unimal_ids)
             self.buffer.compute_returns(next_val)
-            self.train_on_batch(cur_iter)
+            # self.train_on_batch(cur_iter)
 
             with open(f'{cfg.OUT_DIR}/iter_sampled_agents/{cur_iter}.pkl', 'wb') as f:
                 pickle.dump(self.sampled_agents, f)
 
-            if cfg.ENV.TASK_SAMPLING == 'UED' and cfg.UED.SAMPLER == 'ACCEL':
+            if cfg.ENV.TASK_SAMPLING == 'UED' and cfg.UED.CURATION == 'positive_value_loss':
                 # update UED scores of the agents sampled in the current iteration
-                for agent in set(self.sampled_agents):
-                    agent_id = cfg.ENV.WALKERS.index(agent)
-                    potential_score = np.mean(self.train_meter.agent_meters[agent].ep_positive_gae)
-                    self.agent_manager.potential_score[agent_id] = potential_score
-                    staleness_score = cur_iter
-                    # TODO: staleness score could be computed as EMA of the visited time before?
-                    self.agent_manager.staleness_score[agent_id] = staleness_score
+                self.task_sampler.update_scores(self.buffer)
+                with open(f'{cfg.OUT_DIR}/ACCEL_score/{cur_iter}.pkl', 'wb') as f:
+                    pickle.dump([self.task_sampler.potential_score, self.task_sampler.staleness_score], f)
+                # for agent in set(self.sampled_agents):
+                #     agent_id = cfg.ENV.WALKERS.index(agent)
+                #     potential_score = np.mean(self.train_meter.agent_meters[agent].ep_positive_gae)
+                #     self.agent_manager.potential_score[agent_id] = potential_score
+                #     staleness_score = cur_iter
+                #     self.agent_manager.staleness_score[agent_id] = staleness_score
             
             if cfg.ENV.TASK_SAMPLING == 'UED' and cfg.UED.GENERATE_NEW_AGENTS:
                 # generate new agents by mutating existing ones
@@ -669,12 +673,10 @@ class PPO:
 
         elif cfg.ENV.TASK_SAMPLING == "UED":
             
-            if cfg.UED.SAMPLER == 'ACCEL':
+            if cfg.UED.CURATION == 'positive_value_loss':
                 # select new agents for the next learning iteration
-                if cur_iter >= 10:
-                    probs = self.agent_manager.get_sample_probs(cur_iter)
-                    with open(f'{cfg.OUT_DIR}/ACCEL_score/{cur_iter}.pkl', 'wb') as f:
-                        pickle.dump([self.agent_manager.potential_score, self.agent_manager.staleness_score], f)
+                if cur_iter >= int(cfg.PPO.MAX_ITERS / 20.):
+                    probs = self.task_sampler.get_sample_probs(cur_iter)
                 else:
                     probs = [1. for _ in agents]
             

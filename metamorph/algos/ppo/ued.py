@@ -3,6 +3,7 @@ import json
 import numpy as np
 import copy
 from collections import defaultdict
+import torch
 
 from metamorph.config import cfg
 
@@ -98,13 +99,14 @@ def pickle_to_json(folder, name):
         json.dump(metadata, f)
 
 
-class ACCEL:
+class TaskSampler:
 
     def __init__(
         self, 
         init_agents, 
         staleness_score_weight=0.1, 
         mutation_agent_num=100, 
+        potential_score_EMA_coef=0.5, 
     ):
         # TODO: maybe need to use some optimistic intialization for potential score
         self.agents = copy.deepcopy(init_agents)
@@ -113,8 +115,33 @@ class ACCEL:
         self.staleness_score_weight = staleness_score_weight
         self.mutation_agent_num = mutation_agent_num
         self.agent_count = len(init_agents)
+        self.potential_score_EMA_coef = potential_score_EMA_coef
 
         self.children_num = defaultdict(int)
+
+    def update_scores(self, rollouts):
+        sampled_ids = []
+        for i in range(cfg.PPO.NUM_ENVS):
+            episode_end_index = torch.where(rollouts.masks[:, i] == 0)[0].cpu().numpy()
+            start_t = 0
+            for end_t in episode_end_index:
+                gae = rollouts.ret[start_t:(end_t + 1), i] - rollouts.val[start_t:(end_t + 1), i]
+                new_score = gae.abs().mean().item()
+                agent_id = rollouts.unimal_ids[start_t, i].item()
+                sampled_ids.append(agent_id)
+                self.potential_score[agent_id] = self.potential_score[agent_id] * (1. - self.potential_score_EMA_coef) + new_score * self.potential_score_EMA_coef
+                start_t = end_t + 1
+            # add the final partial episode
+            if cfg.PPO.TIMESTEPS - start_t >= 100:
+                gae = rollouts.ret[start_t:, i] - rollouts.val[start_t:, i]
+                new_score = gae.abs().mean().item()
+                agent_id = rollouts.unimal_ids[start_t, i].item()
+                self.potential_score[agent_id] = self.potential_score[agent_id] * (1. - self.potential_score_EMA_coef) + new_score * self.potential_score_EMA_coef
+        # update staleness score
+        # TODO: staleness score could be computed as EMA of the visited time before?
+        sampled_ids = list(set(sampled_ids))
+        self.staleness_score += 1.
+        self.staleness_score[sampled_ids] = 0.
 
     def generate_new_agents(self, parent_agents, agent_scores):
         # TODO: how to effectively select parent agents
@@ -180,13 +207,17 @@ class ACCEL:
 
     def get_sample_probs(self, cur_iter):
         # normalize learning potential score by rank as in PLR paper
-        order = np.argsort(-self.potential_score)
-        rank = np.empty_like(order)
-        rank[order] = np.arange(len(order)) + 1
-        normalized_potential_score = 1. / rank
+        # order = np.argsort(-self.potential_score)
+        # rank = np.empty_like(order)
+        # rank[order] = np.arange(len(order)) + 1
+        # normalized_potential_score = 1. / rank
+        # normalized_potential_score /= (normalized_potential_score).sum()
+        normalized_potential_score = np.clip(self.potential_score, 0., 1.)
         normalized_potential_score /= (normalized_potential_score).sum()
+
         # compute stateless score
-        normalized_staleness_score = cur_iter - self.staleness_score + 1.
+        # normalized_staleness_score = cur_iter - self.staleness_score + 1.
+        normalize_staleness_score = self.staleness_score + 1.
         normalized_staleness_score /= normalized_staleness_score.sum()
         # combine them together
         probs = (1. - self.staleness_score_weight) * normalized_potential_score + self.staleness_score_weight * normalized_staleness_score

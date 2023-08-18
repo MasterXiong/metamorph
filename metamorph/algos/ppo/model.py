@@ -17,73 +17,6 @@ import time
 import matplotlib.pyplot as plt
 
 
-# class MLPValueNetwork(nn.Module):
-#     def __init__(self, obs_space):
-#         super(MLPValueNetwork, self).__init__()
-#         self.model_args = cfg.MODEL.MLP
-#         self.seq_len = cfg.MODEL.MAX_LIMBS
-#         self.limb_obs_size = limb_obs_size = obs_space["proprioceptive"].shape[0] // self.seq_len
-
-#         # set the input layer
-#         if self.model_args.MODE == 'HN':
-#             context_obs_size = obs_space["context"].shape[0] // self.seq_len
-#             context_encoder_dim = [context_obs_size] + [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE for _ in range(cfg.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM + 1)]
-#             self.context_encoder_for_input = tu.make_mlp_default(context_encoder_dim)
-
-#             HN_input_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE
-#             self.hnet_input_weight = nn.Linear(HN_input_dim, limb_obs_size * self.model_args.HIDDEN_DIM)
-#             self.hnet_input_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
-#         else:
-#             # vanilla MLP
-#             self.input_layer = nn.Linear(obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM)
-        
-#         # hidden_dims also include the output layer
-#         hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)] + [1]
-#         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-#             self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
-#             hidden_dims[0] = self.model_args.HIDDEN_DIM + self.hfield_encoder.obs_feat_dim
-#         self.hidden_layers = tu.make_mlp_default(hidden_dims, final_nonlinearity=False)
-
-#         if self.model_args.MODE == 'HN':
-#             # initrange = cfg.MODEL.TRANSFORMER.HN_EMBED_INIT
-#             # self.context_embed_HN.weight.data.uniform_(-initrange, initrange)
-
-#             # initialize the hypernet following Jake's paper
-#             # set the initrange at the same scall as vanilla MLP, which is 1/sqrt(in_feature_dim)
-#             initrange = 0.04
-#             self.hnet_input_weight.weight.data.zero_()
-#             self.hnet_input_weight.bias.data.uniform_(-initrange, initrange)
-#             self.hnet_input_bias.weight.data.zero_()
-#             self.hnet_input_bias.bias.data.zero_()
-
-#     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, dropout_mask=None, unimal_ids=None):
-
-#         # input layer
-#         if self.model_args.MODE == 'HN':
-#             batch_size = obs.shape[0]
-#             obs_context = obs_context.reshape(batch_size, self.seq_len, -1)
-#             context_embedding = self.context_encoder_for_input(obs_context)
-
-#             obs = obs.reshape(batch_size, self.seq_len, -1)
-#             input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
-#             input_bias = self.hnet_input_bias(context_embedding)
-#             embedding = (obs[:, :, :, None] * input_weight).sum(dim=-2) + input_bias
-#             embedding = embedding.mean(dim=1)
-#             # embedding = embedding.sum(dim=1)
-#         else:
-#             embedding = self.input_layer(obs)
-#         embedding = F.relu(embedding)
-
-#         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-#             hfield_embedding = self.hfield_encoder(obs_env["hfield"])
-#             embedding = torch.cat([embedding, hfield_embedding], 1)
-        
-#         # hidden layers and output layer
-#         output = self.hidden_layers(embedding)
-
-#         return output, None, 0.
-
-
 class MLPModel(nn.Module):
     def __init__(self, obs_space, out_dim):
         super(MLPModel, self).__init__()
@@ -115,9 +48,9 @@ class MLPModel(nn.Module):
             self.hnet_input_bias.bias.data.zero_()
         elif self.model_args.PER_NODE_EMBED:
             print ('independent input weights for each node')
-            initrange = 0.01
+            initrange = 0.04
             self.limb_embed_weights = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
-            self.limb_embed_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM))
+            self.limb_embed_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
         elif self.model_args.SHARE_INPUT:
             print ('use shared input layer')
             self.shared_input_layer = nn.Linear(self.limb_obs_size, self.model_args.HIDDEN_DIM)
@@ -143,9 +76,9 @@ class MLPModel(nn.Module):
             self.hnet_output_bias.bias.data.zero_()
         elif self.model_args.PER_NODE_DECODER:
             print ('independent output weights for each node')
-            initrange = 0.01
+            initrange = 1. / 16
             self.limb_output_weights = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM, out_dim).uniform_(-initrange, initrange))
-            self.limb_output_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), out_dim))
+            self.limb_output_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), out_dim).uniform_(-initrange, initrange))
         else:
             self.output_layer = nn.Linear(self.model_args.HIDDEN_DIM, out_dim)
         
@@ -983,6 +916,8 @@ class ActorCritic(nn.Module):
             return_attention=return_attention, dropout_mask=dropout_mask_mu, 
             unimal_ids=unimal_ids, 
         )
+        if cfg.PPO.TANH == 'mean':
+            mu = torch.tanh(mu)
         std = torch.exp(self.log_std)
         pi = Normal(mu, std)
 
