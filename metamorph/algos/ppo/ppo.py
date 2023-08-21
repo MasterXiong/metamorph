@@ -247,7 +247,7 @@ class PPO:
             unimal_ids = self.envs.get_unimal_idx()
             next_val = self.agent.get_value(obs, unimal_ids=unimal_ids)
             self.buffer.compute_returns(next_val)
-            # self.train_on_batch(cur_iter)
+            self.train_on_batch(cur_iter)
 
             with open(f'{cfg.OUT_DIR}/iter_sampled_agents/{cur_iter}.pkl', 'wb') as f:
                 pickle.dump(self.sampled_agents, f)
@@ -676,6 +676,7 @@ class PPO:
             if cfg.UED.CURATION == 'positive_value_loss':
                 # select new agents for the next learning iteration
                 if cur_iter >= int(cfg.PPO.MAX_ITERS / 20.):
+                    print ('curation with PVL')
                     probs = self.task_sampler.get_sample_probs(cur_iter)
                 else:
                     probs = [1. for _ in agents]

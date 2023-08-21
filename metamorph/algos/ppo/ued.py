@@ -217,7 +217,7 @@ class TaskSampler:
 
         # compute stateless score
         # normalized_staleness_score = cur_iter - self.staleness_score + 1.
-        normalize_staleness_score = self.staleness_score + 1.
+        normalized_staleness_score = self.staleness_score + 1.
         normalized_staleness_score /= normalized_staleness_score.sum()
         # combine them together
         probs = (1. - self.staleness_score_weight) * normalized_potential_score + self.staleness_score_weight * normalized_staleness_score
