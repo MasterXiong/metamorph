@@ -132,6 +132,7 @@ class TaskSampler:
                 self.potential_score[agent_id] = self.potential_score[agent_id] * (1. - self.potential_score_EMA_coef) + new_score * self.potential_score_EMA_coef
                 start_t = end_t + 1
             # add the final partial episode
+            # don't do this if the partial episode is too short
             if cfg.PPO.TIMESTEPS - start_t >= 100:
                 gae = rollouts.ret[start_t:, i] - rollouts.val[start_t:, i]
                 new_score = gae.abs().mean().item()

@@ -257,12 +257,6 @@ class PPO:
                 self.task_sampler.update_scores(self.buffer)
                 with open(f'{cfg.OUT_DIR}/ACCEL_score/{cur_iter}.pkl', 'wb') as f:
                     pickle.dump([self.task_sampler.potential_score, self.task_sampler.staleness_score], f)
-                # for agent in set(self.sampled_agents):
-                #     agent_id = cfg.ENV.WALKERS.index(agent)
-                #     potential_score = np.mean(self.train_meter.agent_meters[agent].ep_positive_gae)
-                #     self.agent_manager.potential_score[agent_id] = potential_score
-                #     staleness_score = cur_iter
-                #     self.agent_manager.staleness_score[agent_id] = staleness_score
             
             if cfg.ENV.TASK_SAMPLING == 'UED' and cfg.UED.GENERATE_NEW_AGENTS:
                 # generate new agents by mutating existing ones
@@ -722,7 +716,17 @@ class PPO:
         # maybe use softmax here?
         # probs = np.exp(probs)
         probs = np.power(probs, cfg.TASK_SAMPLING.PROB_ALPHA)
-        probs = [p / sum(probs) for p in probs]
+        probs = probs / probs.sum()
+
+        # smooth the change of sampling prob
+        if cfg.UED.PROB_CHANGE_RATE is not None:
+            if cur_iter == -1:
+                self.last_probs = probs
+            else:
+                delta_prob = probs - self.last_probs
+                probs = self.last_probs + cfg.UED.PROB_CHANGE_RATE * delta_prob
+                self.last_probs = probs = probs / probs.sum()
+
         with open(f'{cfg.OUT_DIR}/iter_prob/{cur_iter}.pkl', 'wb') as f:
             pickle.dump(probs, f)
 

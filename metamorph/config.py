@@ -333,6 +333,8 @@ _C.PPO.EARLY_EXIT_MAX_ITERS = -1
 _C.PPO.ABS_CLIP = False
 _C.PPO.ABS_CLIP_THRESHOLD = 0.2
 
+_C.PPO.TANH = None
+
 # --------------------------------------------------------------------------- #
 # Task sampling options
 # --------------------------------------------------------------------------- #
@@ -581,8 +583,11 @@ _C.UED.PARENT_SELECT_STRATEGY = None
 # only mutate agents with high enough scores
 _C.UED.MUTATE_THRESHOLD = None
 
-# UED method: 'regret', 'uniform', 'ACCEL'
-_C.UED.SAMPLER = 'regret'
+# UED method: 'regret', 'uniform', 'positive_value_loss'
+_C.UED.CURATION = 'uniform'
+_C.UED.STALENESS_WEIGHT = 0.1
+_C.UED.SCORE_EMA_COEF = 0.5
+_C.UED.PROB_CHANGE_RATE = None
 
 # expand by validation set
 _C.UED.USE_VALIDATION = False
