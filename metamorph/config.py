@@ -583,7 +583,7 @@ _C.UED.PARENT_SELECT_STRATEGY = None
 # only mutate agents with high enough scores
 _C.UED.MUTATE_THRESHOLD = None
 
-# UED method: 'regret', 'uniform', 'positive_value_loss'
+# UED method: 'regret', 'uniform', 'positive_value_loss', 'L1_value_loss', 'GAE'
 _C.UED.CURATION = 'uniform'
 _C.UED.STALENESS_WEIGHT = 0.1
 _C.UED.SCORE_EMA_COEF = 0.5

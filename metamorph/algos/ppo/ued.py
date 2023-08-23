@@ -126,7 +126,12 @@ class TaskSampler:
             start_t = 0
             for end_t in episode_end_index:
                 gae = rollouts.ret[start_t:(end_t + 1), i] - rollouts.val[start_t:(end_t + 1), i]
-                new_score = gae.abs().mean().item()
+                if cfg.UED.CURATION == 'L1_value_loss':
+                    new_score = gae.abs().mean().item()
+                elif cfg.UED.CURATION == 'positive_value_loss':
+                    new_score = torch.maximum(gae, torch.zeros_like(gae)).mean().item()
+                elif cfg.UED.CURATION == 'GAE':
+                    new_score = gae.mean().item()
                 agent_id = rollouts.unimal_ids[start_t, i].item()
                 sampled_ids.append(agent_id)
                 self.potential_score[agent_id] = self.potential_score[agent_id] * (1. - self.potential_score_EMA_coef) + new_score * self.potential_score_EMA_coef

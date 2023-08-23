@@ -252,7 +252,7 @@ class PPO:
             with open(f'{cfg.OUT_DIR}/iter_sampled_agents/{cur_iter}.pkl', 'wb') as f:
                 pickle.dump(self.sampled_agents, f)
 
-            if cfg.ENV.TASK_SAMPLING == 'UED' and cfg.UED.CURATION == 'positive_value_loss':
+            if cfg.ENV.TASK_SAMPLING == 'UED' and cfg.UED.CURATION in ['positive_value_loss', 'L1_value_loss', 'GAE']:
                 # update UED scores of the agents sampled in the current iteration
                 self.task_sampler.update_scores(self.buffer)
                 with open(f'{cfg.OUT_DIR}/ACCEL_score/{cur_iter}.pkl', 'wb') as f:
@@ -667,15 +667,16 @@ class PPO:
 
         elif cfg.ENV.TASK_SAMPLING == "UED":
             
-            if cfg.UED.CURATION == 'positive_value_loss':
+            if cfg.UED.CURATION in ['positive_value_loss', 'L1_value_loss', 'GAE']:
                 # select new agents for the next learning iteration
+                # TODO: adaptively change this threshold based on value loss?
                 if cur_iter >= int(cfg.PPO.MAX_ITERS / 20.):
-                    print ('curation with PVL')
+                    print (f'curation with {cfg.UED.CURATION}')
                     probs = self.task_sampler.get_sample_probs(cur_iter)
                 else:
                     probs = [1. for _ in agents]
             
-            elif cfg.UED.SAMPLER == 'regret':
+            elif cfg.UED.CURATION == 'regret':
 
                 if self.ST_performance is None:
                     self.ST_performance = {}
@@ -699,7 +700,7 @@ class PPO:
                     ep_lens = [l + 1 for l in ep_lens]
                     probs = [1000.0 / l for l in ep_lens]
             
-            elif cfg.UED.SAMPLER == 'learning_progress':
+            elif cfg.UED.CURATION == 'learning_progress':
                 ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in agents]
                 if min(ep_lens) == 10:
                     print ('start to sample based on learning progress')
