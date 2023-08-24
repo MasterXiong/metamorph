@@ -681,18 +681,18 @@ class PPO:
                 if self.ST_performance is None:
                     self.ST_performance = {}
                     for agent in agents:
-                        with open(f'{cfg.TASK_SAMPLING.ST_PATH}/{agent}/1409/Unimal-v0_results.json', 'r') as f:
+                        with open(f'{cfg.UED.ST_PATH}/{agent}/1409/Unimal-v0_results.json', 'r') as f:
                             log = json.load(f)
-                        self.ST_performance[agent] = log[agent]['reward']['reward'][-1]
+                        self.ST_performance[agent] = np.mean(log[agent]['reward']['reward'][-5:])
 
                 ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in agents]
                 if min(ep_lens) == 10:
-                    print ('start to sample based on UED regret')
+                    print ('curation with true regret')
                     # TODO: how to deal with negative regret
                     # Issue: training score is computed based on an out-of-date model, 
                     # which may not correctly reflect the current model's performance on a robot
                     probs = [
-                        self.ST_performance[agent] - self.train_meter.agent_meters[agent].ep_len_ema 
+                        self.ST_performance[agent] - np.mean(self.train_meter.agent_meters[agent].ep_rew["reward"]) 
                         for agent in agents
                     ]
                     probs = [max(p, 0.) for p in probs]

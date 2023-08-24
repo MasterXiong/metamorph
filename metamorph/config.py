@@ -347,9 +347,6 @@ _C.TASK_SAMPLING.PROB_ALPHA = 1.0
 
 _C.TASK_SAMPLING.AVG_TYPE = "ema"
 
-# the path to find the per-task performance upper-bound for UED
-_C.TASK_SAMPLING.ST_PATH = ''
-
 # --------------------------------------------------------------------------- #
 # Model Options
 # --------------------------------------------------------------------------- #
@@ -588,6 +585,9 @@ _C.UED.CURATION = 'uniform'
 _C.UED.STALENESS_WEIGHT = 0.1
 _C.UED.SCORE_EMA_COEF = 0.5
 _C.UED.PROB_CHANGE_RATE = None
+
+# the path to find the per-task performance upper-bound for UED
+_C.UED.ST_PATH = ''
 
 # expand by validation set
 _C.UED.USE_VALIDATION = False
