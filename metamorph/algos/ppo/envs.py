@@ -188,11 +188,16 @@ def get_vec_normalize(venv):
 def get_ob_rms(venv):
     return getattr(get_vec_normalize(venv), "ob_rms", None)
 
+def get_ret_rms(venv):
+    return getattr(get_vec_normalize(venv), "ret_rms", None)
 
 def set_ob_rms(venv, ob_rms):
     vec_norm = get_vec_normalize(venv)
     vec_norm.ob_rms = ob_rms
 
+def set_ret_rms(venv, ret_rms):
+    vec_norm = get_vec_normalize(venv)
+    vec_norm.ret_rms = ret_rms
 
 # Checks whether done was caused my timit limits or not
 class TimeLimitMask(gym.Wrapper):
