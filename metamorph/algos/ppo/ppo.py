@@ -3,6 +3,7 @@ import time
 import pickle
 import json
 from collections import defaultdict
+from multiprocessing import Pool
 
 import numpy as np
 import torch
@@ -24,7 +25,7 @@ from .envs import set_ob_rms
 from .inherit_weight import restore_from_checkpoint
 from .model import ActorCritic
 from .model import Agent
-from .ued import TaskSampler, mutate_robot
+from .ued import TaskSampler, mutate_robot, sample_new_robot
 
 class PPO:
     def __init__(self, print_model=True):
@@ -118,15 +119,15 @@ class PPO:
 
         if cfg.UED.USE_VALIDATION:
             # generate mutations of default_100 to initialize the validation set
-            valid_agents = []
-            for agent in cfg.ENV.WALKERS:
-                valid_agents.extend(mutate_robot(agent, cfg.ENV.WALKER_DIR))
+            # valid_agents = []
+            # for agent in cfg.ENV.WALKERS:
+            #     valid_agents.extend(mutate_robot(agent, cfg.ENV.WALKER_DIR))
             # hack for debug
-            # valid_agents = [x[:-4] for x in os.listdir('unimals_100/train_valid_1409_backup/xml') if x not in os.listdir('unimals_100/train/xml')]
-            # os.system('rm -r unimals_100/train_valid_1409')
-            # os.system('cp -r unimals_100/train_valid_1409_backup unimals_100/train_valid_1409')
+            valid_agents = [x[:-4] for x in os.listdir('unimals_100/random_validation_1409_backup/xml') if x not in os.listdir('unimals_100/random_100_v2/xml')]
+            os.system('rm -r unimals_100/random_validation_1409')
+            os.system('cp -r unimals_100/random_validation_1409_backup unimals_100/random_validation_1409')
             self.valid_meter = TrainMeter(agents=valid_agents)
-            self.valid_envs = make_vec_envs(env_type='valid')
+            self.valid_envs = make_vec_envs(training=False, norm_rew=False, env_type='valid')
             with open(f'{cfg.OUT_DIR}/walkers_valid.json', 'w') as f:
                 json.dump(self.valid_meter.agents, f)
             self.save_valid_sampled_agent_seq()
@@ -164,6 +165,25 @@ class PPO:
         else:
             model_save_freq = 50
 
+        def eval_validation(agent):
+            num_env = 8
+            envs = make_vec_envs(xml_file=agent, training=False, norm_rew=False, num_env=num_env, render_policy=True)
+            set_ob_rms(envs, get_ob_rms(self.envs))
+            episode_return = np.zeros(num_env)
+            not_done = np.ones(num_env)
+            obs = envs.reset()
+            for step in range(1000):
+                _, act, _, _, _ = self.agent.act(obs, compute_val=False)
+                obs, _, done, infos = envs.step(act)
+                idx = np.where(done)[0]
+                for i in idx:
+                    if not_done[i] == 1:
+                        not_done[i] = 0
+                        episode_return[i] = infos[i]['episode']['r']
+                if not_done.sum() == 0:
+                    break
+            return np.mean(episode_return)
+
         obs_min_record, obs_max_record = [], []
         # a buffer to store each episode's GAE for UED
         episode_value = np.zeros([cfg.PPO.NUM_ENVS, 1000])
@@ -178,6 +198,29 @@ class PPO:
             #     print ('start to tune separate PE')
             #     self.agent.ac.mu_net.separate_PE_encoder.pe.requires_grad = True
             #     self.agent.ac.v_net.separate_PE_encoder.pe.requires_grad = True
+
+            # if cur_iter % 2 == 0:
+            #     self.agent.ac.mu_net.limb_embed_weights.requires_grad = False
+            #     self.agent.ac.mu_net.limb_embed_bias.requires_grad = False
+            #     self.agent.ac.mu_net.limb_output_weights.requires_grad = False
+            #     self.agent.ac.mu_net.limb_output_bias.requires_grad = False
+            #     self.agent.ac.mu_net.hidden_layers.requires_grad = True
+            #     self.agent.ac.v_net.limb_embed_weights.requires_grad = False
+            #     self.agent.ac.v_net.limb_embed_bias.requires_grad = False
+            #     self.agent.ac.v_net.limb_output_weights.requires_grad = False
+            #     self.agent.ac.v_net.limb_output_bias.requires_grad = False
+            #     self.agent.ac.v_net.hidden_layers.requires_grad = True
+            # else:
+            #     self.agent.ac.mu_net.limb_embed_weights.requires_grad = True
+            #     self.agent.ac.mu_net.limb_embed_bias.requires_grad = True
+            #     self.agent.ac.mu_net.limb_output_weights.requires_grad = True
+            #     self.agent.ac.mu_net.limb_output_bias.requires_grad = True
+            #     self.agent.ac.mu_net.hidden_layers.requires_grad = False
+            #     self.agent.ac.v_net.limb_embed_weights.requires_grad = True
+            #     self.agent.ac.v_net.limb_embed_bias.requires_grad = True
+            #     self.agent.ac.v_net.limb_output_weights.requires_grad = True
+            #     self.agent.ac.v_net.limb_output_bias.requires_grad = True
+            #     self.agent.ac.v_net.hidden_layers.requires_grad = False
 
             if cfg.PPO.EARLY_EXIT and cur_iter >= cfg.PPO.EARLY_EXIT_MAX_ITERS:
                 break
@@ -311,56 +354,78 @@ class PPO:
             
             if cfg.UED.USE_VALIDATION:
 
-                if cur_iter % cfg.UED.CHECK_VALID_FREQ == 0:
+                # evaluate on the validation robots and move the converged ones to the training set
+                if cur_iter % cfg.UED.CHECK_VALID_FREQ == 0 and cur_iter >= cfg.UED.VALIDATION_START_ITER:
                     print ('evaluate on the validation set')
+                    set_ob_rms(self.valid_envs, get_ob_rms(self.envs))
                     self.valid_envs.reset()
                     for step in range(cfg.UED.VALID_TIMESTEPS):
                         # Sample actions
                         _, act, _, _, _ = self.agent.act(obs)
-                        next_obs, reward, done, infos = self.valid_envs.step(act)
+                        obs, reward, done, infos = self.valid_envs.step(act)
                         self.valid_meter.add_ep_info(infos, cur_iter, np.where(done)[0])
-                        obs = next_obs
                     self.valid_meter.update_iter_returns(cur_iter)
+                    # with Pool(processes=16) as pool:
+                    #     valid_returns = pool.map(eval_validation, self.valid_meter.agents)
+                    # for agent in self.valid_meter.agents:
+                    #     episode_return = eval_validation(agent)
+                    #     self.valid_meter.agent_meters[agent].add_new_score(cur_iter, episode_return, 8)
+                    # for agent, score in zip(self.valid_meter.agents, valid_returns):
+                    #     self.valid_meter.agent_meters[agent].add_new_score(cur_iter, score, 8)
                     # move converged valid agents to the training set
                     agents_to_move = []
+                    print ('move the following agents to the training set')
                     for agent in self.valid_meter.agents:
                         agent_meter = self.valid_meter.agent_meters[agent]
                         if len(agent_meter.iter_mean_return) == 0:
                             continue
-                        if agent_meter.iter_mean_return[-1] < agent_meter.best_iter_return and cur_iter - agent_meter.best_iter >= 3 * cfg.UED.CHECK_VALID_FREQ:
+                        if agent_meter.iter_mean_return[-1] < agent_meter.best_iter_return and cur_iter - agent_meter.best_iter >= cfg.UED.VALID_MAX_WAIT * cfg.UED.CHECK_VALID_FREQ:
+                            print (agent, agent_meter.iter_mean_return, agent_meter.best_iter_return)
                             agents_to_move.append(agent)
                     # move the converged validation agents to the training set
-                    print ('move the following agents to the training set')
-                    print (agents_to_move)
                     self.valid_meter.delete_agents(agents_to_move)
                     self.train_meter.add_new_agents(agents_to_move)
                     cfg.ENV.WALKERS.extend(agents_to_move)
                     # mutate the moved agents to get new validation agents
+                    print ('add new agents to the validation set')
                     new_valid_agents = []
-                    for agent in agents_to_move:
-                        new_valid_agents.extend(mutate_robot(agent, cfg.ENV.WALKER_DIR))
+                    with Pool(processes=50) as pool:
+                        mutated_valid_agents = pool.starmap(mutate_robot, [(agent, cfg.ENV.WALKER_DIR) for agent in agents_to_move])
+                    for new_agents in mutated_valid_agents:
+                        new_valid_agents.extend(new_agents)
+                    # add new randomly sampled validation agents
+                    random_valid_agents = []
+                    # with Pool(processes=50) as pool:
+                    #     mutated_valid_agents = pool.map(mutate_robot, agents_to_move)
+                    for idx in range(cfg.UED.RANDOM_VALIDATION_ROBOT_NUM):
+                        agent_id = cur_iter // cfg.UED.CHECK_VALID_FREQ * cfg.UED.RANDOM_VALIDATION_ROBOT_NUM + idx
+                        agent = sample_new_robot(f'random_{agent_id}', cfg.ENV.WALKER_DIR)
+                        new_valid_agents.append(agent)
+                    # update the valid meter
                     self.valid_meter.add_new_agents(new_valid_agents)
                     # save the updated validation set
                     with open(f'{cfg.OUT_DIR}/walkers_valid.json', 'w') as f:
                         json.dump(self.valid_meter.agents, f)
                     self.save_valid_sampled_agent_seq()
 
-                if cur_iter % cfg.UED.CHECK_TRAIN_FREQ == 0:
-                    uncontrollable_agents = []
-                    for agent in self.train_meter.agents:
-                        agent_meter = self.train_meter.agent_meters[agent]
-                        # check performance convergencce
-                        if len(agent_meter.iter_mean_return) == 0:
-                            continue
-                        if agent_meter.iter_mean_return[-1] < agent_meter.best_iter_return and cur_iter - agent_meter.best_iter >= 3 * cfg.UED.CHECK_TRAIN_FREQ:
-                            # TODO: this is not reasonable at the early stage of training
-                            if agent_meter.best_iter_return < 500:
-                                uncontrollable_agents.append(agent)
-                    print ('remove the following agents from the training set')
-                    print (uncontrollable_agents)
-                    self.train_meter.delete_agents(uncontrollable_agents)
-                    for agent in uncontrollable_agents:
-                        cfg.ENV.WALKERS.remove(agent)
+                # remove training robots with no performance improvement
+                # if cur_iter % cfg.UED.CHECK_TRAIN_FREQ == 0:
+                #     uncontrollable_agents = []
+                #     for agent in self.train_meter.agents:
+                #         agent_meter = self.train_meter.agent_meters[agent]
+                #         # check performance convergencce
+                #         if len(agent_meter.iter_mean_return) == 0:
+                #             continue
+                #         # TODO: learning progress also depends on how often the robot is sampled for training
+                #         if agent_meter.iter_mean_return[-1] < agent_meter.best_iter_return and cur_iter - agent_meter.best_iter >= 5 * cfg.UED.CHECK_TRAIN_FREQ:
+                #             # TODO: this is not reasonable at the early stage of training
+                #             if agent_meter.best_iter_return < 500:
+                #                 uncontrollable_agents.append(agent)
+                #     print ('remove the following agents from the training set')
+                #     print (uncontrollable_agents)
+                #     self.train_meter.delete_agents(uncontrollable_agents)
+                #     for agent in uncontrollable_agents:
+                #         cfg.ENV.WALKERS.remove(agent)
 
             with open(f'{cfg.OUT_DIR}/walkers_train.json', 'w') as f:
                 json.dump(cfg.ENV.WALKERS, f)
@@ -427,39 +492,6 @@ class PPO:
                     val_loss = 0.5 * torch.max(val_loss, val_loss_clip).mean()
                 else:
                     val_loss = 0.5 * (batch["ret"] - val).pow(2).mean()
-
-                if cfg.PER_LIMB_GRAD:
-                    # compute the grad of each limb's action logp
-                    self.optimizer.zero_grad()
-                    action_logp = self.actor_critic.limb_logp
-                    pi_loss.backward(retain_graph=True, inputs=action_logp)
-                    action_logp_grad = action_logp.grad.detach()
-                    # print ('backward action logp grad')
-                    # print (action_logp_grad[0])
-                    # print ('analytic action logp grad')
-                    # print (-surr1[0] / 5120.)
-                    per_limb_grad = defaultdict(list)
-                    for k in range(cfg.MODEL.MAX_LIMBS):
-                        self.optimizer.zero_grad()
-                        filter_grad = torch.zeros(action_logp.size()).cuda()
-                        filter_grad[:, (k*2):(k*2+2)] = action_logp_grad[:, (k*2):(k*2+2)]
-                        action_logp.backward(gradient=filter_grad, retain_graph=True)
-                        for name, param in self.actor_critic.named_parameters():
-                            if name == 'log_std' or 'v_net' in name:
-                                continue
-                            grad = param.grad.clone()
-                            per_limb_grad[name].append(grad)
-                    # self.optimizer.zero_grad()
-                    # action_logp.backward(gradient=action_logp_grad, retain_graph=True)
-                    # per_limb_grad = self.actor_critic.mu_net.decoder[0].weight.grad.clone()
-                    for name in per_limb_grad:
-                        all_limb_grad = torch.stack(per_limb_grad[name], dim=0).reshape(cfg.MODEL.MAX_LIMBS, -1)
-                        # compute the norm of each limb's grad
-                        norm = all_limb_grad.norm(dim=1)
-                        grad_norm_dict[name].append(norm.detach().cpu().numpy())
-                        # compute the correlation between different limbs' gradient
-                        correlation = torch.corrcoef(all_limb_grad).detach().cpu().numpy()
-                        grad_correlation_dict[name].append(correlation)
 
                 self.optimizer.zero_grad()
 
@@ -666,8 +698,17 @@ class PPO:
             probs = [1000.0 / l for l in ep_lens]
 
         elif cfg.ENV.TASK_SAMPLING == "UED":
+
+            if cfg.UED.USE_VALIDATION:
+                if cur_iter >= cfg.UED.VALIDATION_START_ITER:
+                    ep_count = np.array([self.train_meter.agent_meters[agent].ep_count for agent in agents])
+                    probs = ep_count.max() - ep_count
+                    probs = probs / probs.sum()
+                    probs = probs * 0.8 + np.ones(num_agents) / num_agents * 0.2
+                else:
+                    probs = [1. for _ in agents]
             
-            if cfg.UED.CURATION in ['positive_value_loss', 'L1_value_loss', 'GAE']:
+            elif cfg.UED.CURATION in ['positive_value_loss', 'L1_value_loss', 'GAE']:
                 # select new agents for the next learning iteration
                 # TODO: adaptively change this threshold based on value loss?
                 if cur_iter >= int(cfg.PPO.MAX_ITERS / 20.):
@@ -679,11 +720,9 @@ class PPO:
             elif cfg.UED.CURATION == 'regret':
 
                 if self.ST_performance is None:
-                    self.ST_performance = {}
-                    for agent in agents:
-                        with open(f'{cfg.UED.ST_PATH}/{agent}/1409/Unimal-v0_results.json', 'r') as f:
-                            log = json.load(f)
-                        self.ST_performance[agent] = np.mean(log[agent]['reward']['reward'][-5:])
+                    # hardcode it here only for proof-of-concept experiments
+                    with open('mutate_400_upper_bound.json', 'r') as f:
+                        self.ST_performance = json.load(f)
 
                 ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in agents]
                 if min(ep_lens) == 10:
@@ -691,11 +730,13 @@ class PPO:
                     # TODO: how to deal with negative regret
                     # Issue: training score is computed based on an out-of-date model, 
                     # which may not correctly reflect the current model's performance on a robot
-                    probs = [
+                    regret = [
                         self.ST_performance[agent] - np.mean(self.train_meter.agent_meters[agent].ep_rew["reward"]) 
                         for agent in agents
                     ]
-                    probs = [max(p, 0.) for p in probs]
+                    regret = np.maximum(regret, 0.)
+                    regret = regret / regret.sum()
+                    probs = regret * 0.9 + np.ones(len(regret)) / len(regret) * 0.1
                 else:
                     ep_lens = [l + 1 for l in ep_lens]
                     probs = [1000.0 / l for l in ep_lens]
@@ -724,6 +765,8 @@ class PPO:
             if cur_iter == -1:
                 self.last_probs = probs
             else:
+                if len(self.last_probs) != len(probs):
+                    self.last_probs = np.concatenate([self.last_probs, np.zeros(len(probs) - len(self.last_probs))])
                 delta_prob = probs - self.last_probs
                 probs = self.last_probs + cfg.UED.PROB_CHANGE_RATE * delta_prob
                 self.last_probs = probs = probs / probs.sum()

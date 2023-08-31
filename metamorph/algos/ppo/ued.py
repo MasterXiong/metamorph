@@ -22,49 +22,69 @@ def find_removable_limbs(agent):
     return removable_limbs
 
 
+def sample_new_robot(agent_id, folder):
+    limb_num = np.random.choice(np.arange(4, 11), 1)[0]
+    unimal = SymmetricUnimal(agent_id)
+    while unimal.num_limbs <= limb_num:
+        old_num_limbs = unimal.num_limbs
+        unimal.mutate(op="grow_limb")
+        if unimal.num_limbs == old_num_limbs:
+            break
+    unimal.save(folder)
+    pickle_to_json(folder, unimal.id)
+    return agent_id
+
+
 def mutate_robot(agent, folder):
     mutated_agents = []
     # generate all possible mutations by removing limb(s)
     parent_unimal = SymmetricUnimal(agent, f'{folder}/unimal_init/{agent}.pkl')
     limbs = find_removable_limbs(parent_unimal)
-    for i, l in enumerate(limbs):
-        if parent_unimal.num_limbs <= 3:
-            break
-        name = f'{agent}-mutate-remove-{i}'
+    count = 0
+    for l in limbs:
+        if parent_unimal.num_limbs - len(l) < 4:
+            continue
+        name = f'{agent}-mutate-{count}-remove'
         unimal = SymmetricUnimal(name, f'{folder}/unimal_init/{agent}.pkl')
         unimal.mutate_delete_limb(limb_to_remove=l)
-        if unimal.num_limbs <= 2:
-            continue
         unimal.save(folder)
         pickle_to_json(folder, unimal.id)
         mutated_agents.append(name)
+        count += 1
 
     # add limbs
     add_limb_mutation_num = 5 - len(mutated_agents)
-    i = 0
+    count = len(mutated_agents)
     for i in range(add_limb_mutation_num):
-        new_agent = f'{agent}-mutate-add-{i}'
+        new_agent = f'{agent}-mutate-{count}-add'
         unimal = SymmetricUnimal(new_agent, f'{folder}/unimal_init/{agent}.pkl')
         unimal.grow_limb()
         if unimal.num_limbs == parent_unimal.num_limbs:
             break
         if unimal.num_limbs >= 12 or len(xu.find_elem(unimal.actuator, "motor")) > 16:
-            continue
+            break
         unimal.save(folder)
         pickle_to_json(folder, unimal.id)
         mutated_agents.append(new_agent)
+        count += 1
 
-    for op in ["limb_params", "gear", "dof", "joint_angle", "density"]:
-        new_agent = f'{agent}-mutate-{op}'
-        unimal = SymmetricUnimal(new_agent, f'{folder}/unimal_init/{agent}.pkl')
-        unimal.mutate(op=op)
-        if unimal.num_limbs >= 12 or len(xu.find_elem(unimal.actuator, "motor")) > 16:
-            continue
-        if unimal.num_limbs <= 2:
-            continue
-        unimal.save(folder)
-        pickle_to_json(folder, unimal.id)
-        mutated_agents.append(new_agent)
+    if len(mutated_agents) < 5:
+        count = len(mutated_agents)
+        while (1):
+            op = np.random.choice(["limb_params", "gear", "dof", "joint_angle", "density"], 1)[0]
+            new_agent = f'{agent}-mutate-{count}-{op}'
+            unimal = SymmetricUnimal(new_agent, f'{folder}/unimal_init/{agent}.pkl')
+            unimal.mutate(op=op)
+            if unimal.num_limbs >= 12 or len(xu.find_elem(unimal.actuator, "motor")) > 16:
+                continue
+            if unimal.num_limbs <= 2:
+                continue
+            unimal.save(folder)
+            pickle_to_json(folder, unimal.id)
+            mutated_agents.append(new_agent)
+            count += 1
+            if count == 5:
+                break
     
     return mutated_agents
 

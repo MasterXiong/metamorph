@@ -33,7 +33,10 @@ class UnimalEnv(gym.Env):
     def __init__(self, xml_str, unimal_id):
         self.frame_skip = 4
         self.unimal_id = unimal_id
-        self.unimal_idx = cfg.ENV.WALKERS.index(unimal_id)
+        try:
+            self.unimal_idx = cfg.ENV.WALKERS.index(unimal_id)
+        except:
+            self.unimal_idx = -1
 
         self.viewer = None
         self._viewers = {}

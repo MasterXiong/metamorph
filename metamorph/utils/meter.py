@@ -24,10 +24,6 @@ class AgentMeter:
         self.ep_len_ema = -1
 
         # statistics for UED
-        self.ep_positive_gae = deque(maxlen=10)
-        # self.return_buffer = deque(maxlen=50)
-        # self.iter_buffer = deque(maxlen=50)
-        # self.iter_returns = []
         self.iter_mean_return = deque(maxlen=5)
         self.iter_ep_num = deque(maxlen=5)
         self.iter_idx = deque(maxlen=5)
@@ -139,6 +135,14 @@ class AgentMeter:
             if self.iter_mean_return[-1] > self.best_iter_return:
                 self.best_iter_return = self.iter_mean_return[-1]
                 self.best_iter = cur_iter
+    
+    def add_new_score(self, cur_iter, score, episode_num):
+        self.iter_mean_return.append(score)
+        self.iter_ep_num.append(episode_num)
+        self.iter_idx.append(cur_iter)
+        if self.iter_mean_return[-1] > self.best_iter_return:
+            self.best_iter_return = self.iter_mean_return[-1]
+            self.best_iter = cur_iter
 
     def get_learning_speed(self):
 

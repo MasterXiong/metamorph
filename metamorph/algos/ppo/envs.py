@@ -115,10 +115,10 @@ def make_vec_envs(
         raise ValueError("VECENV: {} is not supported.".format(cfg.VECENV.TYPE))
 
     # we may not use VecNorm for modular envs
-    if cfg.MODEL.OBS_TO_NORM == []:
-        print ('not use VecNorm')
-    else:
-        print ('use VecNorm')
+    # if cfg.MODEL.OBS_TO_NORM == []:
+    #     print ('not use VecNorm')
+    # else:
+    #     print ('use VecNorm')
     envs = VecNormalize(
         envs, gamma=cfg.PPO.GAMMA, training=training, ret=norm_rew,
         obs_to_norm=cfg.MODEL.OBS_TO_NORM

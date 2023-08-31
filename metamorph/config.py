@@ -433,6 +433,7 @@ _C.MODEL.MLP.SHARE_INPUT = False
 _C.MODEL.MLP.SHARE_INPUT_INIT = False
 _C.MODEL.MLP.PER_NODE_EMBED = False
 _C.MODEL.MLP.PER_NODE_DECODER = False
+_C.MODEL.MLP.PER_ROBOT_HIDDEN_LAYERS = False
 # architecture for the value network
 _C.MODEL.MLP.SINGLE_VALUE = False
 _C.MODEL.MLP.RELU_AFTER_AGG = True
@@ -592,8 +593,12 @@ _C.UED.ST_PATH = ''
 # expand by validation set
 _C.UED.USE_VALIDATION = False
 _C.UED.CHECK_TRAIN_FREQ = 10
+_C.UED.TRAIN_MAX_WAIT = 10
 _C.UED.CHECK_VALID_FREQ = 10
+_C.UED.VALID_MAX_WAIT = 5
 _C.UED.VALID_TIMESTEPS = 10000
+_C.UED.RANDOM_VALIDATION_ROBOT_NUM = 10
+_C.UED.VALIDATION_START_ITER = 30
 
 # ----------------------------------------------------------------------------#
 # Misc Options

@@ -607,6 +607,10 @@ class SymmetricUnimal:
 
     def grow_limb(self):
         # Try for N = 50 times to grow a limb
+        # randomness in grow_limb:
+        #   1. the site to grow and the number of limbs (1 or 2) to add
+        #   2. parameters of the new limb(s)
+        #   3. orientation of the new limb
         for _ in range(50):
             # Find a site to grow
             choosen_site = self._choose_site()
@@ -698,6 +702,7 @@ class SymmetricUnimal:
         if "torso" not in site.get("name") and self.num_limbs > 0:
             p_orient = self.limb_metadata[parent_idx]["orient"]
             if gu.is_same_orient(orient, p_orient) and "mid" in site.get("name"):
+                # can not grow limb in the same direction as the parent limb if the site is in the middle of the parent
                 return None, None, None
 
         if limbs2add == 1:
@@ -781,6 +786,17 @@ class SymmetricUnimal:
                 cur_parent.remove(cur_site)
             except ValueError:
                 continue
+
+    def get_all_sites(self):
+        torso_idx = random.choice(self.growth_torso)
+        torso = xu.find_elem(
+            self.root, "body", "name", "torso/{}".format(torso_idx)
+        )[0]
+        free_sites = xu.find_elem(torso, "site", "class", "growth_site")
+        free_sites.extend(
+            xu.find_elem(torso, "site", "class", "mirror_growth_site")
+        )
+        return free_sites
 
     def _choose_site(self):
         """Choose a free site, and how many limbs to add at the site."""
@@ -966,7 +982,7 @@ class SymmetricUnimal:
             ),
         )
 
-    def save_image(self):
+    def save_image(self, folder):
         sim = mu.mjsim_from_etree(self.root)
         sim.step()
         frame = sim.render(
@@ -979,7 +995,7 @@ class SymmetricUnimal:
         # Rendered images are upside down
         frame = frame[::-1, :, :]
         # imageio.imwrite(fu.id2path(self.id, "images"), frame)
-        imageio.imwrite(f'{control_cfg.ENV.WALKER_DIR}/images/{self.id}.png', frame)
+        imageio.imwrite(f'{folder}/images/{self.id}.png', frame)
 
     def _get_limb_r(self, name):
         elem = xu.find_elem(self.unimal, "geom", "name", name)[0]

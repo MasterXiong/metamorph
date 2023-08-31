@@ -57,6 +57,10 @@ class MLPModel(nn.Module):
             initrange = 0.04
             self.limb_embed_weights = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
             self.limb_embed_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+            # init_weight = torch.zeros(obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange)
+            # self.limb_embed_weights = nn.Parameter(torch.stack([init_weight for _ in cfg.ENV.WALKERS]))
+            # init_bias = torch.zeros(self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange)
+            # self.limb_embed_bias = nn.Parameter(torch.stack([init_bias for _ in cfg.ENV.WALKERS]))
         elif self.model_args.SHARE_INPUT:
             print ('use shared input layer')
             self.shared_input_layer = nn.Linear(self.limb_obs_size, self.model_args.HIDDEN_DIM)
@@ -92,6 +96,10 @@ class MLPModel(nn.Module):
             initrange = 1. / 16
             self.limb_output_weights = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM, out_dim).uniform_(-initrange, initrange))
             self.limb_output_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), out_dim).uniform_(-initrange, initrange))
+            # output_weight = torch.zeros(self.model_args.HIDDEN_DIM, out_dim).uniform_(-initrange, initrange)
+            # self.limb_output_weights = nn.Parameter(torch.stack([output_weight for _ in cfg.ENV.WALKERS]))
+            # output_bias = torch.zeros(out_dim).uniform_(-initrange, initrange)
+            # self.limb_output_bias = nn.Parameter(torch.stack([output_bias for _ in cfg.ENV.WALKERS]))
         else:
             self.output_layer = nn.Linear(self.model_args.HIDDEN_DIM, out_dim)
         
@@ -102,7 +110,16 @@ class MLPModel(nn.Module):
         else:
             hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
             self.hidden_layers = tu.make_mlp_default(hidden_dims)
-        
+
+        if self.model_args.PER_ROBOT_HIDDEN_LAYERS:
+            initrange = 1. / 16
+            self.hidden_weights_1 = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+            self.hidden_bias_1 = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+            self.hidden_weights_2 = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+            self.hidden_bias_2 = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+            self.hidden_weights_3 = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+            self.hidden_bias_3 = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+
         if self.model_args.NORM == 'BN':
             # TODO: consider hfield input
             self.batch_norm = nn.BatchNorm1d(self.model_args.HIDDEN_DIM)
@@ -197,7 +214,15 @@ class MLPModel(nn.Module):
             embedding = torch.cat([embedding, hfield_embedding], 1)
         
         # hidden layers
-        embedding = self.hidden_layers(embedding)
+        if not self.model_args.PER_ROBOT_HIDDEN_LAYERS:
+            embedding = self.hidden_layers(embedding)
+        else:
+            embedding = (embedding[:, :, None] * self.hidden_weights_1[unimal_ids]).sum(dim=-2) + self.hidden_bias_1[unimal_ids]
+            embedding = F.relu(embedding)
+            embedding = (embedding[:, :, None] * self.hidden_weights_2[unimal_ids]).sum(dim=-2) + self.hidden_bias_2[unimal_ids]
+            embedding = F.relu(embedding)
+            embedding = (embedding[:, :, None] * self.hidden_weights_3[unimal_ids]).sum(dim=-2) + self.hidden_bias_3[unimal_ids]
+            embedding = F.relu(embedding)
 
         # output layer
         # if self.model_args.MODE == 'HN':
@@ -212,6 +237,8 @@ class MLPModel(nn.Module):
             output_weight = self.hnet_output_weight[unimal_ids]
             output_bias = self.hnet_output_bias[unimal_ids]
             output = (embedding[:, None, :, None] * output_weight).sum(dim=-2) + output_bias
+            # output_check = torch.stack([(embedding[:, :, None] * output_weight[:, i, :, :]).sum(axis=-2) + output_bias[:, i] for i in range(self.seq_len)], dim=1)
+            # print ((output != output_check).sum())
             output = output.reshape(batch_size, -1)
 
         elif self.model_args.PER_NODE_DECODER:
@@ -872,7 +899,8 @@ class ActorCritic(nn.Module):
             batch_size = cfg.PPO.BATCH_SIZE
             batch_size = act.shape[0]
         else:
-            batch_size = cfg.PPO.NUM_ENVS
+            # batch_size = cfg.PPO.NUM_ENVS
+            batch_size = obs['proprioceptive'].shape[0]
 
         obs_env = {k: obs[k] for k in cfg.ENV.KEYS_TO_KEEP}
         if "obs_padding_cm_mask" in obs:
