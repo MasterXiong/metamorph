@@ -23,11 +23,20 @@ class AgentMeter:
         self.ep_len = deque(maxlen=10)
         self.ep_len_ema = -1
 
+        # EMA of return over all episodes
+        self.return_ema = None
+        # save return_ema of every iteration
+        self.return_ema_curve = []
+
+        # EMA of episode number in each PPO iteration
+        self.discounted_total_episode_num = 0.
+        # save episode number in each PPO iteration
+        # self.episode_num_record = []
+
         # statistics for UED
-        self.iter_mean_return = deque(maxlen=5)
-        self.iter_ep_num = deque(maxlen=5)
-        self.iter_idx = deque(maxlen=5)
-        self.LP = 0.
+        self.iter_mean_return = deque(maxlen=10)
+        self.iter_ep_num = deque(maxlen=10)
+        self.iter_idx = deque(maxlen=10)
         # this needs to be reset for every iteration
         self.iter_ep_returns = []
 
@@ -35,40 +44,6 @@ class AgentMeter:
         self.best_iter = 0
 
     def add_ep_info(self, info, cur_iter):
-        # for info in infos:
-        #     if info["name"] != self.name:
-        #         continue
-        #     if "episode" in info.keys():
-        #         self.ep_rew["reward"].append(info["episode"]["r"])
-        #         self.iter_ep_returns.append(info["episode"]["r"])                
-        #         # self.return_buffer.append(info["episode"]["r"])
-        #         # self.iter_buffer.append(cur_iter)
-        #         # while (1):
-        #         #     if len(self.iter_returns) > cur_iter:
-        #         #         break
-        #         #     self.iter_returns.append([])
-        #         self.ep_count += 1
-        #         self.ep_len.append(info["episode"]["l"])
-        #         if self.ep_count == 10:
-        #             self.ep_len_ema = np.mean(self.ep_len)
-        #         elif self.ep_count >= 10:
-        #             alpha = cfg.TASK_SAMPLING.EMA_ALPHA
-        #             self.ep_len_ema = (
-        #                 alpha * self.ep_len[-1] + (1 - alpha) * self.ep_len_ema
-        #             )
-
-        #         for rew_type, rew_ in info["episode"].items():
-        #             if "__reward__" in rew_type:
-        #                 self.ep_rew[rew_type].append(rew_)
-
-        #         if "x_pos" in info:
-        #             self.ep_pos.append(info["x_pos"])
-        #         if "x_vel" in info:
-        #             self.ep_vel.append(info["x_vel"])
-        #         if "metric" in info:
-        #             self.ep_metric.append(info["metric"])
-                
-        #         self.ep_positive_gae.append(info['positive_gae'])
 
         self.ep_rew["reward"].append(info["episode"]["r"])
         self.iter_ep_returns.append(info["episode"]["r"])
@@ -76,11 +51,13 @@ class AgentMeter:
         self.ep_len.append(info["episode"]["l"])
         if self.ep_count == 10:
             self.ep_len_ema = np.mean(self.ep_len)
+            self.return_ema = np.mean(self.ep_rew['reward'])
         elif self.ep_count >= 10:
             alpha = cfg.TASK_SAMPLING.EMA_ALPHA
             self.ep_len_ema = (
                 alpha * self.ep_len[-1] + (1 - alpha) * self.ep_len_ema
             )
+            self.return_ema = alpha * self.ep_rew['reward'][-1] + (1 - alpha) * self.return_ema
 
         for rew_type, rew_ in info["episode"].items():
             if "__reward__" in rew_type:
@@ -131,11 +108,20 @@ class AgentMeter:
             self.iter_mean_return.append(np.mean(self.iter_ep_returns))
             self.iter_ep_num.append(len(self.iter_ep_returns))
             self.iter_idx.append(cur_iter)
-            self.iter_ep_returns = []
             if self.iter_mean_return[-1] > self.best_iter_return:
                 self.best_iter_return = self.iter_mean_return[-1]
                 self.best_iter = cur_iter
-    
+        
+        self.discounted_total_episode_num = self.discounted_total_episode_num * cfg.UED.EPISODE_NUM_DISCOUNT + len(self.iter_ep_returns)
+        # self.episode_num_record.append(len(self.iter_ep_returns))
+
+        if self.return_ema is not None:
+            self.return_ema_curve.append(self.return_ema)
+        else:
+            self.return_ema_curve.append(0.)
+
+        self.iter_ep_returns = []
+
     def add_new_score(self, cur_iter, score, episode_num):
         self.iter_mean_return.append(score)
         self.iter_ep_num.append(episode_num)
@@ -154,37 +140,25 @@ class AgentMeter:
             beta = np.linalg.inv(X.T.dot(weight).dot(X)).dot(X.T).dot(weight).dot(y)
             return beta.ravel()[1]
 
-        if len(self.iter_mean_return) == 1:
-            xdata = np.insert(np.array(self.iter_idx), 0, 0.)
-            ydata = np.insert(np.array(self.iter_mean_return), 0, 0.)
-            w = np.insert(np.array(self.iter_ep_num), 0, 0.)
+        # if len(self.iter_mean_return) == 1:
+        #     xdata = np.insert(np.array(self.iter_idx), 0, 0.)
+        #     ydata = np.insert(np.array(self.iter_mean_return), 0, 0.)
+        #     w = np.insert(np.array(self.iter_ep_num), 0, 0.)
+        # else:
+        #     xdata = np.array(self.iter_idx)
+        #     ydata = np.array(self.iter_mean_return)
+        #     w = np.clip(np.array(self.iter_ep_num), None, 10.)
+        
+        if len(self.iter_mean_return) < 10:
+            # return -1 and assign a large potential score if not trained for 10 iters yet
+            return -1.
         else:
             xdata = np.array(self.iter_idx)
-            ydata = np.array(self.iter_mean_return)
+            # use return EMA instead of mean for a smoother estimation?
+            ydata = np.array([self.return_ema_curve[int(i)] for i in self.iter_idx])
             w = np.clip(np.array(self.iter_ep_num), None, 10.)
-        print (xdata, ydata, w)
-        self.LP = abs(solve_linear_regression(xdata, ydata, w))
-        return self.LP
-
-        # slope = []
-        # for i in range(10, 60, 10):
-        #     buffer_range = -min(i, buffer_size)
-        #     xdata = [self.iter_buffer[j] for j in range(buffer_range, 0)]
-        #     ydata = [self.return_buffer[j] for j in range(buffer_range, 0)]
-        #     slope.append(solve_linear_regression(xdata, ydata))
-        # score = np.array([abs(x) for x in slope])
-        # r = np.sort(score)[2]
-        # return r
-
-        # xdata, ydata = [], []
-        # for i in range(-5, 0):
-        #     if len(self.iter_returns[i]) == 0:
-        #         continue
-        #     xdata.append(i + 5)
-        #     ydata.append(np.array(self.iter_returns[i]).mean())
-        # print (xdata, ydata)
-        # slope = solve_linear_regression(xdata, ydata)
-        # return abs(slope)
+            speed = abs(solve_linear_regression(xdata, ydata, w)) / w.sum()
+            return speed
 
 
 class TrainMeter:
@@ -270,6 +244,7 @@ class TrainMeter:
                 "vel": agent_meter.mean_vel,
                 "metric": agent_meter.mean_metric,
                 "ep_len": agent_meter.mean_ep_len,
+                "return_ema": agent_meter.return_ema_curve, 
             }
 
         stats["__env__"] = {

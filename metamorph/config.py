@@ -583,12 +583,10 @@ _C.UED.MUTATE_THRESHOLD = None
 
 # UED method: 'regret', 'uniform', 'positive_value_loss', 'L1_value_loss', 'GAE'
 _C.UED.CURATION = 'uniform'
-_C.UED.STALENESS_WEIGHT = 0.1
+_C.UED.STALENESS_WEIGHT = 0.1 # also used for validation
 _C.UED.SCORE_EMA_COEF = 0.5
-_C.UED.PROB_CHANGE_RATE = None
 
-# the path to find the per-task performance upper-bound for UED
-_C.UED.ST_PATH = ''
+_C.UED.PROB_CHANGE_RATE = None
 
 # expand by validation set
 _C.UED.USE_VALIDATION = False
@@ -599,6 +597,8 @@ _C.UED.VALID_MAX_WAIT = 5
 _C.UED.VALID_TIMESTEPS = 10000
 _C.UED.RANDOM_VALIDATION_ROBOT_NUM = 10
 _C.UED.VALIDATION_START_ITER = 30
+
+_C.UED.EPISODE_NUM_DISCOUNT = 0.9
 
 # ----------------------------------------------------------------------------#
 # Misc Options
