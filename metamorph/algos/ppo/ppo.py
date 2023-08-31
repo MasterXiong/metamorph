@@ -19,7 +19,7 @@ from torch.utils import tensorboard
 from torch.utils.tensorboard import SummaryWriter
 
 from .buffer import Buffer
-from .envs import get_ob_rms
+from .envs import get_ob_rms, get_ret_rms
 from .envs import make_vec_envs
 from .envs import set_ob_rms
 from .inherit_weight import restore_from_checkpoint
@@ -555,9 +555,9 @@ class PPO:
     def save_model(self, cur_iter, path=None):
         if not path:
             path = os.path.join(cfg.OUT_DIR, self.file_prefix + ".pt")
-        torch.save([self.actor_critic, get_ob_rms(self.envs)], path)
+        torch.save([self.actor_critic, get_ob_rms(self.envs), get_ret_rms(self.envs)], path)
         checkpoint_path = os.path.join(cfg.OUT_DIR, f"checkpoint_{cur_iter}.pt")
-        torch.save([self.actor_critic, get_ob_rms(self.envs)], checkpoint_path)
+        torch.save([self.actor_critic, get_ob_rms(self.envs), get_ret_rms(self.envs)], checkpoint_path)
 
     def _log_stats(self, cur_iter):
         self._log_fps(cur_iter)
