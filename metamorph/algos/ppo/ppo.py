@@ -21,7 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 from .buffer import Buffer
 from .envs import get_ob_rms, get_ret_rms
 from .envs import make_vec_envs
-from .envs import set_ob_rms
+from .envs import set_ob_rms, set_ret_rms
 from .inherit_weight import restore_from_checkpoint
 from .model import ActorCritic
 from .model import Agent
@@ -50,7 +50,12 @@ class PPO:
 
         # Used while using train_ppo.py
         if cfg.PPO.CHECKPOINT_PATH:
-            ob_rms = restore_from_checkpoint(self.actor_critic)
+            normalizer = restore_from_checkpoint(self.actor_critic)
+            if len(normalizer) == 1:
+                ob_rms = normalizer
+            else:
+                ob_rms, ret_rms = normalizer
+                set_ret_rms(self.envs, ret_rms)
             set_ob_rms(self.envs, ob_rms)
 
         if print_model:

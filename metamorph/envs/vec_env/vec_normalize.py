@@ -68,7 +68,6 @@ class VecNormalize(VecEnvWrapper):
                 -self.cliprew,
                 self.cliprew,
             )
-            print ('reward normalized')
         self.ret[news] = 0.0
         return obs, rews, news, infos
 

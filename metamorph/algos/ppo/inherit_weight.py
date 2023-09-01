@@ -4,7 +4,12 @@ from metamorph.config import cfg
 
 
 def restore_from_checkpoint(ac):
-    model_p, ob_rms = torch.load(cfg.PPO.CHECKPOINT_PATH)
+    checkpoint = torch.load(cfg.PPO.CHECKPOINT_PATH)
+    if len(checkpoint) == 2:
+        model_p, ob_rms = checkpoint
+        ret_rms = None
+    else:
+        model_p, ob_rms, ret_rms = checkpoint
 
     state_dict_c = ac.state_dict()
     state_dict_p = model_p.state_dict()
@@ -44,4 +49,7 @@ def restore_from_checkpoint(ac):
     else:
         print ('fine tune the whole model')
 
-    return ob_rms
+    if ret_rms:
+        return ob_rms, ret_rms
+    else:
+        return ob_rms

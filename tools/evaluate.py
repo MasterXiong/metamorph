@@ -55,7 +55,6 @@ def evaluate(policy, env, agent, compute_gae=False):
             episode_values.append(val)
         else:
             _, act, _, _, _ = policy.act(obs, return_attention=False, compute_val=False)
-        print (env.ret_rms.mean, env.ret_rms.var)
 
         if cfg.PPO.TANH == 'action':
             obs, reward, done, infos = env.step(torch.tanh(act))
