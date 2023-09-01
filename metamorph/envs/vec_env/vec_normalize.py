@@ -61,12 +61,14 @@ class VecNormalize(VecEnvWrapper):
         self.ret = self.ret * self.gamma + rews
         obs = self._obfilt(obs)
         if self.ret_rms:
-            self.ret_rms.update(self.ret)
+            if self.training:
+                self.ret_rms.update(self.ret)
             rews = np.clip(
                 rews / np.sqrt(self.ret_rms.var + self.epsilon),
                 -self.cliprew,
                 self.cliprew,
             )
+            print ('reward normalized')
         self.ret[news] = 0.0
         return obs, rews, news, infos
 

@@ -26,7 +26,6 @@ torch.manual_seed(0)
 
 def compute_GAE(episode_value, episode_reward, timeout=False):
     gamma, gae_lambda = cfg.PPO.GAMMA, cfg.PPO.GAE_LAMBDA
-    # val: (T+1, P, 1), self.val: (T, P, 1) next_value: (P, 1)
     episode_gae = np.zeros_like(episode_value)
     if timeout:
         episode_gae[-1] = 0.
@@ -48,7 +47,7 @@ def evaluate(policy, env, agent, compute_gae=False):
 
     obs = env.reset()
     context = obs['context'][0].cpu().numpy()
-    ood_ratio = (np.abs(context) > 1.).mean()
+    ood_ratio = (obs['proprioceptive'].abs() == 10.).float().mean().item()
 
     for t in range(2000):
         if compute_gae:
@@ -56,6 +55,7 @@ def evaluate(policy, env, agent, compute_gae=False):
             episode_values.append(val)
         else:
             _, act, _, _, _ = policy.act(obs, return_attention=False, compute_val=False)
+        print (env.ret_rms.mean, env.ret_rms.var)
 
         if cfg.PPO.TANH == 'action':
             obs, reward, done, infos = env.step(torch.tanh(act))
@@ -63,6 +63,7 @@ def evaluate(policy, env, agent, compute_gae=False):
             obs, reward, done, infos = env.step(act)
         if compute_gae:
             episode_rewards.append(reward)
+        ood_ratio += (obs['proprioceptive'].abs() == 10.).float().mean().item()
 
         idx = np.where(done)[0]
         for i in idx:
@@ -72,8 +73,10 @@ def evaluate(policy, env, agent, compute_gae=False):
                 episode_len[i] = t + 1
                 timeout[i] = 'timeout' in infos[i]
         if not_done.sum() == 0:
-            break
-    
+            break    
+
+    ood_ratio /= (t + 1)
+
     episode_gae = []
     if compute_gae:
         episode_values = torch.stack(episode_values).cpu().numpy()
@@ -214,13 +217,15 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
 
     all_obs = dict()
     for i, agent in enumerate(test_agents):
-        if agent in eval_result and len(eval_result) == 3:
+        if agent in eval_result and len(eval_result[agent]) == 3:
             continue
-        envs = make_vec_envs(xml_file=agent, training=False, norm_rew=False, render_policy=True)
+        envs = make_vec_envs(xml_file=agent, training=False, norm_rew=True, render_policy=True)
         set_ob_rms(envs, get_ob_rms(ppo_trainer.envs))
+        set_ret_rms(envs, get_ret_rms(ppo_trainer.envs))
         episode_return, ood_ratio, episode_gae = evaluate(policy, envs, agent, compute_gae=compute_gae)
         envs.close()
         print (agent, f'{episode_return.mean():.2f} +- {episode_return.std():.2f}', f'OOD ratio: {ood_ratio}')
+        # print ([np.maximum(x, 0.).mean() for x in episode_gae])
         eval_result[agent] = [episode_return, ood_ratio, episode_gae]
         ood_list[i] = ood_ratio
         avg_score.append(np.array(episode_return).mean())
