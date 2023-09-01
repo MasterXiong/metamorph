@@ -7,7 +7,7 @@ from metamorph.config import cfg
 
 
 class AgentMeter:
-    def __init__(self, name):
+    def __init__(self, name, cur_iter=-1):
         self.name = name
         self.mean_ep_rews = defaultdict(list)
         self.mean_pos = []
@@ -26,7 +26,7 @@ class AgentMeter:
         # EMA of return over all episodes
         self.return_ema = None
         # save return_ema of every iteration
-        self.return_ema_curve = []
+        self.return_ema_curve = [0. for _ in range(cur_iter + 1)]
 
         # EMA of episode number in each PPO iteration
         self.discounted_total_episode_num = 0.
@@ -178,10 +178,10 @@ class TrainMeter:
         self.mean_metric = []
         self.mean_ep_len = []
 
-    def add_new_agents(self, agents):
+    def add_new_agents(self, agents, cur_iter=-1):
         self.agents.extend(agents)
         for agent in agents:
-            self.agent_meters[agent] = AgentMeter(agent)
+            self.agent_meters[agent] = AgentMeter(agent, cur_iter=cur_iter)
 
     def delete_agents(self, agents):
         for agent in agents:

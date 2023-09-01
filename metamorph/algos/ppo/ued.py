@@ -27,16 +27,15 @@ def sample_new_robot(agent_id, folder):
     limb_num = np.random.choice(np.arange(4, 11), 1)[0]
     unimal = SymmetricUnimal(agent_id)
     while unimal.num_limbs <= limb_num:
-        new_unimal = copy.deepcopy(unimal)
-        new_unimal.mutate(op="grow_limb")
+        old_limb_num = unimal.num_limbs
+        unimal.mutate(op="grow_limb")
         # early stop if no limb(s) can be added
-        if unimal.num_limbs == new_unimal.num_limbs:
+        if unimal.num_limbs == old_limb_num:
             break
         # early stop if robot size exceeds maximal value
-        if new_unimal.num_limbs > 12 or len(xu.find_elem(new_unimal.actuator, "motor")) > 16:
+        if unimal.num_limbs > 12 or len(xu.find_elem(unimal.actuator, "motor")) > 16:
             break
-        unimal = copy.deepcopy(new_unimal)
-    unimal.save(folder)
+        unimal.save(folder)
     pickle_to_json(folder, unimal.id)
     return agent_id
 

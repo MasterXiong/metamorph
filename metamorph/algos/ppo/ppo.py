@@ -265,8 +265,8 @@ class PPO:
             self.buffer.compute_returns(next_val)
             self.train_on_batch(cur_iter)
 
-            with open(f'{cfg.OUT_DIR}/iter_sampled_agents/{cur_iter}.pkl', 'wb') as f:
-                pickle.dump(self.sampled_agents, f)
+            # with open(f'{cfg.OUT_DIR}/iter_sampled_agents/{cur_iter}.pkl', 'wb') as f:
+            #     pickle.dump(self.sampled_agents, f)
 
             if cfg.ENV.TASK_SAMPLING == 'UED' and cfg.UED.CURATION in ['positive_value_loss', 'L1_value_loss', 'GAE']:
                 # update UED scores of the agents sampled in the current iteration
@@ -360,7 +360,7 @@ class PPO:
                             agents_to_move.append(agent)
                     # move the converged validation agents to the training set
                     self.valid_meter.delete_agents(agents_to_move)
-                    self.train_meter.add_new_agents(agents_to_move)
+                    self.train_meter.add_new_agents(agents_to_move, cur_iter=cur_iter)
                     cfg.ENV.WALKERS.extend(agents_to_move)
                     # mutate the moved agents to get new validation agents
                     # TODO: we can learn where to generate new validation agents
@@ -383,7 +383,7 @@ class PPO:
                     #     new_valid_agents.append(agent)
 
                     # update the valid meter
-                    self.valid_meter.add_new_agents(new_valid_agents)
+                    self.valid_meter.add_new_agents(new_valid_agents, cur_iter=cur_iter)
                     # save the updated validation set
                     with open(f'{cfg.OUT_DIR}/walkers_valid.json', 'w') as f:
                         json.dump(self.valid_meter.agents, f)
@@ -677,7 +677,7 @@ class PPO:
             if cfg.UED.USE_VALIDATION:
                 if cur_iter >= cfg.UED.VALIDATION_START_ITER:
                     # assign more weights to agents that are less sampled (especially the newly added ones)
-                    staleness_score = np.exp(-np.array([self.train_meter.agent_meters[agent].episode_num_ema for agent in agents]))
+                    staleness_score = np.exp(-np.array([self.train_meter.agent_meters[agent].discounted_total_episode_num for agent in agents]))
                     staleness_score = staleness_score / staleness_score.sum()
                     # learning progress score
                     potential_score = np.array([self.train_meter.agent_meters[agent].get_learning_speed() for agent in agents])
