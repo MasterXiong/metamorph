@@ -120,13 +120,15 @@ class PPO:
 
         if cfg.UED.USE_VALIDATION:
             # generate mutations of default_100 to initialize the validation set
-            # valid_agents = []
-            # for agent in cfg.ENV.WALKERS:
-            #     valid_agents.extend(mutate_robot(agent, cfg.ENV.WALKER_DIR))
+            valid_agents = []
+            with Pool(processes=50) as pool:
+                mutated_valid_agents = pool.starmap(mutate_robot, [(agent, cfg.ENV.WALKER_DIR) for agent in cfg.ENV.WALKERS])
+            for agents in mutated_valid_agents:
+                valid_agents.extend(agents)
             # hack for debug
-            valid_agents = [x[:-4] for x in os.listdir('unimals_100/random_validation_1409_backup/xml') if x not in os.listdir('unimals_100/random_100_v2/xml')]
-            os.system(f'rm -r {cfg.ENV.WALKER_DIR}')
-            os.system(f'cp -r unimals_100/random_validation_1409_backup {cfg.ENV.WALKER_DIR}')
+            # valid_agents = [x[:-4] for x in os.listdir('unimals_100/random_validation_1409_backup/xml') if x not in os.listdir('unimals_100/random_100_v2/xml')]
+            # os.system(f'rm -r {cfg.ENV.WALKER_DIR}')
+            # os.system(f'cp -r unimals_100/random_validation_1409_backup {cfg.ENV.WALKER_DIR}')
             self.valid_meter = TrainMeter(agents=valid_agents)
             self.valid_envs = make_vec_envs(training=False, norm_rew=False, env_type='valid')
             with open(f'{cfg.OUT_DIR}/walkers_valid.json', 'w') as f:
