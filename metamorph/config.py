@@ -600,6 +600,15 @@ _C.UED.VALIDATION_START_ITER = 30
 
 _C.UED.EPISODE_NUM_DISCOUNT = 0.9
 
+# parameters for learning dynamics model
+_C.DYNAMICS = CN()
+
+_C.DYNAMICS.BATCH_SIZE = 25600
+_C.DYNAMICS.EPOCH_NUM = 10
+_C.DYNAMICS.BASE_LR = 1e-4
+_C.DYNAMICS.EPS = 1e-5
+_C.DYNAMICS.WEIGHT_DECAY = 0.
+
 # ----------------------------------------------------------------------------#
 # Misc Options
 # ----------------------------------------------------------------------------#
