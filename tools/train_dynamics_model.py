@@ -187,11 +187,16 @@ if __name__ == "__main__":
 
     trainer = DynamicsTrainer(train_data['obs_act_tuple'].shape[-1], train_data['next_obs'].shape[-1])
 
-    train_dataloader = DataLoader(DynamicsDataset(train_data), batch_size=cfg.DYNAMICS.BATCH_SIZE, shuffle=True, drop_last=False)
-    in_domain_test_dataloader = DataLoader(DynamicsDataset(in_domain_test_data), batch_size=cfg.DYNAMICS.BATCH_SIZE, shuffle=True, drop_last=False)
-    out_domain_test_dataloader = DataLoader(DynamicsDataset(out_domain_test_data), batch_size=cfg.DYNAMICS.BATCH_SIZE, shuffle=True, drop_last=False)
+    train_data = DynamicsDataset(train_data)
+    in_domain_test_data = DynamicsDataset(in_domain_test_data)
+    out_domain_test_data = DynamicsDataset(out_domain_test_data)
+
+    train_dataloader = DataLoader(train_data, batch_size=cfg.DYNAMICS.BATCH_SIZE, shuffle=True, drop_last=False, num_workers=2, pin_memory=True)
+    in_domain_test_dataloader = DataLoader(in_domain_test_data, batch_size=cfg.DYNAMICS.BATCH_SIZE, shuffle=True, drop_last=False, num_workers=2, pin_memory=True)
+    out_domain_test_dataloader = DataLoader(out_domain_test_data, batch_size=cfg.DYNAMICS.BATCH_SIZE, shuffle=True, drop_last=False, num_workers=2, pin_memory=True)
 
     train_loss_curve, in_domain_test_loss_curve, out_domain_test_loss_curve = [], [], []
+    os.makedirs(f'dynamics_model/{model_path}', exist_ok=True)
     for i in range(cfg.DYNAMICS.EPOCH_NUM):
 
         print (f'epoch {i}')
@@ -206,10 +211,11 @@ if __name__ == "__main__":
             total_train_time += (batch_train_end - batch_train_start)
             train_batch_loss.append(loss)
             if j % 100 == 0:
-                print (f'{j} minibatches finished')
+                print (f'{j} minibatches finished, batch loss: {loss:.6f}')
                 total_time_till_now = time.time() - train_start_time
                 ratio = total_train_time / total_time_till_now
-                print (f'model training time fraction: {ratio:.4f}')
+                time_per_batch = total_time_till_now / (j + 1)
+                print (f'{time_per_batch:.2f} seconds per batch, model training time fraction: {ratio:.4f}')
         train_loss_curve.append(np.mean(train_batch_loss))
 
         in_domain_test_batch_loss = []
@@ -232,7 +238,11 @@ if __name__ == "__main__":
 
         print (f'train loss: {train_loss_curve[-1]:.6f}, in domain test loss: {in_domain_test_loss_curve[-1]:.6f}, out domain test loss: {out_domain_test_loss_curve[-1]:.6f}')
 
-    os.makedirs(f'dynamics_model/{model_path}', exist_ok=True)
+        if i % 10 == 0:
+            with open(f'dynamics_model/{model_path}/loss.pkl', 'wb') as f:
+                pickle.dump([train_loss_curve, in_domain_test_loss_curve, out_domain_test_loss_curve], f)
+            torch.save([trainer.model.state_dict(), trainer.optimizer.state_dict()], f'dynamics_model/{model_path}/checkpoint_{i}.pt')
+
     with open(f'dynamics_model/{model_path}/loss.pkl', 'wb') as f:
         pickle.dump([train_loss_curve, in_domain_test_loss_curve, out_domain_test_loss_curve], f)
-    torch.save(trainer.model.state_dict(), f'dynamics_model/{model_path}/model.pt')
+    torch.save([trainer.model.state_dict(), trainer.optimizer.state_dict()], f'dynamics_model/{model_path}/checkpoint_final.pt')
