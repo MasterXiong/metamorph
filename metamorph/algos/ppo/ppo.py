@@ -151,7 +151,7 @@ class PPO:
             print (key, obs[key].size())
 
         self.grad_record = defaultdict(list)
-        self.std_record = []
+        # self.std_record = []
 
         # do not update separate PE at the beginning
         # if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE:
@@ -163,7 +163,7 @@ class PPO:
         else:
             self.stat_save_freq = 10
         
-        if cfg.PPO.MAX_ITERS > 500:
+        if cfg.PPO.MAX_ITERS > 1000:
             model_save_freq = 100
         else:
             model_save_freq = 50
@@ -192,10 +192,11 @@ class PPO:
         # episode_value = np.zeros([cfg.PPO.NUM_ENVS, 1000])
         # episode_reward = np.zeros([cfg.PPO.NUM_ENVS, 1000])
         # episode_timestep = np.zeros(cfg.PPO.NUM_ENVS, dtype=int)
+        print ('Start training ...')
         for cur_iter in range(cfg.PPO.MAX_ITERS):
 
             # store the agents sampled in each iteration for UED
-            self.sampled_agents = []
+            # self.sampled_agents = []
 
             # if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE and cur_iter >= cfg.MODEL.TRANSFORMER.SEPARATE_PE_UPDATE_ITER:
             #     print ('start to tune separate PE')
@@ -211,9 +212,7 @@ class PPO:
             for step in range(cfg.PPO.TIMESTEPS):
                 # Sample actions
                 unimal_ids = self.envs.get_unimal_idx()
-                val, act, logp, dropout_mask_v, dropout_mask_mu = self.agent.act(obs, unimal_ids=unimal_ids)
-                # limb_logp = self.agent.limb_logp.detach()
-                limb_logp = None
+                val, act, logp = self.agent.act(obs, unimal_ids=unimal_ids)
 
                 if cfg.PPO.TANH == 'action':
                     next_obs, reward, done, infos = self.envs.step(torch.tanh(act))
@@ -248,8 +247,8 @@ class PPO:
                 finished_episode_index = np.where(done)[0]
                 self.train_meter.add_ep_info(infos, cur_iter, finished_episode_index)
                 # record agents that are done
-                finished_agents = [infos[i]['name'] for i in range(len(done)) if done[i]]
-                self.sampled_agents.extend(finished_agents)
+                # finished_agents = [infos[i]['name'] for i in range(len(done)) if done[i]]
+                # self.sampled_agents.extend(finished_agents)
 
                 masks = torch.tensor(
                     [[0.0] if done_ else [1.0] for done_ in done],
@@ -262,7 +261,7 @@ class PPO:
                     device=self.device,
                 )
 
-                self.buffer.insert(obs, act, logp, val, reward, masks, timeouts, dropout_mask_v, dropout_mask_mu, unimal_ids, limb_logp)
+                self.buffer.insert(obs, act, logp, val, reward, masks, timeouts, unimal_ids)
                 obs = next_obs
 
             self.train_meter.update_iter_returns(cur_iter)
@@ -305,8 +304,8 @@ class PPO:
                         print ('no new agents added in this iteration')
 
             # save std record
-            with open(os.path.join(cfg.OUT_DIR, 'std.pkl'), 'wb') as f:
-                pickle.dump(self.std_record, f)
+            # with open(os.path.join(cfg.OUT_DIR, 'std.pkl'), 'wb') as f:
+            #     pickle.dump(self.std_record, f)
 
             self.train_meter.update_mean()
             if len(self.train_meter.mean_ep_rews["reward"]):
@@ -323,14 +322,16 @@ class PPO:
 
                 file_name = "{}_results.json".format(self.file_prefix)
                 path = os.path.join(cfg.OUT_DIR, file_name)
-                self._log_fps(cfg.PPO.MAX_ITERS - 1, log=False)
+                self._log_fps(cur_iter, log=False)
                 stats = self.train_meter.get_stats()
                 stats["fps"] = self.fps
                 fu.save_json(stats, path)
                 print (cfg.OUT_DIR)
-            
-            if cur_iter % model_save_freq == 0:
-                self.save_model(cur_iter)
+
+            self._log_fps(cur_iter, log=True)
+
+            if (cur_iter + 1) % model_save_freq == 0:
+                self.save_model(cur_iter + 1)
             
             if cfg.UED.USE_VALIDATION:
 
@@ -431,25 +432,18 @@ class PPO:
         grad_norm_dict, grad_correlation_dict = defaultdict(list), defaultdict(list)
         limb_ratio_record = []
 
-        std_record = []
-        additional_clip_frac_record = []
         for i in range(cfg.PPO.EPOCHS):
             batch_sampler = self.buffer.get_sampler(adv)
 
             for j, batch in enumerate(batch_sampler):
                 # Reshape to do in a single forward pass for all steps
-                val, _, logp, ent, _, _ = self.actor_critic(batch["obs"], batch["act"], \
-                    dropout_mask_v=batch['dropout_mask_v'], \
-                    dropout_mask_mu=batch['dropout_mask_mu'], \
+                val, _, logp, ent = self.actor_critic(batch["obs"], batch["act"], \
+                    # dropout_mask_v=batch['dropout_mask_v'], \
+                    # dropout_mask_mu=batch['dropout_mask_mu'], \
                     unimal_ids=batch['unimal_ids'])
                 clip_ratio = cfg.PPO.CLIP_EPS
                 ratio = torch.exp(logp - batch["logp_old"])
                 approx_kl = (batch["logp_old"] - logp).mean().item()
-
-                # limb ratio
-                if cfg.SAVE_LIMB_RATIO:
-                    limb_ratio = torch.exp(self.actor_critic.limb_logp.detach() - batch["limb_logp_old"]).cpu().numpy()
-                    limb_ratio_record.append(limb_ratio)
 
                 if cfg.PPO.KL_TARGET_COEF is not None and approx_kl > cfg.PPO.KL_TARGET_COEF * 0.01:
                     self.train_meter.add_train_stat("approx_kl", approx_kl)
@@ -503,7 +497,6 @@ class PPO:
                 )
                 std = np.mean(np.exp(log_std))
                 self.train_meter.add_train_stat("std", float(std))
-                std_record.append(np.exp(log_std))
 
                 self.train_meter.add_train_stat("approx_kl", approx_kl)
                 self.train_meter.add_train_stat("pi_loss", pi_loss.item())
@@ -515,7 +508,7 @@ class PPO:
 
                 self.optimizer.step()
 
-        self.std_record.append(std_record)
+        # self.std_record.append(std_record)
 
         if cfg.SAVE_LIMB_RATIO and cur_iter % self.stat_save_freq == 0:
             # save the grad results
@@ -544,9 +537,9 @@ class PPO:
     def save_model(self, cur_iter, path=None):
         if not path:
             path = os.path.join(cfg.OUT_DIR, self.file_prefix + ".pt")
-        torch.save([self.actor_critic, get_ob_rms(self.envs), get_ret_rms(self.envs)], path)
+        torch.save([self.actor_critic, get_ob_rms(self.envs), get_ret_rms(self.envs), self.optimizer.state_dict()], path)
         checkpoint_path = os.path.join(cfg.OUT_DIR, f"checkpoint_{cur_iter}.pt")
-        torch.save([self.actor_critic, get_ob_rms(self.envs), get_ret_rms(self.envs)], checkpoint_path)
+        torch.save([self.actor_critic, get_ob_rms(self.envs), get_ret_rms(self.envs), self.optimizer.state_dict()], checkpoint_path)
 
     def _log_stats(self, cur_iter):
         self._log_fps(cur_iter)

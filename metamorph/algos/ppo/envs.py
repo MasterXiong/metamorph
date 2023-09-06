@@ -1,6 +1,7 @@
 import time
 from collections import defaultdict
 from collections import deque
+from multiprocessing import Pool
 
 import gym
 import torch
@@ -88,6 +89,9 @@ def make_vec_envs(
                 for idx in range(num_env):
                     _env = make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file)()
                     envs.append(env_func_wrapper(MultiEnvWrapper(_env, idx, env_type=env_type)))
+                # with Pool(processes=32) as pool:
+                #     envs = pool.starmap(make_env, [(cfg.ENV_NAME, seed, idx, xml_file) for idx in range(num_env)])
+                # envs = [env_func_wrapper(MultiEnvWrapper(_env, idx, env_type=env_type)) for idx, _env in enumerate(envs)]
             else:
                 for i, xml in enumerate(cfg.ENV.WALKERS):
                     _env = make_env(cfg.ENV_NAME, seed, 2 * i, xml_file=xml)()
@@ -110,7 +114,8 @@ def make_vec_envs(
     elif cfg.VECENV.TYPE == "DummyVecEnv":
         envs = DummyVecEnv(envs)
     elif cfg.VECENV.TYPE == "SubprocVecEnv":
-        envs = SubprocVecEnv(envs, in_series=cfg.VECENV.IN_SERIES, context="fork")
+        in_seris_num = max(cfg.VECENV.IN_SERIES, num_env // 32)
+        envs = SubprocVecEnv(envs, in_series=in_seris_num, context="fork")
     else:
         raise ValueError("VECENV: {} is not supported.".format(cfg.VECENV.TYPE))
 

@@ -124,7 +124,7 @@ class MLPModel(nn.Module):
             # TODO: consider hfield input
             self.batch_norm = nn.BatchNorm1d(self.model_args.HIDDEN_DIM)
 
-    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, dropout_mask=None, unimal_ids=None):
+    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, unimal_ids=None):
 
         batch_size = obs.shape[0]
         # input layer
@@ -502,7 +502,7 @@ class TransformerModel(nn.Module):
             initrange = cfg.MODEL.TRANSFORMER.EMBED_INIT
             self.context_embed_PE.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, dropout_mask=None, unimal_ids=None):
+    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, unimal_ids=None):
         # (num_limbs, batch_size, limb_obs_size) -> (num_limbs, batch_size, d_model)
         _, batch_size, limb_obs_size = obs.shape
 
@@ -632,26 +632,26 @@ class TransformerModel(nn.Module):
         # self.count += 1
 
         # dropout
-        if self.model_args.EMBEDDING_DROPOUT:
-            if self.model_args.CONSISTENT_DROPOUT:
-                # print ('consistent dropout')
-                if dropout_mask is None:
-                    obs_embed_after_dropout = self.dropout(obs_embed)
-                    # print (obs_embed_after_dropout / obs_embed)
-                    dropout_mask = torch.where(obs_embed_after_dropout == 0., 0., 1.).permute(1, 0, 2)
-                    # print (obs_embed_after_dropout == (obs_embed * dropout_mask.permute(1, 0, 2) / 0.9))
-                    obs_embed = obs_embed_after_dropout
-                else:
-                    obs_embed = obs_embed * dropout_mask.permute(1, 0, 2) / 0.9
-            else:
-                # print ('vanilla dropout')
-                obs_embed = self.dropout(obs_embed)
-                # ratio = obs_embed_after_dropout / obs_embed
-                # print (f'0.9 in ratio: {(ratio == 1. / 0.9).sum()}, 0. in ratio: {(ratio == 0.).sum()}')
-                # dropout_mask = torch.where(obs_embed == 0., 0., 1.).permute(1, 0, 2)
-                dropout_mask = 0.
-        else:
-            dropout_mask = 0.
+        # if self.model_args.EMBEDDING_DROPOUT:
+        #     if self.model_args.CONSISTENT_DROPOUT:
+        #         # print ('consistent dropout')
+        #         if dropout_mask is None:
+        #             obs_embed_after_dropout = self.dropout(obs_embed)
+        #             # print (obs_embed_after_dropout / obs_embed)
+        #             dropout_mask = torch.where(obs_embed_after_dropout == 0., 0., 1.).permute(1, 0, 2)
+        #             # print (obs_embed_after_dropout == (obs_embed * dropout_mask.permute(1, 0, 2) / 0.9))
+        #             obs_embed = obs_embed_after_dropout
+        #         else:
+        #             obs_embed = obs_embed * dropout_mask.permute(1, 0, 2) / 0.9
+        #     else:
+        #         # print ('vanilla dropout')
+        #         obs_embed = self.dropout(obs_embed)
+        #         # ratio = obs_embed_after_dropout / obs_embed
+        #         # print (f'0.9 in ratio: {(ratio == 1. / 0.9).sum()}, 0. in ratio: {(ratio == 0.).sum()}')
+        #         # dropout_mask = torch.where(obs_embed == 0., 0., 1.).permute(1, 0, 2)
+        #         dropout_mask = 0.
+        # else:
+        #     dropout_mask = 0.
 
         if self.model_args.FIX_ATTENTION:
             context_to_base = context_embedding_attention
@@ -711,7 +711,7 @@ class TransformerModel(nn.Module):
         # (batch_size, num_limbs * J)
         output = output.reshape(batch_size, -1)
 
-        return output, attention_maps, dropout_mask
+        return output, attention_maps
 
 
 class PositionalEncoding(nn.Module):
@@ -891,7 +891,7 @@ class ActorCritic(nn.Module):
             self.state_min = torch.Tensor(self.state_min.reshape(1, 1, -1)).cuda()
             self.state_max = torch.Tensor(self.state_max.reshape(1, 1, -1)).cuda()
 
-    def forward(self, obs, act=None, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None, unimal_ids=None, compute_val=True):
+    def forward(self, obs, act=None, return_attention=False, unimal_ids=None, compute_val=True):
         
         # all_start = time.time()
         
@@ -956,9 +956,9 @@ class ActorCritic(nn.Module):
 
         if compute_val:
             # Per limb critic values
-            limb_vals, v_attention_maps, dropout_mask_v = self.v_net(
+            limb_vals, v_attention_maps = self.v_net(
                 obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, 
-                return_attention=return_attention, dropout_mask=dropout_mask_v, 
+                return_attention=return_attention,  
                 unimal_ids=unimal_ids, 
             )
             if cfg.MODEL.MLP.SINGLE_VALUE:
@@ -970,11 +970,11 @@ class ActorCritic(nn.Module):
                 num_limbs = self.seq_len - torch.sum(obs_mask.int(), dim=1, keepdim=True)
                 val = torch.divide(torch.sum(limb_vals, dim=1, keepdim=True), num_limbs)
         else:
-            val, v_attention_maps, dropout_mask_v = 0., None, 0.
+            val, v_attention_maps = 0., None
 
-        mu, mu_attention_maps, dropout_mask_mu = self.mu_net(
+        mu, mu_attention_maps = self.mu_net(
             obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, 
-            return_attention=return_attention, dropout_mask=dropout_mask_mu, 
+            return_attention=return_attention, 
             unimal_ids=unimal_ids, 
         )
         if cfg.PPO.TANH == 'mean':
@@ -993,12 +993,12 @@ class ActorCritic(nn.Module):
             entropy = pi.entropy()
             entropy[act_mask] = 0.0
             entropy = entropy.mean()
-            return val, pi, logp, entropy, dropout_mask_v, dropout_mask_mu
+            return val, pi, logp, entropy
         else:
             if return_attention:
-                return val, pi, v_attention_maps, mu_attention_maps, dropout_mask_v, dropout_mask_mu
+                return val, pi, v_attention_maps, mu_attention_maps
             else:
-                return val, pi, None, None, dropout_mask_v, dropout_mask_mu
+                return val, pi, None, None
 
 
 class Agent:
@@ -1006,8 +1006,8 @@ class Agent:
         self.ac = actor_critic
 
     @torch.no_grad()
-    def act(self, obs, return_attention=False, dropout_mask_v=None, dropout_mask_mu=None, unimal_ids=None, compute_val=True):
-        val, pi, v_attention_maps, mu_attention_maps, dropout_mask_v, dropout_mask_mu = self.ac(obs, return_attention=return_attention, dropout_mask_v=dropout_mask_v, dropout_mask_mu=dropout_mask_mu, unimal_ids=unimal_ids, compute_val=compute_val)
+    def act(self, obs, return_attention=False, unimal_ids=None, compute_val=True):
+        val, pi, v_attention_maps, mu_attention_maps = self.ac(obs, return_attention=return_attention, unimal_ids=unimal_ids, compute_val=compute_val)
         self.pi = pi
         if not cfg.DETERMINISTIC:
             act = pi.sample()
@@ -1020,10 +1020,9 @@ class Agent:
         logp = logp.sum(-1, keepdim=True)
         self.v_attention_maps = v_attention_maps
         self.mu_attention_maps = mu_attention_maps
-        return val, act, logp, dropout_mask_v, dropout_mask_mu
-        # return val, act, logp, dropout_mask_v, dropout_mask_mu, v_attention_maps, mu_attention_maps
+        return val, act, logp
 
     @torch.no_grad()
-    def get_value(self, obs, dropout_mask_v=None, dropout_mask_mu=None, unimal_ids=None):
-        val, _, _, _, _, _ = self.ac(obs, dropout_mask_v=dropout_mask_v, dropout_mask_mu=dropout_mask_mu, unimal_ids=unimal_ids)
+    def get_value(self, obs, unimal_ids=None):
+        val, _, _, _ = self.ac(obs, unimal_ids=unimal_ids)
         return val
