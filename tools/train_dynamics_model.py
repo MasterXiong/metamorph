@@ -186,6 +186,14 @@ if __name__ == "__main__":
             out_domain_test_data = pickle.load(f)
 
     trainer = DynamicsTrainer(train_data['obs_act_tuple'].shape[-1], train_data['next_obs'].shape[-1])
+    with open(f'dynamics_model/{model_path}/checkpoint_100.pt', 'rb') as f:
+        model_state_dict, optimizer_state_dict = pickle.load(f)
+    trainer.model.load_state_dict(model_state_dict)
+    trainer.optimizer.load_state_dict(optimizer_state_dict)
+    torch.manual_seed(10)
+    start_epoch = 100
+    with open(f'dynamics_model/{model_path}/loss.pkl', 'wb') as f:
+        train_loss_curve, in_domain_test_loss_curve, out_domain_test_loss_curve = pickle.load(f)
 
     train_data = DynamicsDataset(train_data)
     in_domain_test_data = DynamicsDataset(in_domain_test_data)
@@ -195,9 +203,9 @@ if __name__ == "__main__":
     in_domain_test_dataloader = DataLoader(in_domain_test_data, batch_size=cfg.DYNAMICS.BATCH_SIZE, shuffle=True, drop_last=False, num_workers=2, pin_memory=True)
     out_domain_test_dataloader = DataLoader(out_domain_test_data, batch_size=cfg.DYNAMICS.BATCH_SIZE, shuffle=True, drop_last=False, num_workers=2, pin_memory=True)
 
-    train_loss_curve, in_domain_test_loss_curve, out_domain_test_loss_curve = [], [], []
+    # train_loss_curve, in_domain_test_loss_curve, out_domain_test_loss_curve = [], [], []
     os.makedirs(f'dynamics_model/{model_path}', exist_ok=True)
-    for i in range(cfg.DYNAMICS.EPOCH_NUM):
+    for i in range(start_epoch, start_epoch + cfg.DYNAMICS.EPOCH_NUM):
 
         print (f'epoch {i}')
 
@@ -238,11 +246,11 @@ if __name__ == "__main__":
 
         print (f'train loss: {train_loss_curve[-1]:.6f}, in domain test loss: {in_domain_test_loss_curve[-1]:.6f}, out domain test loss: {out_domain_test_loss_curve[-1]:.6f}')
 
-        if i % 10 == 0:
+        if (i + 1) % 10 == 0:
             with open(f'dynamics_model/{model_path}/loss.pkl', 'wb') as f:
                 pickle.dump([train_loss_curve, in_domain_test_loss_curve, out_domain_test_loss_curve], f)
-            torch.save([trainer.model.state_dict(), trainer.optimizer.state_dict()], f'dynamics_model/{model_path}/checkpoint_{i}.pt')
+            torch.save([trainer.model.state_dict(), trainer.optimizer.state_dict()], f'dynamics_model/{model_path}/checkpoint_{i+1}.pt')
 
-    with open(f'dynamics_model/{model_path}/loss.pkl', 'wb') as f:
-        pickle.dump([train_loss_curve, in_domain_test_loss_curve, out_domain_test_loss_curve], f)
-    torch.save([trainer.model.state_dict(), trainer.optimizer.state_dict()], f'dynamics_model/{model_path}/checkpoint_final.pt')
+    # with open(f'dynamics_model/{model_path}/loss.pkl', 'wb') as f:
+    #     pickle.dump([train_loss_curve, in_domain_test_loss_curve, out_domain_test_loss_curve], f)
+    # torch.save([trainer.model.state_dict(), trainer.optimizer.state_dict()], f'dynamics_model/{model_path}/checkpoint_final.pt')
