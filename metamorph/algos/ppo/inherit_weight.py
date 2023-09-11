@@ -8,8 +8,10 @@ def restore_from_checkpoint(ac):
     if len(checkpoint) == 2:
         model_p, ob_rms = checkpoint
         ret_rms = None
-    else:
+    elif len(checkpoint) == 3:
         model_p, ob_rms, ret_rms = checkpoint
+    else:
+        model_p, ob_rms, ret_rms, _ = checkpoint
 
     state_dict_c = ac.state_dict()
     state_dict_p = model_p.state_dict()

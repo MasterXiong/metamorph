@@ -165,7 +165,12 @@ class TaskSampler:
             # don't do this if the partial episode is too short
             if cfg.PPO.TIMESTEPS - start_t >= 100:
                 gae = rollouts.ret[start_t:, i] - rollouts.val[start_t:, i]
-                new_score = gae.abs().mean().item()
+                if cfg.UED.CURATION == 'L1_value_loss':
+                    new_score = gae.abs().mean().item()
+                elif cfg.UED.CURATION == 'positive_value_loss':
+                    new_score = torch.maximum(gae, torch.zeros_like(gae)).mean().item()
+                elif cfg.UED.CURATION == 'GAE':
+                    new_score = gae.mean().item()
                 agent_id = rollouts.unimal_ids[start_t, i].item()
                 self.potential_score[agent_id] = self.potential_score[agent_id] * (1. - self.potential_score_EMA_coef) + new_score * self.potential_score_EMA_coef
         # update staleness score

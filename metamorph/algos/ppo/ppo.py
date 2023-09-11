@@ -4,6 +4,7 @@ import pickle
 import json
 from collections import defaultdict
 from multiprocessing import Pool
+import copy
 
 import numpy as np
 import torch
@@ -27,11 +28,25 @@ from .model import ActorCritic
 from .model import Agent
 from .ued import TaskSampler, mutate_robot, sample_new_robot
 
+PROPRIOCEPTIVE_OBS_DIM = np.concatenate([list(range(13)), [30, 31], [41, 42]])
+
+
 class PPO:
     def __init__(self, print_model=True):
         # Create vectorized envs
-        self.envs = make_vec_envs()
+        if cfg.PPO.CHECKPOINT_PATH:
+            # do not update normalizer when fine-tuning
+            self.envs = make_vec_envs(training=False)
+        else:
+            self.envs = make_vec_envs()
         self.file_prefix = cfg.ENV_NAME
+
+        # use learned model for rollout step
+        if cfg.DYNAMICS.MODEL_STEP:
+            checkpoint = torch.load(cfg.DYNAMICS.MODEL_PATH)
+            self.dynamics_model = DynamicsModel(52+2, 17)
+            self.dynamics_model.load_state_dict(checkpoint[0])
+            self.dynamics_model = self.dynamics_model.cuda()
 
         self.device = torch.device(cfg.DEVICE)
 
@@ -144,6 +159,7 @@ class PPO:
         obs = self.envs.reset()
         self.buffer.to(self.device)
         self.start = time.time()
+        num_env = obs['proprioceptive'].shape[0]
 
         print ('obs')
         print (type(obs), len(obs))
@@ -214,35 +230,21 @@ class PPO:
                 unimal_ids = self.envs.get_unimal_idx()
                 val, act, logp = self.agent.act(obs, unimal_ids=unimal_ids)
 
-                if cfg.PPO.TANH == 'action':
-                    next_obs, reward, done, infos = self.envs.step(torch.tanh(act))
+                if cfg.DYNAMICS.MODEL_STEP:
+                    clipped_act = torch.clip(act, -1., 1.)
+                    clipped_act[act_mask] = 0.0
+                    next_obs = copy.deepcopy(obs)
+                    with torch.no_grad():
+                        obs_pred = self.dynamics_model(torch.cat([obs['proprioceptive'].reshape(num_env, 12, -1), clipped_act.reshape(num_env, 12, -1)], -1), obs['obs_padding_mask'])
+                    next_obs['proprioceptive'] = next_obs['proprioceptive'].reshape(num_env, 12, -1)
+                    next_obs['proprioceptive'][:, :, PROPRIOCEPTIVE_OBS_DIM] = obs_pred
+                    next_obs['proprioceptive'] = next_obs['proprioceptive'].reshape(num_env, -1)
+                    # hack the reward, done and infos
                 else:
-                    next_obs, reward, done, infos = self.envs.step(act)
-
-                # store each episode's value and reward to compute the trajectory GAE
-                # episode_value[np.arange(cfg.PPO.NUM_ENVS), episode_timestep] = val.cpu().numpy().ravel()
-                # episode_reward[np.arange(cfg.PPO.NUM_ENVS), episode_timestep] = reward.ravel()
-                # episode_timestep += 1
-                # # check episode end
-                # finished_episode_index = np.where(done)[0]
-                # for idx in finished_episode_index:
-                #     episode_len = episode_timestep[idx]
-                #     delta = episode_reward[idx, :(episode_len - 1)] + cfg.PPO.GAMMA * episode_value[idx, 1:episode_len] - episode_value[idx, :(episode_len - 1)]
-                #     # the last step's delta need additional process
-                #     if 'timeout' in infos[idx]:
-                #         delta = np.append(delta, 0.)
-                #     else:
-                #         delta = np.append(delta, episode_reward[idx, -1] - episode_value[idx, -1])
-                #     # compute GAE
-                #     gae = delta.copy()
-                #     for i in reversed(range(gae.shape[0] - 1)):
-                #         gae[i] = delta[i] + cfg.PPO.GAMMA * cfg.PPO.GAE_LAMBDA * gae[i + 1]
-                #     learning_potential_score = np.maximum(gae, 0.).mean()
-                #     infos[idx]['positive_gae'] = learning_potential_score
-                #     # reset the episode record
-                #     episode_value[idx] = 0.
-                #     episode_reward[idx] = 0.
-                #     episode_timestep[idx] = 0
+                    if cfg.PPO.TANH == 'action':
+                        next_obs, reward, done, infos = self.envs.step(torch.tanh(act))
+                    else:
+                        next_obs, reward, done, infos = self.envs.step(act)
 
                 finished_episode_index = np.where(done)[0]
                 self.train_meter.add_ep_info(infos, cur_iter, finished_episode_index)
@@ -719,10 +721,11 @@ class PPO:
                     # Issue: training score is computed based on an out-of-date model, 
                     # which may not correctly reflect the current model's performance on a robot
                     regret = [
-                        self.ST_performance[agent] - np.mean(self.train_meter.agent_meters[agent].ep_rew["reward"]) 
+                        1. - np.mean(self.train_meter.agent_meters[agent].ep_rew["reward"]) / self.ST_performance[agent] 
                         for agent in agents
                     ]
-                    regret = np.maximum(regret, 0.)
+                    # regret = np.maximum(regret, 0.)
+                    regret = np.clip(regret, 0., 1.)
                     regret = regret / regret.sum()
                     probs = regret * 0.9 + np.ones(len(regret)) / len(regret) * 0.1
                 else:

@@ -545,7 +545,7 @@ _C.MODEL.FINETUNE = CN()
 _C.MODEL.FINETUNE.FULL_MODEL = False
 
 # Name of layers to fine tune
-_C.MODEL.FINETUNE.LAYER_SUBSTRING = ['separate_PE_encoder', 'pos_embedding']
+_C.MODEL.FINETUNE.LAYER_SUBSTRING = []
 
 # --------------------------------------------------------------------------- #
 # Sampler (VecEnv) Options
@@ -608,6 +608,9 @@ _C.DYNAMICS.EPOCH_NUM = 100
 _C.DYNAMICS.BASE_LR = 1e-4
 _C.DYNAMICS.EPS = 1e-5
 _C.DYNAMICS.WEIGHT_DECAY = 0.
+
+_C.DYNAMICS.MODEL_STEP = False
+_C.DYNAMICS.MODEL_PATH = ''
 
 # ----------------------------------------------------------------------------#
 # Misc Options
