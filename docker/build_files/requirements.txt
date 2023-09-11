@@ -2,7 +2,7 @@ pyyaml
 lxml
 gym==0.17.1
 networkx
-mujoco_py==2.0.2.8
+mujoco-py<2.2,>=2.1
 tensorboard
 matplotlib
 cython==0.29.32

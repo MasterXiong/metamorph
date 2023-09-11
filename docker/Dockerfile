@@ -39,15 +39,22 @@ RUN apt-get update -q \
 
 ENV LANG C.UTF-8
 
+# RUN mkdir -p /user/.mujoco \
+#     && wget https://github.com/google-deepmind/mujoco/archive/refs/tags/2.1.0.zip -O mujoco.zip \
+#     && unzip mujoco.zip -d /user/.mujoco \
+#     && mv /user/.mujoco/mujoco210_linux /user/.mujoco/mujoco210 \
+#     && rm mujoco.zip
+# COPY docker/mjkey.txt /user/.mujoco/
+# ENV LD_LIBRARY_PATH /user/.mujoco/mujoco210/bin:${LD_LIBRARY_PATH}
+# ENV LD_LIBRARY_PATH /usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
 RUN mkdir -p /user/.mujoco \
-    && wget https://www.roboti.us/download/mujoco200_linux.zip -O mujoco.zip \
-    && unzip mujoco.zip -d /user/.mujoco \
-    && mv /user/.mujoco/mujoco200_linux /user/.mujoco/mujoco200 \
-    && rm mujoco.zip
-COPY docker/mjkey.txt /user/.mujoco/
-ENV LD_LIBRARY_PATH /user/.mujoco/mujoco200/bin:${LD_LIBRARY_PATH}
+    && wget https://mujoco.org/download/mujoco210-linux-x86_64.tar.gz -O mujoco.tar.gz \
+    && tar -xf mujoco.tar.gz -C /user/.mujoco \
+    && rm mujoco.tar.gz
+ENV LD_LIBRARY_PATH /user/.mujoco/mujoco210/bin:${LD_LIBRARY_PATH}
 ENV LD_LIBRARY_PATH /usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
-ENV MUJOCO_PY_MUJOCO_PATH /user/.mujoco/mujoco200
+
+ENV MUJOCO_PY_MUJOCO_PATH /user/.mujoco/mujoco210
 ENV MUJOCO_PY_MJKEY_PATH /user/.mujoco/mjkey.txt
 
 COPY docker/build_files/Xdummy /usr/local/bin/Xdummy
