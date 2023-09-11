@@ -1,0 +1,224 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!-- Universal Animal Template: unimal -->
+<mujoco model="unimal">
+  <compiler angle="degree"/>
+  <size njmax="2000" nconmax="500"/>
+  <option timestep=".005">
+    <flag filterparent="disable"/>
+  </option>
+  <!-- Common defaults to make search space tractable -->
+  <default>
+    <!-- Define motor defaults -->
+    <motor ctrlrange="-1 1" ctrllimited="true"/>
+    <!-- Define joint defaults -->
+    <default class="normal_joint">
+      <joint type="hinge" damping="1" stiffness="1" armature="1" limited="true" range="-120 120" solimplimit="0 0.99 0.01"/>
+    </default>
+    <default class="walker_joint">
+      <joint type="hinge" damping="0.2" stiffness="1" armature=".01" limited="true" range="-120 120" solimplimit="0 0.99 0.01"/>
+    </default>
+    <default class="stiff_joint">
+      <joint type="hinge" damping="5" stiffness="10" armature=".01" limited="true" solimplimit="0 0.99 0.01"/>
+    </default>
+    <default class="free">
+      <joint limited="false" damping="0" armature="0" stiffness="0"/>
+    </default>
+    <default class="growth_site">
+      <site size="1e-6 1e-6 1e-6"/>
+    </default>
+    <default class="torso_growth_site">
+      <site size="1e-6 1e-6 1e-6"/>
+    </default>
+    <default class="mirror_growth_site">
+      <site size="1e-6 1e-6 1e-6"/>
+    </default>
+    <default class="btm_pos_site">
+      <site size="1e-6 1e-6 1e-6"/>
+    </default>
+    <default class="box_face_site">
+      <site size="1e-6 1e-6 1e-6"/>
+    </default>
+    <default class="imu_vel">
+      <site type="box" size="0.05" rgba="1 0 0 0"/>
+    </default>
+    <default class="touch_site">
+      <site group="3" rgba="0 0 1 .3"/>
+    </default>
+    <default class="food_site">
+      <site material="food" size="0.15"/>
+    </default>
+    <!-- Define geom defaults -->
+    <geom type="capsule" condim="3" friction="0.7 0.1 0.1" material="self"/>
+  </default>
+  <worldbody>
+    <light diffuse="1 1 1" directional="true" exponent="1" pos="0 0 8" specular="0.1 0.1 0.1" dir="0 0 -1"/>
+    <!-- <geom name="floor" type="plane" pos="0 0 0" size="50 50 1" material="grid"/> -->
+    <!-- Programatically generated xml goes here -->
+    <body name="torso/0" pos="0 0 1.03">
+      <joint name="root" type="free" class="free"/>
+      <site name="root" class="imu_vel"/>
+      <geom name="torso/0" type="sphere" size="0.1" condim="3" density="1000"/>
+      <camera name="side" pos="0 -7 2" xyaxes="1 0 0 0 1 2" mode="trackcom"/>
+      <site name="torso/0" class="growth_site" pos="0 0 0"/>
+      <site name="torso/btm_pos/0" class="btm_pos_site" pos="0 0 -0.1"/>
+      <site name="torso/touch/0" class="touch_site" size="0.11"/>
+      <site name="torso/vertical/0" class="torso_growth_site" pos="0 0 -0.1"/>
+      <body name="limb/43" pos="-0.1 0.0 0.0">
+        <joint name="limby/43" type="hinge" class="normal_joint" range="-30 30" pos="0.05 0.0 0.0" axis="0.0 1.0 0.0"/>
+        <geom name="limb/43" type="capsule" fromto="0.0 0.0 0.0 -0.35 0.0 0.0" size="0.05" density="500"/>
+        <site name="limb/mid/43" class="growth_site" pos="-0.2 0.0 0.0"/>
+        <site name="limb/btm/43" class="growth_site" pos="-0.35 0.0 0.0"/>
+        <site name="limb/btm_pos/43" class="btm_pos_site" pos="-0.35 0.0 0.0"/>
+        <site name="limb/touch/43" class="touch_site" size="0.060000000000000005" fromto="0.0 0.0 0.0 -0.35 0.0 0.0" type="capsule"/>
+        <body name="limb/57" pos="-0.38999999999999996 0.0 -0.04">
+          <joint name="limbx/57" type="hinge" class="normal_joint" range="-45 45" pos="0.04 0.0 0.04" axis="0.7071 0.0 -0.7071"/>
+          <joint name="limby/57" type="hinge" class="normal_joint" range="-30 60" pos="0.04 0.0 0.04" axis="0.0 1.0 0.0"/>
+          <geom name="limb/57" type="capsule" fromto="0.0 0.0 0.0 -0.18 0.0 -0.18" size="0.05" density="500"/>
+          <site name="limb/mid/57" class="growth_site" pos="-0.11 0.0 -0.11"/>
+          <site name="limb/btm/57" class="growth_site" pos="-0.18 0.0 -0.18"/>
+          <site name="limb/btm_pos/57" class="btm_pos_site" pos="-0.21 0.0 -0.21"/>
+          <site name="limb/touch/57" class="touch_site" size="0.060000000000000005" fromto="0.0 0.0 0.0 -0.18 0.0 -0.18" type="capsule"/>
+        </body>
+      </body>
+      <body name="limb/54" pos="0.0 0.0 -0.1">
+        <joint name="limby/54" type="hinge" class="normal_joint" range="-30 60" pos="0.0 0.0 0.05" axis="0.0 1.0 0.0"/>
+        <geom name="limb/54" type="capsule" fromto="0.0 0.0 0.0 0.0 0.0 -0.25" size="0.05" density="500"/>
+        <site name="limb/mid/54" class="growth_site" pos="0.0 0.0 -0.15"/>
+        <site name="limb/btm/54" class="growth_site" pos="0.0 0.0 -0.25"/>
+        <site name="limb/btm_pos/54" class="btm_pos_site" pos="0.0 0.0 -0.25"/>
+        <site name="limb/touch/54" class="touch_site" size="0.060000000000000005" fromto="0.0 0.0 0.0 0.0 0.0 -0.25" type="capsule"/>
+        <body name="limb/55" pos="0.0 0.04 -0.29">
+          <joint name="limby/55" type="hinge" class="normal_joint" range="0 60" pos="0.0 -0.04 0.04" axis="0.0 0.7071 0.7071"/>
+          <geom name="limb/55" type="capsule" fromto="0.0 0.0 0.0 0.0 0.25 -0.25" size="0.05" density="500"/>
+          <site name="limb/mid/55" class="mirror_growth_site" pos="0.0 0.14 -0.14"/>
+          <site name="limb/btm/55" class="mirror_growth_site" pos="0.0 0.25 -0.25"/>
+          <site name="limb/btm_pos/55" class="btm_pos_site" pos="0.0 0.25 -0.25"/>
+          <site name="limb/touch/55" class="touch_site" size="0.060000000000000005" fromto="0.0 0.0 0.0 0.0 0.25 -0.25" type="capsule"/>
+          <body name="limb/58" pos="0.0 0.14 -0.19">
+            <joint name="limbx/58" type="hinge" class="normal_joint" range="-60 60" pos="0.0 0.0 0.05" axis="1.0 0.0 0.0"/>
+            <joint name="limby/58" type="hinge" class="normal_joint" range="0 60" pos="0.0 0.0 0.05" axis="0.0 1.0 0.0"/>
+            <geom name="limb/58" type="capsule" fromto="0.0 0.0 0.0 0.0 0.0 -0.25" size="0.05" density="500"/>
+            <site name="limb/mid/58" class="mirror_growth_site" pos="0.0 0.0 -0.15"/>
+            <site name="limb/btm/58" class="mirror_growth_site" pos="0.0 0.0 -0.25"/>
+            <site name="limb/btm_pos/58" class="btm_pos_site" pos="0.0 0.0 -0.25"/>
+            <site name="limb/touch/58" class="touch_site" size="0.060000000000000005" fromto="0.0 0.0 0.0 0.0 0.0 -0.25" type="capsule"/>
+            <body name="limb/60" pos="0.05 0.0 -0.25">
+              <joint name="limbx/60" type="hinge" class="normal_joint" range="0 60" pos="-0.05 0.0 0.0" axis="0.0 0.0 1.0"/>
+              <joint name="limby/60" type="hinge" class="normal_joint" range="-60 60" pos="-0.05 0.0 0.0" axis="-0.0 1.0 0.0"/>
+              <geom name="limb/60" type="capsule" fromto="0.0 0.0 0.0 0.35 0.0 0.0" size="0.05" density="500"/>
+              <site name="limb/mid/60" class="mirror_growth_site" pos="0.2 0.0 0.0"/>
+              <site name="limb/btm/60" class="mirror_growth_site" pos="0.35 0.0 0.0"/>
+              <site name="limb/btm_pos/60" class="btm_pos_site" pos="0.4 0.0 0.0"/>
+              <site name="limb/touch/60" class="touch_site" size="0.060000000000000005" fromto="0.0 0.0 0.0 0.35 0.0 0.0" type="capsule"/>
+            </body>
+          </body>
+        </body>
+        <body name="limb/56" pos="0.0 -0.04 -0.29">
+          <joint name="limby/56" type="hinge" class="normal_joint" range="0 60" pos="0.0 0.04 0.04" axis="-0.0 0.7071 -0.7071"/>
+          <geom name="limb/56" type="capsule" fromto="0.0 0.0 0.0 0.0 -0.25 -0.25" size="0.05" density="500"/>
+          <site name="limb/mid/56" class="mirror_growth_site" pos="0.0 -0.14 -0.14"/>
+          <site name="limb/btm/56" class="mirror_growth_site" pos="0.0 -0.25 -0.25"/>
+          <site name="limb/btm_pos/56" class="btm_pos_site" pos="0.0 -0.25 -0.25"/>
+          <site name="limb/touch/56" class="touch_site" size="0.060000000000000005" fromto="0.0 0.0 0.0 0.0 -0.25 -0.25" type="capsule"/>
+          <body name="limb/59" pos="0.0 -0.14 -0.19">
+            <joint name="limbx/59" type="hinge" class="normal_joint" range="-60 60" pos="0.0 0.0 0.05" axis="1.0 0.0 0.0"/>
+            <joint name="limby/59" type="hinge" class="normal_joint" range="0 60" pos="0.0 0.0 0.05" axis="0.0 1.0 0.0"/>
+            <geom name="limb/59" type="capsule" fromto="0.0 0.0 0.0 0.0 0.0 -0.25" size="0.05" density="500"/>
+            <site name="limb/mid/59" class="mirror_growth_site" pos="0.0 0.0 -0.15"/>
+            <site name="limb/btm/59" class="mirror_growth_site" pos="0.0 0.0 -0.25"/>
+            <site name="limb/btm_pos/59" class="btm_pos_site" pos="0.0 0.0 -0.25"/>
+            <site name="limb/touch/59" class="touch_site" size="0.060000000000000005" fromto="0.0 0.0 0.0 0.0 0.0 -0.25" type="capsule"/>
+            <body name="limb/61" pos="0.05 0.0 -0.25">
+              <joint name="limbx/61" type="hinge" class="normal_joint" range="0 60" pos="-0.05 0.0 0.0" axis="0.0 0.0 1.0"/>
+              <joint name="limby/61" type="hinge" class="normal_joint" range="-60 60" pos="-0.05 0.0 0.0" axis="-0.0 1.0 0.0"/>
+              <geom name="limb/61" type="capsule" fromto="0.0 0.0 0.0 0.35 0.0 0.0" size="0.05" density="500"/>
+              <site name="limb/mid/61" class="mirror_growth_site" pos="0.2 0.0 0.0"/>
+              <site name="limb/btm/61" class="mirror_growth_site" pos="0.35 0.0 0.0"/>
+              <site name="limb/btm_pos/61" class="btm_pos_site" pos="0.4 0.0 0.0"/>
+              <site name="limb/touch/61" class="touch_site" size="0.060000000000000005" fromto="0.0 0.0 0.0 0.35 0.0 0.0" type="capsule"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor joint="limby/43" gear="200" name="limby/43"/>
+    <motor joint="limbx/57" gear="200" name="limbx/57"/>
+    <motor joint="limby/57" gear="250" name="limby/57"/>
+    <motor joint="limby/54" gear="200" name="limby/54"/>
+    <motor joint="limby/55" gear="300" name="limby/55"/>
+    <motor joint="limbx/58" gear="150" name="limbx/58"/>
+    <motor joint="limby/58" gear="300" name="limby/58"/>
+    <motor joint="limbx/60" gear="200" name="limbx/60"/>
+    <motor joint="limby/60" gear="300" name="limby/60"/>
+    <motor joint="limby/56" gear="300" name="limby/56"/>
+    <motor joint="limbx/59" gear="150" name="limbx/59"/>
+    <motor joint="limby/59" gear="300" name="limby/59"/>
+    <motor joint="limbx/61" gear="200" name="limbx/61"/>
+    <motor joint="limby/61" gear="300" name="limby/61"/>
+  </actuator>
+  <sensor>
+    <accelerometer name="torso_accel" site="root"/>
+    <gyro name="torso_gyro" site="root"/>
+    <velocimeter name="torso_vel" site="root"/>
+    <subtreeangmom name="unimal_am" body="torso/0"/>
+    <touch name="torso/0" site="torso/touch/0"/>
+    <touch name="limb/43" site="limb/touch/43"/>
+    <touch name="limb/57" site="limb/touch/57"/>
+    <touch name="limb/54" site="limb/touch/54"/>
+    <touch name="limb/55" site="limb/touch/55"/>
+    <touch name="limb/58" site="limb/touch/58"/>
+    <touch name="limb/60" site="limb/touch/60"/>
+    <touch name="limb/56" site="limb/touch/56"/>
+    <touch name="limb/59" site="limb/touch/59"/>
+    <touch name="limb/61" site="limb/touch/61"/>
+  </sensor>
+  <!-- Add hfield assets -->
+  <asset/>
+  <!-- List of contacts to exclude -->
+  <contact>
+    <exclude name="limb/55:limb/56" body1="limb/55" body2="limb/56"/>
+  </contact>
+  <!-- Define material, texture etc -->
+  <asset>
+    <material name="grid" texture="grid" texrepeat="1 1" texuniform="true" reflectance="0.1"/>
+    <material name="hfield" texture="hfield" texrepeat="1 1" texuniform="true" reflectance="0.1"/>
+    <material name="wall" texture="wall" texrepeat="1 1" texuniform="true" reflectance=".5"/>
+    <material name="platform" texture="platform" texrepeat="1 1" texuniform="true" reflectance=".5"/>
+    <material name="boundary" texture="boundary" texrepeat="1 1" texuniform="true" reflectance=".5"/>
+    <material name="jump" texture="jump" texrepeat="1 1" texuniform="true" reflectance=".5"/>
+    <material name="goal" rgba="1 0 0 1"/>
+    <material name="food" rgba="0 0 1 1" emission="1"/>
+    <material name="init_position" rgba="0 1 0 0.7"/>
+    <material name="self" rgba=".7 .5 .3 1"/>
+    <material name="self_invisible" rgba=".7 .5 .3 0"/>
+    <material name="self_default" rgba=".7 .5 .3 1"/>
+    <material name="self_highlight" rgba="0 .5 .3 1"/>
+    <material name="effector" rgba=".7 .4 .2 1"/>
+    <material name="effector_default" rgba=".7 .4 .2 1"/>
+    <material name="effector_highlight" rgba="0 .5 .3 1"/>
+    <material name="decoration" rgba=".3 .5 .7 1"/>
+    <material name="eye" rgba="0 .2 1 1"/>
+    <material name="target" rgba=".6 .3 .3 1"/>
+    <material name="target_default" rgba=".6 .3 .3 1"/>
+    <material name="target_highlight" rgba=".6 .3 .3 .4"/>
+    <material name="site" rgba=".5 .5 .5 .3"/>
+    <material name="ball" texture="ball"/>
+  </asset>
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.4 0.4 0.4" rgb2="0.4 0.4 0.4" width="300" height="300" mark="edge" markrgb="0.2 0.2 0.2"/>
+    <texture name="hfield" type="2d" builtin="checker" rgb1="0.4 0.4 0.4" rgb2="0.4 0.4 0.4" width="300" height="300" mark="edge" markrgb="0.2 0.2 0.2"/>
+    <texture name="wall" type="2d" builtin="flat" rgb1="0.9 0.7 0" rgb2="0.9 0.7 0" width="300" height="300"/>
+    <texture name="platform" type="2d" builtin="flat" rgb1="0.3 0 0.8" rgb2="0.3 0 0.8" width="300" height="300"/>
+    <texture name="boundary" type="2d" builtin="flat" rgb1="0.3 0.3 0.3" rgb2="0.3 0.3 0.3" width="300" height="300"/>
+    <texture name="jump" type="2d" builtin="flat" rgb1="0.3 0.3 0.3" rgb2="0.3 0.3 0.3" width="300" height="300"/>
+    <texture name="skybox" type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="0.6 0.6 0.6" width="800" height="800"/>
+    <texture name="ball" builtin="checker" mark="cross" width="151" height="151" rgb1="0.1 0.1 0.1" rgb2="0.9 0.9 0.9" markrgb="1 1 1"/>
+  </asset>
+  <visual>
+    <headlight ambient="0.6 0.6 0.6" diffuse="0.3 0.3 0.3" specular="0 0 0"/>
+    <map znear=".01" shadowclip="0.5"/>
+    <quality shadowsize="16384"/>
+  </visual>
+</mujoco>
