@@ -907,12 +907,17 @@ class ActorCritic(nn.Module):
             obs_cm_mask = obs["obs_padding_cm_mask"]
         else:
             obs_cm_mask = None
+
+        if 'context' in obs:
+            obs_context = obs['context']
+        else:
+            obs_context = None
+
         obs_dict = obs
-        obs, obs_mask, act_mask, obs_context, edges = (
+        obs, obs_mask, act_mask, edges = (
             obs["proprioceptive"],
             obs["obs_padding_mask"],
             obs["act_padding_mask"],
-            obs["context"], 
             obs["edges"], 
         )
 
@@ -946,7 +951,8 @@ class ActorCritic(nn.Module):
         # reshape the obs for transformer input
         if cfg.MODEL.TYPE == 'transformer':
             obs = obs.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
-            obs_context = obs_context.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
+            if obs_context:
+                obs_context = obs_context.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
             if cfg.MODEL.BASE_CONTEXT_NORM == 'fixed':
                 obs[:, :, self.context_index] = obs_context.clone()
             if cfg.MODEL.OBS_FIX_NORM:
