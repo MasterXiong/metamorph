@@ -25,8 +25,8 @@ class MLPModel(nn.Module):
         self.limb_obs_size = limb_obs_size = obs_space["proprioceptive"].shape[0] // self.seq_len
         self.limb_out_dim = out_dim // self.seq_len
 
-        context_obs_size = obs_space["context"].shape[0] // self.seq_len
-        context_encoder_dim = [context_obs_size] + [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE for _ in range(cfg.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM)]
+        # context_obs_size = obs_space["context"].shape[0] // self.seq_len
+        # context_encoder_dim = [context_obs_size] + [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE for _ in range(cfg.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM)]
         HN_input_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE
 
         # set the input and output layer
@@ -247,7 +247,7 @@ class MLPModel(nn.Module):
         else:
             output = self.output_layer(embedding)
 
-        return output, None, 0.
+        return output, None
 
 # J: Max num joints between two limbs. 1 for 2D envs, 2 for unimal
 class TransformerModel(nn.Module):
