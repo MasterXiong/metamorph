@@ -586,6 +586,9 @@ _C.UED.CURATION = 'uniform'
 _C.UED.STALENESS_WEIGHT = 0.1 # also used for validation
 _C.UED.SCORE_EMA_COEF = 0.5
 
+_C.UED.UPPER_BOUND_PATH = None
+_C.UED.REGRET_TYPE = 'absolute' # absolute or relative
+
 _C.UED.PROB_CHANGE_RATE = None
 
 # expand by validation set

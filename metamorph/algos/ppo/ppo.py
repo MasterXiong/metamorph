@@ -711,7 +711,7 @@ class PPO:
 
                 if self.ST_performance is None:
                     # hardcode it here only for proof-of-concept experiments
-                    with open('mutate_400_upper_bound.json', 'r') as f:
+                    with open(UED.UPPER_BOUND_PATH, 'r') as f:
                         self.ST_performance = json.load(f)
 
                 ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in agents]
@@ -720,12 +720,18 @@ class PPO:
                     # TODO: how to deal with negative regret
                     # Issue: training score is computed based on an out-of-date model, 
                     # which may not correctly reflect the current model's performance on a robot
-                    regret = [
-                        1. - np.mean(self.train_meter.agent_meters[agent].ep_rew["reward"]) / self.ST_performance[agent] 
-                        for agent in agents
-                    ]
-                    # regret = np.maximum(regret, 0.)
-                    regret = np.clip(regret, 0., 1.)
+                    if cfg.UED.REGRET_TYPE == 'absolute':
+                        regret = [
+                            self.ST_performance[agent] - np.mean(self.train_meter.agent_meters[agent].ep_rew["reward"]) /
+                            for agent in agents
+                        ]
+                        regret = np.maximum(regret, 0.)
+                    elif cfg.UED.REGRET_TYPE == 'relative':
+                        regret = [
+                            1. - np.mean(self.train_meter.agent_meters[agent].ep_rew["reward"]) / self.ST_performance[agent] /
+                            for agent in agents
+                        ]
+                        regret = np.clip(regret, 0., 1.)
                     regret = regret / regret.sum()
                     probs = regret * 0.9 + np.ones(len(regret)) / len(regret) * 0.1
                 else:
