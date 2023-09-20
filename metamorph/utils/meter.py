@@ -157,7 +157,7 @@ class AgentMeter:
             # use return EMA instead of mean for a smoother estimation?
             ydata = np.array([self.return_ema_curve[int(i)] for i in self.iter_idx])
             w = np.clip(np.array(self.iter_ep_num), None, 10.)
-            speed = abs(solve_linear_regression(xdata, ydata, w)) / w.sum()
+            speed = abs(solve_linear_regression(xdata, ydata, w))
             return speed
 
 

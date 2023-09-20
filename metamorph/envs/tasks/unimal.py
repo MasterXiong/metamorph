@@ -224,13 +224,16 @@ class UnimalEnv(gym.Env):
             try:
                 self.sim.step()
             except Exception as e:
+                with open(f'{cfg.OUT_DIR}/mjstep_error.txt', 'a') as f:
+                    print (ctrl, file=f)
                 uid = self.metadata["unimal_id"]
                 if cfg.EXIT_ON_MJ_STEP_EXCEPTION:
                     exu.handle_exception(
                         e, "ERROR in MjStep: {}".format(uid), unimal_id=uid
                     )
                 print("ERROR in MjStep: {}".format(uid))
-                return True
+                error_message = f'step {self.step_count}, robot {uid}, {e}'
+                return error_message
         return False
 
     ###########################################################################

@@ -322,6 +322,8 @@ _C.PPO.VIDEO_LENGTH = 1000
 
 # Path to load model from
 _C.PPO.CHECKPOINT_PATH = ""
+# whether we load a checkpoint model for continuing training or fine-tuning
+_C.PPO.CONTINUE_TRAINING = False
 
 _C.PPO.EARLY_EXIT = False
 
@@ -542,7 +544,7 @@ _C.MODEL.TRANSFORMER.USE_SEMANTIC_PE = False
 _C.MODEL.FINETUNE = CN()
 
 # If true fine tune all the model params, if false fine tune only specific layer
-_C.MODEL.FINETUNE.FULL_MODEL = False
+_C.MODEL.FINETUNE.FULL_MODEL = True
 
 # Name of layers to fine tune
 _C.MODEL.FINETUNE.LAYER_SUBSTRING = []
@@ -581,7 +583,7 @@ _C.UED.PARENT_SELECT_STRATEGY = None
 # only mutate agents with high enough scores
 _C.UED.MUTATE_THRESHOLD = None
 
-# UED method: 'regret', 'uniform', 'positive_value_loss', 'L1_value_loss', 'GAE'
+# UED method: 'regret', 'uniform', 'positive_value_loss', 'L1_value_loss', 'GAE', 'learning_progress'
 _C.UED.CURATION = 'uniform'
 _C.UED.STALENESS_WEIGHT = 0.1 # also used for validation
 _C.UED.SCORE_EMA_COEF = 0.5

@@ -34,11 +34,11 @@ PROPRIOCEPTIVE_OBS_DIM = np.concatenate([list(range(13)), [30, 31], [41, 42]])
 class PPO:
     def __init__(self, print_model=True):
         # Create vectorized envs
-        if cfg.PPO.CHECKPOINT_PATH:
-            # do not update normalizer when fine-tuning
-            self.envs = make_vec_envs(training=False)
-        else:
-            self.envs = make_vec_envs()
+        # if cfg.PPO.CHECKPOINT_PATH:
+        #     # do not update normalizer when fine-tuning
+        #     self.envs = make_vec_envs(training=False)
+        # else:
+        self.envs = make_vec_envs()
         self.file_prefix = cfg.ENV_NAME
 
         # use learned model for rollout step
@@ -50,12 +50,6 @@ class PPO:
 
         self.device = torch.device(cfg.DEVICE)
 
-        # print ('observation_space')
-        # print (self.envs.observation_space)
-        # print ('action_space')
-        # print (self.envs.action_space)
-        # print (self.envs)
-
         self.actor_critic = globals()[cfg.MODEL.ACTOR_CRITIC](
             self.envs.observation_space, self.envs.action_space
         )
@@ -63,15 +57,11 @@ class PPO:
         print (self.envs.action_space.low)
         print (self.envs.action_space.high)
 
-        # Used while using train_ppo.py
         if cfg.PPO.CHECKPOINT_PATH:
-            normalizer = restore_from_checkpoint(self.actor_critic)
-            if len(normalizer) == 1:
-                ob_rms = normalizer
-            else:
-                ob_rms, ret_rms = normalizer
+            obs_rms, ret_rms, optimizer_state = restore_from_checkpoint(self.actor_critic)
+            set_ob_rms(self.envs, obs_rms)
+            if ret_rms:
                 set_ret_rms(self.envs, ret_rms)
-            set_ob_rms(self.envs, ob_rms)
 
         if print_model:
             #print(self.actor_critic)
@@ -82,6 +72,7 @@ class PPO:
 
         # Setup experience buffer
         self.buffer = Buffer(self.envs.observation_space, self.envs.action_space.shape)
+
         # Optimizer for both actor and critic
         if not cfg.MODEL.MLP.ANNEAL_HN_LR:
             self.optimizer = optim.Adam(
@@ -103,6 +94,9 @@ class PPO:
             self.optimizer = optim.Adam(
                 parameters, lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
             )
+        # load optimizer state
+        if cfg.PPO.CHECKPOINT_PATH and cfg.PPO.CONTINUE_TRAINING:
+            self.optimizer.load_state_dict(optimizer_state)
 
         self.train_meter = TrainMeter()
         self.writer = SummaryWriter(log_dir=os.path.join(cfg.OUT_DIR, "tensorboard"))
@@ -114,14 +108,12 @@ class PPO:
                 self.log_std_param = name
                 break
 
-        # for name, weight in self.actor_critic.named_parameters():
-        #     print(name, weight.requires_grad)
-
         self.fps = 0
         os.system(f'mkdir {cfg.OUT_DIR}/iter_prob')
         os.system(f'mkdir {cfg.OUT_DIR}/proxy_score')
 
         self.ST_performance = None
+        self.last_probs = None
 
         if cfg.ENV.TASK_SAMPLING == 'UED':
             self.task_sampler = TaskSampler(
@@ -166,14 +158,6 @@ class PPO:
         for key in obs:
             print (key, obs[key].size())
 
-        self.grad_record = defaultdict(list)
-        # self.std_record = []
-
-        # do not update separate PE at the beginning
-        # if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE:
-        #     self.agent.ac.mu_net.separate_PE_encoder.pe.requires_grad = False
-        #     self.agent.ac.v_net.separate_PE_encoder.pe.requires_grad = False
-
         if cfg.PPO.MAX_ITERS > 1000:
             self.stat_save_freq = 100
         else:
@@ -184,40 +168,13 @@ class PPO:
         else:
             model_save_freq = 50
 
-        def eval_validation(agent):
-            num_env = 8
-            envs = make_vec_envs(xml_file=agent, training=False, norm_rew=False, num_env=num_env, render_policy=True)
-            set_ob_rms(envs, get_ob_rms(self.envs))
-            episode_return = np.zeros(num_env)
-            not_done = np.ones(num_env)
-            obs = envs.reset()
-            for step in range(1000):
-                _, act, _, _, _ = self.agent.act(obs, compute_val=False)
-                obs, _, done, infos = envs.step(act)
-                idx = np.where(done)[0]
-                for i in idx:
-                    if not_done[i] == 1:
-                        not_done[i] = 0
-                        episode_return[i] = infos[i]['episode']['r']
-                if not_done.sum() == 0:
-                    break
-            return np.mean(episode_return)
+        if cfg.PPO.CHECKPOINT_PATH and cfg.PPO.CONTINUE_TRAINING:
+            iter_start = int(cfg.PPO.CHECKPOINT_PATH[:-3].split('_')[-1])
+        else:
+            iter_start = 0
 
-        # obs_min_record, obs_max_record = [], []
-        # a buffer to store each episode's GAE for UED
-        # episode_value = np.zeros([cfg.PPO.NUM_ENVS, 1000])
-        # episode_reward = np.zeros([cfg.PPO.NUM_ENVS, 1000])
-        # episode_timestep = np.zeros(cfg.PPO.NUM_ENVS, dtype=int)
         print ('Start training ...')
-        for cur_iter in range(cfg.PPO.MAX_ITERS):
-
-            # store the agents sampled in each iteration for UED
-            # self.sampled_agents = []
-
-            # if cfg.MODEL.TRANSFORMER.USE_SEPARATE_PE and cur_iter >= cfg.MODEL.TRANSFORMER.SEPARATE_PE_UPDATE_ITER:
-            #     print ('start to tune separate PE')
-            #     self.agent.ac.mu_net.separate_PE_encoder.pe.requires_grad = True
-            #     self.agent.ac.v_net.separate_PE_encoder.pe.requires_grad = True
+        for cur_iter in range(iter_start, cfg.PPO.MAX_ITERS):
 
             if cfg.PPO.EARLY_EXIT and cur_iter >= cfg.PPO.EARLY_EXIT_MAX_ITERS:
                 break
@@ -239,12 +196,26 @@ class PPO:
                     next_obs['proprioceptive'] = next_obs['proprioceptive'].reshape(num_env, 12, -1)
                     next_obs['proprioceptive'][:, :, PROPRIOCEPTIVE_OBS_DIM] = obs_pred
                     next_obs['proprioceptive'] = next_obs['proprioceptive'].reshape(num_env, -1)
-                    # hack the reward, done and infos
+                    # TODO: hack the reward, done and infos
                 else:
                     if cfg.PPO.TANH == 'action':
                         next_obs, reward, done, infos = self.envs.step(torch.tanh(act))
                     else:
-                        next_obs, reward, done, infos = self.envs.step(act)
+                        next_obs, reward, done, infos = self.envs.step(torch.clip(act, -1., 1.))
+                        # next_obs, reward, done, infos = self.envs.step(act)
+
+                for process_id, info in enumerate(infos):
+                    if info['mj_step_error']:
+                        with open(f'{cfg.OUT_DIR}/mjstep_error.txt', 'a') as f:
+                            print (f'iter {cur_iter}, step {step}, process {process_id}', file=f)
+                            print (info['mj_step_error'], file=f)
+                            print (info, file=f)
+                            print ('action: ', file=f)
+                            print (act[process_id], file=f)
+                            print ('action mask', file=f)
+                            print (obs['act_padding_mask'][process_id], file=f)
+                            # limb_obs = next_obs['proprioceptive'][process_id, :52].detach().cpu().numpy().ravel()
+                            # print (limb_obs, file=f)
 
                 finished_episode_index = np.where(done)[0]
                 self.train_meter.add_ep_info(infos, cur_iter, finished_episode_index)
@@ -304,10 +275,6 @@ class PPO:
                         self.train_meter.add_new_agents(new_agents)
                     else:
                         print ('no new agents added in this iteration')
-
-            # save std record
-            # with open(os.path.join(cfg.OUT_DIR, 'std.pkl'), 'wb') as f:
-            #     pickle.dump(self.std_record, f)
 
             self.train_meter.update_mean()
             if len(self.train_meter.mean_ep_rews["reward"]):
@@ -739,15 +706,23 @@ class PPO:
                     probs = [1000.0 / l for l in ep_lens]
             
             elif cfg.UED.CURATION == 'learning_progress':
-                ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in agents]
-                if min(ep_lens) == 10:
-                    print ('start to sample based on learning progress')
-                    LP_score = [self.train_meter.agent_meters[agent].get_learning_speed() for agent in agents]
-                    probs = LP_score
-                    print (probs)
+                # ep_lens = [len(self.train_meter.agent_meters[agent].ep_len) for agent in agents]
+                if cur_iter < 30:
+                    probs = [1. for _ in agents]
                 else:
-                    ep_lens = [l + 1 for l in ep_lens]
-                    probs = [1000.0 / l for l in ep_lens]
+                # elif min(ep_lens) == 10:
+                    print ('start to sample based on learning progress')
+                    LP_score = np.array([self.train_meter.agent_meters[agent].get_learning_speed() for agent in agents])
+                    print (np.sort(LP_score))
+                    with open(f'{cfg.OUT_DIR}/proxy_score/{cur_iter}.pkl', 'wb') as f:
+                        pickle.dump({'LP': LP_score}, f)
+                    LP_score[LP_score == -1] = LP_score.max()
+
+                    probs = LP_score / LP_score.sum()
+                    probs = probs * 0.9 + np.ones(len(probs)) / len(probs) * 0.1
+                # else:
+                #     ep_lens = [l + 1 for l in ep_lens]
+                #     probs = [1000.0 / l for l in ep_lens]
 
             else:
                 probs = [1. for _ in agents]
@@ -762,6 +737,11 @@ class PPO:
             if cur_iter == -1:
                 self.last_probs = probs
             else:
+                # TODO: the logic here is not correct
+                if self.last_probs is None:
+                    last_iter = int(cfg.PPO.CHECKPOINT_PATH[:-3].split('_')[-1]) - 1
+                    with open(f'{cfg.OUT_DIR}/iter_prob/{last_iter}.pkl', 'rb') as f:
+                        self.last_probs = pickle.load(f)
                 if len(self.last_probs) != len(probs):
                     self.last_probs = np.concatenate([self.last_probs, np.zeros(len(probs) - len(self.last_probs))])
                 delta_prob = probs - self.last_probs
