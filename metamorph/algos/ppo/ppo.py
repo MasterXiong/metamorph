@@ -201,8 +201,7 @@ class PPO:
                     if cfg.PPO.TANH == 'action':
                         next_obs, reward, done, infos = self.envs.step(torch.tanh(act))
                     else:
-                        next_obs, reward, done, infos = self.envs.step(torch.clip(act, -1., 1.))
-                        # next_obs, reward, done, infos = self.envs.step(act)
+                        next_obs, reward, done, infos = self.envs.step(act)
 
                 for process_id, info in enumerate(infos):
                     if info['mj_step_error']:
@@ -572,7 +571,7 @@ class PPO:
         episode_count = 0
         for t in range(cfg.PPO.VIDEO_LENGTH + 1):
             
-            _, act, _, _, _ = self.agent.act(obs)
+            _, act, _ = self.agent.act(obs)
             obs, _, _, infos = env.step(act)
 
             # x = act[(1. - obs["act_padding_mask"]).bool()].detach().cpu().numpy().ravel()

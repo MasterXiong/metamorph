@@ -247,6 +247,9 @@ class RecordEpisodeStatistics(gym.Wrapper):
             if "__reward__" in key:
                 self.episode_return_components[key] += value
 
+        if info['mj_step_error']:
+            done = True
+
         if done:
             info["episode"] = {
                 "r": self.episode_return,
