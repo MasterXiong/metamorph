@@ -57,10 +57,6 @@ class VecNormalize(VecEnvWrapper):
 
     def step_wait(self):
         obs, rews, news, infos = self.venv.step_wait()
-        # a hack solution to mjstep error
-        for process_id, info in enumerate(infos):
-            if info['mj_step_error']:
-                rews[process_id] = 0.
         self.original_obs = obs
         self.ret = self.ret * self.gamma + rews
         obs = self._obfilt(obs)

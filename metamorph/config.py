@@ -575,11 +575,13 @@ _C.CUDNN.DETERMINISTIC = True
 _C.UED = CN()
 
 # parameters of how to generate new agents
-_C.UED.GENERATE_NEW_AGENTS = False
-_C.UED.ADD_NEW_AGENTS_FREQ = 10
-_C.UED.MUTATION_AGENT_NUM = 10
-# immediate_children
+_C.UED.GENERATION = False
+_C.UED.GENERATION_FREQ = 10
+_C.UED.GENERATION_NUM = 10
+# how to select mutation parent: 'learning_progress', 'uniform'
 _C.UED.PARENT_SELECT_STRATEGY = None
+# only grow limbs
+_C.UED.GROW_LIMB_ONLY = False
 # only mutate agents with high enough scores
 _C.UED.MUTATE_THRESHOLD = None
 

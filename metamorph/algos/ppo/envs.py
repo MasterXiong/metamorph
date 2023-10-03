@@ -249,6 +249,9 @@ class RecordEpisodeStatistics(gym.Wrapper):
 
         if info['mj_step_error']:
             done = True
+            info['timeout'] = True
+            self.episode_return -= reward
+            reward = 0.
 
         if done:
             info["episode"] = {

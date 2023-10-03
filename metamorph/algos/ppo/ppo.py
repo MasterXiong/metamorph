@@ -26,7 +26,7 @@ from .envs import set_ob_rms, set_ret_rms
 from .inherit_weight import restore_from_checkpoint
 from .model import ActorCritic
 from .model import Agent
-from .ued import TaskSampler, mutate_robot, sample_new_robot
+from .ued import TaskSampler, mutate_robot, sample_new_robot, mutate_single_robot
 
 PROPRIOCEPTIVE_OBS_DIM = np.concatenate([list(range(13)), [30, 31], [41, 42]])
 
@@ -118,7 +118,7 @@ class PPO:
         if cfg.ENV.TASK_SAMPLING == 'UED':
             self.task_sampler = TaskSampler(
                 cfg.ENV.WALKERS, 
-                mutation_agent_num=cfg.UED.MUTATION_AGENT_NUM, 
+                mutation_agent_num=cfg.UED.GENERATION_NUM, 
                 staleness_score_weight=cfg.UED.STALENESS_WEIGHT, 
                 potential_score_EMA_coef=cfg.UED.SCORE_EMA_COEF, 
             )
@@ -251,29 +251,6 @@ class PPO:
                 self.task_sampler.update_scores(self.buffer)
                 with open(f'{cfg.OUT_DIR}/proxy_score/{cur_iter}.pkl', 'wb') as f:
                     pickle.dump([self.task_sampler.potential_score, self.task_sampler.staleness_score], f)
-            
-            if cfg.ENV.TASK_SAMPLING == 'UED' and cfg.UED.GENERATE_NEW_AGENTS:
-                # generate new agents by mutating existing ones
-                if cur_iter >= 0 and cur_iter % cfg.UED.ADD_NEW_AGENTS_FREQ == 0:
-                    agent_scores = []
-                    for agent in cfg.ENV.WALKERS:
-                        scores = self.train_meter.agent_meters[agent].mean_ep_rews['reward']
-                        if len(scores) < 5:
-                            agent_scores.append(0.)
-                        else:
-                            agent_scores.append(np.array(scores[-5:]).mean())
-                    new_agents, new_agents_parent = self.agent_manager.generate_new_agents(set(self.sampled_agents), np.array(agent_scores))
-                    if len(new_agents) > 0:
-                        new_potential_score = [np.mean(self.train_meter.agent_meters[agent].ep_positive_gae) for agent in new_agents_parent]
-                        self.agent_manager.initialize_new_agents_score(new_agents, new_potential_score)
-                        cfg.ENV.WALKERS.extend(new_agents)
-                        num_agents = len(cfg.ENV.WALKERS)
-                        print (f'The agent pool now contains {num_agents} agents')
-                        with open(f'{cfg.OUT_DIR}/walkers.json', 'w') as f:
-                            json.dump(cfg.ENV.WALKERS, f)
-                        self.train_meter.add_new_agents(new_agents)
-                    else:
-                        print ('no new agents added in this iteration')
 
             self.train_meter.update_mean()
             if len(self.train_meter.mean_ep_rews["reward"]):
@@ -384,6 +361,70 @@ class PPO:
                 #     self.train_meter.delete_agents(uncontrollable_agents)
                 #     for agent in uncontrollable_agents:
                 #         cfg.ENV.WALKERS.remove(agent)
+
+            # generate new agents by mutating existing ones
+            if cfg.ENV.TASK_SAMPLING == 'UED' and cfg.UED.GENERATION:
+                if cur_iter >= 30 and cur_iter % cfg.UED.GENERATION_FREQ == 0:
+                    agents = self.train_meter.agents
+                    if cfg.UED.PARENT_SELECT_STRATEGY == 'learning_progress':
+                        score = [self.train_meter.agent_meters[agent].get_learning_speed() for agent in agents]
+                        # filter out robots that do not make significant learning progress
+                        # candidate_idx = np.where(np.array(score) >= 10)[0]
+                        # # filter out robots that have been mutated many times
+                        # final_candidate_idx = []
+                        # for idx in candidate_idx:
+                        #     agent = agents[idx]
+                        #     if self.train_meter.agent_meters[agent].children_num < 5:
+                        #         final_candidate_idx.append(idx)
+                        final_candidate_idx = [i for i, agent in enumerate(agents) if self.train_meter.agent_meters[agent].children_num < 5]
+                    elif cfg.UED.PARENT_SELECT_STRATEGY == 'uniform':
+                        score = np.ones(len(agents))
+                        final_candidate_idx = [i for i, agent in enumerate(agents) if self.train_meter.agent_meters[agent].children_num < 5]
+
+                    if len(final_candidate_idx) > 0:
+                        # sample agents for mutation
+                        if len(final_candidate_idx) <= cfg.UED.GENERATION_NUM:
+                            parents = [agents[idx] for idx in final_candidate_idx]
+                        else:
+                            probs = np.array([score[idx] for idx in final_candidate_idx])
+                            probs = probs / probs.sum()
+                            idx = np.random.choice(final_candidate_idx, cfg.UED.GENERATION_NUM, p=probs, replace=False)
+                            parents = [agents[i] for i in idx]
+                        for parent in parents:
+                            self.train_meter.agent_meters[parent].children_num += 1
+                        print ('mutate the following agents', parents)
+                        mutated_agents = []
+                        for parent in parents:
+                            mutate_id = self.train_meter.agent_meters[parent].children_num
+                            new_agent = mutate_single_robot(parent, cfg.ENV.WALKER_DIR, mutate_id, grow_limb_only=cfg.UED.GROW_LIMB_ONLY)
+                            if new_agent is not None:
+                                mutated_agents.append(new_agent)
+                        # with Pool(processes=len(parents)) as pool:
+                            # mutated_agents = pool.starmap(mutate_single_robot, [(agent, cfg.ENV.WALKER_DIR) for agent in parents])
+                        cfg.ENV.WALKERS.extend(mutated_agents)
+                        self.train_meter.add_new_agents(mutated_agents, cur_iter=cur_iter)
+                        print ('get the following mutated agents', mutated_agents)
+
+            # if cur_iter >= 0 and cur_iter % cfg.UED.ADD_NEW_AGENTS_FREQ == 0:
+            #     agent_scores = []
+            #     for agent in cfg.ENV.WALKERS:
+            #         scores = self.train_meter.agent_meters[agent].mean_ep_rews['reward']
+            #         if len(scores) < 5:
+            #             agent_scores.append(0.)
+            #         else:
+            #             agent_scores.append(np.array(scores[-5:]).mean())
+            #     new_agents, new_agents_parent = self.agent_manager.generate_new_agents(set(self.sampled_agents), np.array(agent_scores))
+            #     if len(new_agents) > 0:
+            #         new_potential_score = [np.mean(self.train_meter.agent_meters[agent].ep_positive_gae) for agent in new_agents_parent]
+            #         self.agent_manager.initialize_new_agents_score(new_agents, new_potential_score)
+            #         cfg.ENV.WALKERS.extend(new_agents)
+            #         num_agents = len(cfg.ENV.WALKERS)
+            #         print (f'The agent pool now contains {num_agents} agents')
+            #         with open(f'{cfg.OUT_DIR}/walkers.json', 'w') as f:
+            #             json.dump(cfg.ENV.WALKERS, f)
+            #         self.train_meter.add_new_agents(new_agents)
+            #     else:
+            #         print ('no new agents added in this iteration')
 
             with open(f'{cfg.OUT_DIR}/walkers_train.json', 'w') as f:
                 json.dump(cfg.ENV.WALKERS, f)

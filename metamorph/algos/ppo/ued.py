@@ -93,6 +93,36 @@ def mutate_robot(agent, folder):
     
     return mutated_agents
 
+
+def mutate_single_robot(agent, folder, mutate_id, grow_limb_only=False):
+
+    if grow_limb_only:
+        op = 'grow_limb'
+    elif mutate_id in [1, 2]:
+        op = 'grow_limb'
+    elif mutate_id in [3, 4]:
+        op = 'delete_limb'
+    else:
+        ops = ["limb_params", "gear", "dof", "joint_angle", "density"]
+        idx = np.random.choice(5, 1)[0]
+        op = ops[idx]
+
+    name = f'{agent}-mutate-{mutate_id}-{op}'
+    unimal = SymmetricUnimal(name, f'{folder}/unimal_init/{agent}.pkl')
+    limb_num_before_mutation = unimal.num_limbs
+    unimal.mutate(op=op)
+    if unimal.num_limbs < 4:
+        return None
+    if unimal.num_limbs >= 12 or len(xu.find_elem(unimal.actuator, "motor")) > 16:
+        return None
+    if op == 'grow_limb' and unimal.num_limbs == limb_num_before_mutation:
+        return None
+
+    unimal.save(folder)
+    pickle_to_json(folder, unimal.id)
+    return name
+
+
 # def rollout(policy, env, agent, num_envs=16):
 #     episode_return = np.zeros(num_envs)
 #     not_done = np.ones(num_envs)

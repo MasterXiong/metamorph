@@ -43,6 +43,9 @@ class AgentMeter:
         self.best_iter_return = -1e8
         self.best_iter = 0
 
+        # record mutated children number of the robot
+        self.children_num = 0
+
     def add_ep_info(self, info, cur_iter):
 
         self.ep_rew["reward"].append(info["episode"]["r"])
@@ -150,7 +153,7 @@ class AgentMeter:
         #     w = np.clip(np.array(self.iter_ep_num), None, 10.)
         
         if len(self.iter_mean_return) < 10:
-            # return -1 and assign a large potential score if not trained for 10 iters yet
+            # return -1 if not trained for 10 iters yet
             return -1.
         else:
             xdata = np.array(self.iter_idx)
