@@ -368,6 +368,9 @@ class PPO:
                     agents = self.train_meter.agents
                     if cfg.UED.PARENT_SELECT_STRATEGY == 'learning_progress':
                         score = [self.train_meter.agent_meters[agent].get_learning_speed() for agent in agents]
+                        for i in range(len(score)):
+                            if score[i] < 0:
+                                score[i] = 0.
                         # filter out robots that do not make significant learning progress
                         # candidate_idx = np.where(np.array(score) >= 10)[0]
                         # # filter out robots that have been mutated many times
