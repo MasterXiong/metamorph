@@ -46,15 +46,14 @@ def evaluate(policy, env, agent, compute_gae=False):
     timeout = np.zeros(cfg.PPO.NUM_ENVS, dtype=int)
 
     obs = env.reset()
-    context = obs['context'][0].cpu().numpy()
     ood_ratio = (obs['proprioceptive'].abs() == 10.).float().mean().item()
 
     for t in range(2000):
         if compute_gae:
-            val, act, _, _, _ = policy.act(obs, return_attention=False, compute_val=True)
+            val, act, _ = policy.act(obs, return_attention=False, compute_val=True)
             episode_values.append(val)
         else:
-            _, act, _, _, _ = policy.act(obs, return_attention=False, compute_val=False)
+            _, act, _ = policy.act(obs, return_attention=False, compute_val=False)
 
         if cfg.PPO.TANH == 'action':
             obs, reward, done, infos = env.step(torch.tanh(act))
@@ -189,7 +188,7 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
     cfg.DETERMINISTIC = deterministic
     set_cfg_options()
     ppo_trainer = PPO()
-    cfg.PPO.NUM_ENVS = 32
+    cfg.PPO.NUM_ENVS = 16
     policy = ppo_trainer.agent
     # change to eval mode as we have dropout in the model
     policy.ac.eval()
@@ -197,14 +196,10 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
     ood_list = np.zeros(len(test_agents))
     avg_score = []
     if len(policy_folder.split('/')) == 3:
-        output_name = policy_folder.split('/')[1] + '_' + policy_folder.split('/')[2]
         folder_name = policy_folder.split('/')[1]
     else:
-        output_name = policy_folder.split('/')[1]
         folder_name = policy_folder.split('/')[0]
-    if suffix is not None:
-        output_name = f'{output_name}_{suffix}'
-    output_name = folder_name + '/' + output_name
+    output_name = folder_name + '/' + suffix
     os.makedirs(f'eval/{folder_name}', exist_ok=True)
     print (output_name)
 
