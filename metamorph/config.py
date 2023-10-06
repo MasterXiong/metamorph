@@ -580,6 +580,8 @@ _C.UED.GENERATION_FREQ = 10
 _C.UED.GENERATION_NUM = 10
 # how to select mutation parent: 'learning_progress', 'uniform'
 _C.UED.PARENT_SELECT_STRATEGY = None
+# whether to balance the generation process
+_C.UED.BALANCE_GENERATION = False
 # only grow limbs
 _C.UED.GROW_LIMB_ONLY = False
 # only mutate agents with high enough scores

@@ -86,9 +86,14 @@ def make_vec_envs(
         envs = []
         if cfg.ENV_NAME == 'Unimal-v0':
             if not cfg.ENV.FIX_ENV:
+                start_make_env = time.time()
                 for idx in range(num_env):
                     _env = make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file)()
                     envs.append(env_func_wrapper(MultiEnvWrapper(_env, idx, env_type=env_type)))
+                    if (idx + 1) % 100 == 0:
+                        current_time = time.time()
+                        avg_time = (current_time - start_make_env) / (idx + 1)
+                        print (f'finish making {idx + 1} envs, {avg_time:.4f} seconds per env')
                 # with Pool(processes=32) as pool:
                 #     envs = pool.starmap(make_env, [(cfg.ENV_NAME, seed, idx, xml_file) for idx in range(num_env)])
                 # envs = [env_func_wrapper(MultiEnvWrapper(_env, idx, env_type=env_type)) for idx, _env in enumerate(envs)]
@@ -109,6 +114,7 @@ def make_vec_envs(
         # print (_env)
 
     #if save_video or render_policy:
+    vecenv_start_time = time.time()
     if save_video:
         envs = DummyVecEnv([envs[0]])
     elif cfg.VECENV.TYPE == "DummyVecEnv":
@@ -118,6 +124,9 @@ def make_vec_envs(
         envs = SubprocVecEnv(envs, in_series=in_seris_num, context="fork")
     else:
         raise ValueError("VECENV: {} is not supported.".format(cfg.VECENV.TYPE))
+    end = time.time()
+    duration = end - vecenv_start_time
+    print (f'spend {duration} seconds to vectorize the envs')
 
     # we may not use VecNorm for modular envs
     # if cfg.MODEL.OBS_TO_NORM == []:

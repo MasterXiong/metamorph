@@ -370,7 +370,7 @@ class PPO:
                         score = [self.train_meter.agent_meters[agent].get_learning_speed() for agent in agents]
                         for i in range(len(score)):
                             if score[i] < 0:
-                                score[i] = 0.
+                                score[i] = 1e-4
                         # filter out robots that do not make significant learning progress
                         # candidate_idx = np.where(np.array(score) >= 10)[0]
                         # # filter out robots that have been mutated many times
@@ -390,23 +390,49 @@ class PPO:
                             parents = [agents[idx] for idx in final_candidate_idx]
                         else:
                             probs = np.array([score[idx] for idx in final_candidate_idx])
+                            # make the sampling more balanced
+                            if cfg.UED.BALANCE_GENERATION:
+                                penalty_score = []
+                                for idx in final_candidate_idx:
+                                    agent = agents[idx]
+                                    parts = agent.split('-mutate-')
+                                    if len(parts) > 1 and len(parts[1]) == 1:
+                                        root = parts[0] + '-mutate-' + parts[1]
+                                    else:
+                                        root = parts[0]
+                                    penalty_score.append(self.train_meter.agent_meters[root].tree_size + 1)
+                                penalty_score = np.array(penalty_score)
+                                probs = probs / penalty_score
+                            # sample based on the final prob
                             probs = probs / probs.sum()
                             idx = np.random.choice(final_candidate_idx, cfg.UED.GENERATION_NUM, p=probs, replace=False)
                             parents = [agents[i] for i in idx]
+                        # update the children number and tree size
                         for parent in parents:
                             self.train_meter.agent_meters[parent].children_num += 1
-                        print ('mutate the following agents', parents)
-                        mutated_agents = []
+                            node = parent
+                            while node:
+                                self.train_meter.agent_meters[node].tree_size += 1
+                                node = self.train_meter.agent_meters[node].parent
+                        print ('mutate the following agents: ')
+                        for i, parent in zip(idx, parents):
+                            print (parent, f'score: {score[i]}')
+                        # mutate the parents
+                        mutated_agents, mutation_parents = [], []
                         for parent in parents:
                             mutate_id = self.train_meter.agent_meters[parent].children_num
                             new_agent = mutate_single_robot(parent, cfg.ENV.WALKER_DIR, mutate_id, grow_limb_only=cfg.UED.GROW_LIMB_ONLY)
                             if new_agent is not None:
                                 mutated_agents.append(new_agent)
-                        # with Pool(processes=len(parents)) as pool:
-                            # mutated_agents = pool.starmap(mutate_single_robot, [(agent, cfg.ENV.WALKER_DIR) for agent in parents])
+                                mutation_parents.append(parent)
+                        # add the new agents to the agent list and meter
                         cfg.ENV.WALKERS.extend(mutated_agents)
                         self.train_meter.add_new_agents(mutated_agents, cur_iter=cur_iter)
-                        print ('get the following mutated agents', mutated_agents)
+                        for agent, parent in zip(mutated_agents, mutation_parents):
+                            self.train_meter.agent_meters[agent].parent = parent
+                        print ('get the following mutated agents: ')
+                        for agent in mutated_agents:
+                            print (agent)
 
             # if cur_iter >= 0 and cur_iter % cfg.UED.ADD_NEW_AGENTS_FREQ == 0:
             #     agent_scores = []

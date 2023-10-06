@@ -1,5 +1,6 @@
 from collections import defaultdict
 from collections import deque
+import time
 
 import numpy as np
 
@@ -7,7 +8,7 @@ from metamorph.config import cfg
 
 
 class AgentMeter:
-    def __init__(self, name, cur_iter=-1):
+    def __init__(self, name, cur_iter=-1, parent=None):
         self.name = name
         self.mean_ep_rews = defaultdict(list)
         self.mean_pos = []
@@ -45,6 +46,10 @@ class AgentMeter:
 
         # record mutated children number of the robot
         self.children_num = 0
+        # the total number of mutated robots rooted at this one
+        self.tree_size = 0
+        # mutation parent
+        self.parent = parent
 
     def add_ep_info(self, info, cur_iter):
 
@@ -171,7 +176,15 @@ class TrainMeter:
         else:
             self.agents = agents.copy()
         self.max_name_len = max([len(a) for a in self.agents])
-        self.agent_meters = {agent: AgentMeter(agent) for agent in self.agents}
+        # self.agent_meters = {agent: AgentMeter(agent) for agent in self.agents}
+        self.agent_meters = {}
+        start = time.time()
+        for i, agent in enumerate(self.agents):
+            self.agent_meters[agent] = AgentMeter(agent)
+            if (i + 1) % 100 == 0:
+                duration = time.time() - start
+                avg_time = duration / (i + 1)
+                print (f'add {i + 1} agent meters in {duration} seconds, {avg_time} seconds per agent')
 
         # Env stats
         self.train_stats = defaultdict(list)
