@@ -56,7 +56,7 @@ class UnimalEnv(gym.Env):
         self.module_classes = []
         self.modules = OrderedDict()
         self.seed()
-        self.unimal_xmls = self._load_all_unimals()
+        # self.unimal_xmls = self._load_all_unimals()
 
     def get_unimal_idx(self):
         return self.unimal_idx

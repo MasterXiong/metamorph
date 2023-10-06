@@ -176,15 +176,7 @@ class TrainMeter:
         else:
             self.agents = agents.copy()
         self.max_name_len = max([len(a) for a in self.agents])
-        # self.agent_meters = {agent: AgentMeter(agent) for agent in self.agents}
-        self.agent_meters = {}
-        start = time.time()
-        for i, agent in enumerate(self.agents):
-            self.agent_meters[agent] = AgentMeter(agent)
-            if (i + 1) % 100 == 0:
-                duration = time.time() - start
-                avg_time = duration / (i + 1)
-                print (f'add {i + 1} agent meters in {duration} seconds, {avg_time} seconds per agent')
+        self.agent_meters = {agent: AgentMeter(agent) for agent in self.agents}
 
         # Env stats
         self.train_stats = defaultdict(list)
