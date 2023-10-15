@@ -393,7 +393,7 @@ _C.MODEL.CONTEXT_OBS_TYPES = [
 # Model specific observation types to keep
 _C.MODEL.OBS_TYPES = [
     "proprioceptive", "edges", "obs_padding_mask", "act_padding_mask", 
-    # "context", 
+    "context", 
     # "connectivity", 
     # "node_depth", 
     # "traversals", 

@@ -25,33 +25,35 @@ class MLPModel(nn.Module):
         self.limb_obs_size = limb_obs_size = obs_space["proprioceptive"].shape[0] // self.seq_len
         self.limb_out_dim = out_dim // self.seq_len
 
-        # context_obs_size = obs_space["context"].shape[0] // self.seq_len
-        # context_encoder_dim = [context_obs_size] + [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE for _ in range(cfg.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM)]
+        # if 'context' in obs_space:
+        context_obs_size = obs_space["context"].shape[0] // self.seq_len
+        context_encoder_dim = [context_obs_size] + [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE for _ in range(cfg.MODEL.TRANSFORMER.HN_CONTEXT_LAYER_NUM)]
         HN_input_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE
 
         # set the input and output layer
         if self.model_args.HN_INPUT:
             print ('use HN for input layer')
-            # self.context_encoder_for_input = tu.make_mlp_default(context_encoder_dim)
+            self.context_encoder_for_input = tu.make_mlp_default(context_encoder_dim)
             # self.context_encoder_for_input[0].weight.data.uniform_(-0.01, 0.01)
             # self.context_encoder_for_input[0].bias.data.uniform_(-0.01, 0.01)
-            # self.hnet_input_weight = nn.Linear(HN_input_dim, limb_obs_size * self.model_args.HIDDEN_DIM)
-            # self.hnet_input_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
-            # self.hnet_input_weight = nn.Embedding(HN_input_dim, limb_obs_size * self.model_args.HIDDEN_DIM)
-            # self.hnet_input_bias = nn.Embedding(HN_input_dim, self.model_args.HIDDEN_DIM)
+            self.hnet_input_weight = nn.Linear(HN_input_dim, limb_obs_size * self.model_args.HIDDEN_DIM)
+            self.hnet_input_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
 
             initrange = 0.04
-            self.hnet_input_weight = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
-            self.hnet_input_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.seq_len, self.model_args.HIDDEN_DIM).uniform_(-initrange / self.seq_len, initrange / self.seq_len))
+            # Bias-init from Jake, but may not be suitable in this case
+            # as all limbs will share the same initial weights, which is equivalent to first summing them up and causes information loss
+            # self.hnet_input_weight.weight.data.zero_()
+            # self.hnet_input_weight.bias.data.uniform_(-initrange, initrange)
+            self.hnet_input_weight.weight.data.uniform_(-0.001, 0.001)
+            self.hnet_input_weight.bias.data.zero_()
+            # self.hnet_input_bias.weight.data.zero_()
+            self.hnet_input_bias.weight.data.uniform_(-0.001, 0.001)
+            self.hnet_input_bias.bias.data.zero_()
 
             # initrange = 0.04
-            # self.hnet_input_weight.weight.data.zero_()
-            # self.hnet_input_weight.weight.data.uniform_(-0.001, 0.001)
-            # # self.hnet_input_weight.bias.data.uniform_(-initrange, initrange)
-            # self.hnet_input_weight.bias.data.zero_()
-            # # self.hnet_input_bias.weight.data.zero_()
-            # self.hnet_input_bias.weight.data.uniform_(-0.001, 0.001)
-            # self.hnet_input_bias.bias.data.zero_()
+            # self.hnet_input_weight = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+            # self.hnet_input_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.seq_len, self.model_args.HIDDEN_DIM).uniform_(-initrange / self.seq_len, initrange / self.seq_len))
+
         elif self.model_args.PER_NODE_EMBED:
             print ('independent input weights for each node')
             initrange = 0.04
@@ -75,22 +77,23 @@ class MLPModel(nn.Module):
 
         if self.model_args.HN_OUTPUT:
             print ('use HN for output layer')
-            # self.context_encoder_for_output = tu.make_mlp_default(context_encoder_dim)
-            # self.hnet_output_weight = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM * self.limb_out_dim)
-            # self.hnet_output_bias = nn.Linear(HN_input_dim, self.limb_out_dim)
+            self.context_encoder_for_output = tu.make_mlp_default(context_encoder_dim)
+            self.hnet_output_weight = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM * self.limb_out_dim)
+            self.hnet_output_bias = nn.Linear(HN_input_dim, self.limb_out_dim)
             # self.hnet_output_weight = nn.Embedding(HN_input_dim, self.model_args.HIDDEN_DIM * self.limb_out_dim)
             # self.hnet_output_bias = nn.Embedding(HN_input_dim, self.limb_out_dim)
 
             initrange = 1. / 16
-            self.hnet_output_weight = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim).uniform_(-initrange, initrange))
-            self.hnet_output_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.seq_len, self.limb_out_dim).uniform_(-initrange, initrange))
+            # self.hnet_output_weight.weight.data.zero_()
+            self.hnet_output_weight.weight.data.uniform_(-0.001, 0.001)
+            self.hnet_output_weight.bias.data.zero_()
+            self.hnet_output_bias.weight.data.uniform_(-0.001, 0.001)
+            self.hnet_output_bias.bias.data.zero_()
 
             # initrange = 1. / 16
-            # # self.hnet_output_weight.weight.data.zero_()
-            # self.hnet_output_weight.weight.data.uniform_(-0.001, 0.001)
-            # self.hnet_output_weight.bias.data.zero_()
-            # self.hnet_output_bias.weight.data.uniform_(-0.001, 0.001)
-            # self.hnet_output_bias.bias.data.zero_()
+            # self.hnet_output_weight = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim).uniform_(-initrange, initrange))
+            # self.hnet_output_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.seq_len, self.limb_out_dim).uniform_(-initrange, initrange))
+
         elif self.model_args.PER_NODE_DECODER:
             print ('independent output weights for each node')
             initrange = 1. / 16
@@ -130,11 +133,11 @@ class MLPModel(nn.Module):
         # input layer
         if self.model_args.HN_INPUT:
 
-            # context_embedding = self.context_encoder_for_input(obs_context.reshape(batch_size, self.seq_len, -1))
-            # input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
-            # input_bias = self.hnet_input_bias(context_embedding)
-            input_weight = self.hnet_input_weight[unimal_ids]
-            input_bias = self.hnet_input_bias[unimal_ids]
+            context_embedding = self.context_encoder_for_input(obs_context.reshape(batch_size, self.seq_len, -1))
+            input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
+            input_bias = self.hnet_input_bias(context_embedding)
+            # input_weight = self.hnet_input_weight[unimal_ids]
+            # input_bias = self.hnet_input_bias[unimal_ids]
 
             obs = obs.reshape(batch_size, self.seq_len, -1)
             embedding = (obs[:, :, :, None] * input_weight).sum(dim=-2) + input_bias
@@ -227,15 +230,11 @@ class MLPModel(nn.Module):
         # output layer
         # if self.model_args.MODE == 'HN':
         if self.model_args.HN_OUTPUT:
-            # context_embedding = self.context_encoder_for_output(obs_context.reshape(batch_size, self.seq_len, -1))
-            # context_embedding = torch.zeros(batch_size, self.seq_len, len(cfg.ENV.WALKERS) * self.seq_len)
-            # for i, idx in enumerate(unimal_ids):
-            #     for j in range(self.seq_len):
-            #         context_embedding[i, j, idx * self.seq_len + j] = 1.
-            # output_weight = self.hnet_output_weight(context_embedding).reshape(batch_size, self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim)
-            # output_bias = self.hnet_output_bias(context_embedding)
-            output_weight = self.hnet_output_weight[unimal_ids]
-            output_bias = self.hnet_output_bias[unimal_ids]
+            context_embedding = self.context_encoder_for_output(obs_context.reshape(batch_size, self.seq_len, -1))
+            output_weight = self.hnet_output_weight(context_embedding).reshape(batch_size, self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim)
+            output_bias = self.hnet_output_bias(context_embedding)
+            # output_weight = self.hnet_output_weight[unimal_ids]
+            # output_bias = self.hnet_output_bias[unimal_ids]
             output = (embedding[:, None, :, None] * output_weight).sum(dim=-2) + output_bias
             # output_check = torch.stack([(embedding[:, :, None] * output_weight[:, i, :, :]).sum(axis=-2) + output_bias[:, i] for i in range(self.seq_len)], dim=1)
             # print ((output != output_check).sum())
@@ -838,10 +837,7 @@ class ActorCritic(nn.Module):
         if cfg.MODEL.TYPE == 'transformer':
             self.v_net = TransformerModel(obs_space, 1)
         else:
-            if cfg.MODEL.MLP.SINGLE_VALUE:
-                self.v_net = MLPValueNetwork(obs_space)
-            else:
-                self.v_net = MLPModel(obs_space, cfg.MODEL.MAX_LIMBS)
+            self.v_net = MLPModel(obs_space, cfg.MODEL.MAX_LIMBS)
 
         if cfg.ENV_NAME == "Unimal-v0":
             if cfg.MODEL.TYPE == 'transformer':
@@ -951,7 +947,7 @@ class ActorCritic(nn.Module):
         # reshape the obs for transformer input
         if cfg.MODEL.TYPE == 'transformer':
             obs = obs.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
-            if obs_context:
+            if obs_context is not None:
                 obs_context = obs_context.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
             if cfg.MODEL.BASE_CONTEXT_NORM == 'fixed':
                 obs[:, :, self.context_index] = obs_context.clone()
@@ -967,14 +963,11 @@ class ActorCritic(nn.Module):
                 return_attention=return_attention,  
                 unimal_ids=unimal_ids, 
             )
-            if cfg.MODEL.MLP.SINGLE_VALUE:
-                val = limb_vals
-            else:
-                # Zero out mask values
-                limb_vals = limb_vals * (1 - obs_mask.int())
-                # Use avg/max to keep the magnitidue same instead of sum
-                num_limbs = self.seq_len - torch.sum(obs_mask.int(), dim=1, keepdim=True)
-                val = torch.divide(torch.sum(limb_vals, dim=1, keepdim=True), num_limbs)
+            # Zero out mask values
+            limb_vals = limb_vals * (1 - obs_mask.int())
+            # Use avg/max to keep the magnitidue same instead of sum
+            num_limbs = self.seq_len - torch.sum(obs_mask.int(), dim=1, keepdim=True)
+            val = torch.divide(torch.sum(limb_vals, dim=1, keepdim=True), num_limbs)
         else:
             val, v_attention_maps = 0., None
 
