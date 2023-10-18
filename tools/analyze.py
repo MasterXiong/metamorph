@@ -113,6 +113,7 @@ def plot_context_hist(feature):
 
 
 def plot_training_stats(folders, names=None, key='grad_norm', batch_size=None, env_num=None, kl_threshold=None, prefix=None):
+    os.makedirs('figures/train_stats', exist_ok=True)
     if names is None:
         names = folders
     if kl_threshold is None:
@@ -127,12 +128,12 @@ def plot_training_stats(folders, names=None, key='grad_norm', batch_size=None, e
     for n, folder in enumerate(folders):
         all_seeds_stat = []
         all_seeds_ES_idx = []
-        for seed in os.listdir('output/' + folder):
+        for seed in os.listdir(folder):
             # if seed == '1409' and folder == 'ft_baseline_KL_5_wo_PE+dropout':
             #     continue
-            if 'checkpoint_100.pt' not in os.listdir(os.path.join('output', folder, seed)):
+            if 'checkpoint_100.pt' not in os.listdir(os.path.join(folder, seed)):
                 continue
-            with open(os.path.join('output', folder, seed, 'Unimal-v0_results.json'), 'r') as f:
+            with open(os.path.join(folder, seed, 'Unimal-v0_results.json'), 'r') as f:
                 log = json.load(f)
             try:
                 data = np.array(log['__env__'][key])
@@ -183,7 +184,7 @@ def plot_training_stats(folders, names=None, key='grad_norm', batch_size=None, e
         plt.plot([2560 * env_num[i] * j for j in range(len(y_data))], y_data, \
             label=f'{names[i]}: {all_folders_ES_idx[folder].mean():.2f}')
     plt.legend()
-    plt.savefig(f'figures/train_stats/ES_index_{prefix}.png')
+    plt.savefig(f'figures/train_stats/{prefix}_ES_index.png')
     plt.close()
 
 
@@ -731,20 +732,23 @@ def plot_ST_score(folders, label):
     plt.close()
 
 
-def generalization_curve(folders, names, test_set, suffix, plot_each_seed=False, seeds=[1409, 1410]):
+def generalization_curve(folders, names, test_set, suffix, height_check=False, plot_each_seed=False, seeds=[1409, 1410]):
 
     colors = plt.get_cmap('tab10').colors
 
     plt.figure()
     for i, folder in enumerate(folders):
         print (folder)
-        cfg.merge_from_file(f'output/{folder}/1409/config.yaml')
+        try:
+            cfg.merge_from_file(f'output/{folder}/1409/config.yaml')
+        except:
+            cfg.merge_from_file(f'baselines/{folder}/1409/config.yaml')
         all_seed_x, all_seed_y = [], []
         for seed in seeds:
             xdata, ydata = [0], [0.]
             iteration = folders[folder]
             while (1):
-                file_path = f'eval/{folder}/{folder}_{seed}_{test_set}_cp_{iteration}.pkl'
+                file_path = f'eval/{folder}/{seed}_{test_set}_cp_{iteration}.pkl'
                 if not os.path.exists(file_path):
                     break
                 with open(file_path, 'rb') as f:
@@ -770,9 +774,42 @@ def generalization_curve(folders, names, test_set, suffix, plot_each_seed=False,
         if plot_each_seed:
             for y in all_seed_y:
                 plt.plot(plot_x, y[:min_len], c=colors[i], alpha=0.5)
+        
+        if height_check:
+            all_seed_x, all_seed_y = [], []
+            for seed in seeds:
+                xdata, ydata = [0], [0.]
+                iteration = folders[folder]
+                while (1):
+                    file_path = f'eval/{folder}/{test_set}_cp_{iteration}_wo_height_check.pkl'
+                    if not os.path.exists(file_path):
+                        break
+                    with open(file_path, 'rb') as f:
+                        results = pickle.load(f)
+                    avg_score = np.array([np.array(results[agent][0]).mean() for agent in results]).mean()
+                    print (iteration, len(results.keys()))
+                    xdata.append(iteration)
+                    ydata.append(avg_score)
+                    iteration += folders[folder]
+                if iteration != folders[folder]:
+                    all_seed_x.append(xdata)
+                    all_seed_y.append(ydata)
+            seed_num = len(all_seed_x)
+            print (all_seed_y)
+            min_len = min([len(x) for x in all_seed_x])
+            plot_x = all_seed_x[0][:min_len]
+            plot_x = np.array(plot_x) * cfg.PPO.NUM_ENVS * cfg.PPO.TIMESTEPS
+            plot_y = np.stack([np.array(x[:min_len]) for x in all_seed_y]).mean(axis=0)
+            error_y = np.stack([np.array(x[:min_len]) for x in all_seed_y]).std(axis=0)
+            # print (plot_x, plot_y)
+            print (f'final score: {plot_y[-1]} +- {error_y[-1]}')
+            plt.errorbar(plot_x, plot_y, yerr=error_y, c=colors[i + len(folders)], label=f'{names[folder]} (wo height check) ({seed_num} seeds)')
+            if plot_each_seed:
+                for y in all_seed_y:
+                    plt.plot(plot_x, y[:min_len], c=colors[i], alpha=0.5)
     plt.legend()
     plt.title(f'Generalization to {test_set}')
-    plt.xlabel('PPO iteration')
+    plt.xlabel('Timesteps')
     plt.ylabel('Return')
     plt.savefig(f'figures/generalization_curve_{test_set}_{suffix}.png')
     plt.close()
@@ -1380,56 +1417,68 @@ def train_mutation_generalization_curve(folders):
     plt.close()
 
 
-def twin_plot_train_curve_sample_prob(folders, name, twin_type='iter_prob'):
+def twin_plot_train_curve_sample_prob(folders, name):
+
+    os.makedirs(f'figures/analyze_UED/{name}', exist_ok=True)
 
     def score_to_prob(score):
         prob = np.clip(score, 0., 1.)
         prob /= prob.sum()
         return prob
 
-    results, iter_prob, PVL_score, staleness_score = {}, defaultdict(list), defaultdict(list), defaultdict(list)
+    results, iter_prob, potential_score, staleness_score = {}, defaultdict(list), defaultdict(list), defaultdict(list)
     for folder in folders:
         cfg.merge_from_file(f'{folder}/config.yaml')
-        agents = cfg.ENV.WALKERS
+        # agents = cfg.ENV.WALKERS
+        try:
+            with open(f'{folder}/walkers_train.json', 'r') as f:
+                agents = json.load(f)
+        except:
+            with open(f'{folder}/walkers.json', 'r') as f:
+                agents = json.load(f)
         with open(f'{folder}/Unimal-v0_results.json', 'r') as f:
             results[folder] = json.load(f)
         data_seq = []
         for i in range(10000):
             try:
                 with open(f'{folder}/iter_prob/{i}.pkl', 'rb') as f:
-                    iter_prob[folder].append(pickle.load(f))
+                    probs = pickle.load(f)
+                    probs = np.concatenate([probs, np.zeros(len(agents) - len(probs))])
+                    iter_prob[folder].append(probs)
             except:
-                break
+                if i <= 30:
+                    iter_prob[folder].append(np.concatenate([np.ones(100) / 100., np.zeros(len(agents) - 100)]))
+                else:
+                    break
         for i in range(10000):
             try:
-                with open(f'{folder}/ACCEL_score/{i}.pkl', 'rb') as f:
+                with open(f'{folder}/proxy_score/{i}.pkl', 'rb') as f:
                     data = pickle.load(f)
-                PVL_score[folder].append(data[0])
-                staleness_score[folder].append(data[1])
             except:
-                break
+                if i <= 30:
+                    potential_score[folder].append(np.zeros(len(agents)))
+                    staleness_score[folder].append(np.zeros(len(agents)))
+                    continue
+                else:
+                    break
+            try:
+                potential_score[folder].append(np.concatenate([data['LP'], np.zeros(len(agents) - len(data['LP']))]))
+                # staleness_score[folder].append(np.concatenate([data['staleness'], np.zeros(len(agents) - len(data['staleness']))]))
+            except:
+                potential_score[folder].append(data[0])
+                # staleness_score[folder].append(data[1])
         try:
             iter_prob[folder] = np.stack(iter_prob[folder])
-            PVL_score[folder] = np.stack(PVL_score[folder])
-            staleness_score[folder] = np.stack(staleness_score[folder])
+            potential_score[folder] = np.stack(potential_score[folder])
+            iter_prob[folder] = {agent: iter_prob[folder][:, i] for i, agent in enumerate(agents)}
+            potential_score[folder] = {agent: potential_score[folder][:, i] for i, agent in enumerate(agents)}
+            # staleness_score[folder] = np.stack(staleness_score[folder])
         except:
             continue
 
     # get ST performance
-    with open(f'mutate_400_upper_bound.json', 'r') as f:
-        ST_score = json.load(f)
-
-    # fig, axs = plt.subplots(40, 10, figsize=(10, 40))
-    # axs = axs.flatten()
-    # for i, agent in enumerate(agents):
-    #     ax = axs[i]
-    #     ax.plot(results[agent]['reward']['reward'])
-    #     ax.set_ylim(-50, 5000)
-    #     ax2 = ax.twinx()
-    #     ax2.plot(twin_data[:, i], c='orange')
-    #     # ax2.set_ylim(0, 0.1)
-    # plt.savefig('figures/analyze_UED/.png')
-    # plt.close()
+    # with open(f'mutate_400_upper_bound.json', 'r') as f:
+    #     ST_score = json.load(f)
 
     for i, agent in enumerate(agents):
         # fig, ax1 = plt.subplots()
@@ -1437,8 +1486,9 @@ def twin_plot_train_curve_sample_prob(folders, name, twin_type='iter_prob'):
         plt.figure(figsize=(20, 20))
         plt.subplot(2, 2, 1)
         for folder in folders:
+            # plt.plot(results[folder][agent]['return_ema'], label=folder)
             plt.plot(results[folder][agent]['reward']['reward'], label=folder)
-        plt.plot([0, x_bound], [ST_score[agent], ST_score[agent]], 'k--')
+        # plt.plot([0, x_bound], [ST_score[agent], ST_score[agent]], 'k--')
         plt.ylim(-50, 5500)
         plt.xlim(0, x_bound)
         # ax2 = ax1.twinx()
@@ -1446,26 +1496,31 @@ def twin_plot_train_curve_sample_prob(folders, name, twin_type='iter_prob'):
         plt.subplot(2, 2, 2)
         for folder in folders:
             if len(iter_prob[folder]) != 0:
-                plt.plot(iter_prob[folder][:, i], label=folder)
+                plt.plot(iter_prob[folder][agent], label=folder)
         plt.title('sample prob')
         plt.xlim(0, x_bound)
         # ax2.plot([0, twin_data.shape[0]], [1./400, 1./400], 'k--')
         # ax2.set_ylim(0, 0.1)
         plt.subplot(2, 2, 3)
         for folder in folders:
-            if len(PVL_score[folder]) != 0:
-                plt.plot(PVL_score[folder][:, i], label=folder)
-        plt.title('PVL score')
+            if len(potential_score[folder]) != 0:
+                plt.plot(potential_score[folder][agent], label=folder)
+        plt.title('potential score')
         plt.xlim(0, x_bound)
-        plt.ylim(0., 0.2)
+        # plt.ylim(0., 0.2)
+        # plt.subplot(2, 2, 4)
+        # for folder in folders:
+        #     if len(staleness_score[folder]) != 0:
+        #         plt.plot(staleness_score[folder][:, i], label=folder)
+        # plt.title('staleness score')
+        # plt.xlim(0, x_bound)
+        # plt.ylim(0, 5)
         plt.subplot(2, 2, 4)
         for folder in folders:
-            if len(staleness_score[folder]) != 0:
-                plt.plot(staleness_score[folder][:, i], label=folder)
-        plt.title('staleness score')
+            plt.plot(np.cumsum(iter_prob[folder][agent]), label=folder)
+        plt.title('cummulated sample prob')
         plt.xlim(0, x_bound)
-        plt.ylim(0, 5)
-        plt.savefig(f'figures/analyze_UED/{name}_{agent}.png')
+        plt.savefig(f'figures/analyze_UED/{name}/{agent}.png')
         plt.close()
 
 
@@ -1668,22 +1723,212 @@ def print_iter_prob(folder):
             break
 
 
+def get_upper_bound(folders):
+    
+    results = {}
+    for folder in folders:
+        with open(f'{folder}/Unimal-v0_results.json', 'r') as f:
+            results[folder] = json.load(f)
+    
+    agents = [x[:-4] for x in os.listdir('data/train_mutate_400/xml')]
+    
+    upper_bound = {}
+    for agent in agents:
+        upper_bound[agent] = max([np.max(results[folder][agent]['reward']['reward']) for folder in folders])
+    with open('upper_bound_train_mutate_400_wo_height_check.json', 'w') as f:
+        json.dump(upper_bound, f)
+
+
+def analyze_mutation_root(folders, name):
+    mutation_num = {}
+    for folder in folders:
+        tree_size = defaultdict(int)
+        for xml in os.listdir(f'{folder}/xml'):
+            root = xml[:-4].split('-mutate-')[0]
+            if len(xml[:-4].split('-mutate-')) > 1 and len(xml[:-4].split('-mutate-')[1]) == 1:
+                root = root + '-mutate-' + xml[:-4].split('-mutate-')[1]
+            tree_size[root] += 1
+        total_robot_num = len(os.listdir(f'{folder}/xml'))
+        for root in tree_size:
+            tree_size[root] /= total_robot_num
+        mutation_num[folder] = tree_size
+    
+    plt.figure()
+    for folder in folders:
+        data = list(mutation_num[folder].values())
+        data.sort()
+        plt.plot(data, label=folder)
+    plt.legend()
+    plt.savefig(f'figures/generation_root_distribution_{name}.png')
+    plt.close()
+
+
 
 if __name__ == '__main__':
 
-    # os.system('mkdir unimals_100/mutate_300')
-    # os.system('cp -r unimals_100/train_mutate_400/xml unimals_100/mutate_300/')
-    # os.system('cp -r unimals_100/train_mutate_400/metadata unimals_100/mutate_300/')
-    # for agent in os.listdir('unimals_100/mutate_300/xml'):
-    #     name = agent[:-4]
-    #     if 'mutate' not in name:
-    #         os.system(f'rm unimals_100/mutate_300/xml/{name}.xml')
-    #         os.system(f'rm unimals_100/mutate_300/metadata/{name}.json')
+    folders = [
+        'data/train_generation_LP', 
+        'data/train_generation_LP_start_30', 
+        'data/train_generation_uniform_start_30', 
+    ]
+    name = 'init_train'
+    analyze_mutation_root(folders, name)
+
+    folders = [
+        'data/train_mutate_400_generation_uniform_start_30', 
+        'data/train_mutate_400_generation_uniform_balanced', 
+        'data/train_mutate_400_generation_LP', 
+        'data/train_mutate_400_generation_LP_start_30', 
+        'data/train_mutate_400_generation_LP_new', 
+        'data/train_mutate_400_generation_LP_new_balanced', 
+    ]
+    name = 'init_mutate_400'
+    analyze_mutation_root(folders, name)
+
+    folders = {
+        'ft_400M_env_256_default_100_maximin_KL_5_wo_PE+dropout': 100, 
+        'ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
+        'ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
+        # 'ft_random_100_uniform_sample_KL_5_wo_PE+dropout': 600, 
+        # 'ft_400M_random_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
+        'ft_1000M_env_256_random_10k_uniform_sample_KL_5_wo_PE+dropout': 100, 
+        'ft_1000M_env_256_random_100k_uniform_sample_KL_5_wo_PE+dropout': 100, 
+    }
+    names = {
+        'ft_400M_env_256_default_100_maximin_KL_5_wo_PE+dropout': 'default_100, 256 envs', 
+        'ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout': 'mutate 400, 256 envs', 
+        'ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 'mutate_1000, 256 envs', 
+        # 'ft_random_100_uniform_sample_KL_5_wo_PE+dropout': 'random_100, 32 envs', 
+        # 'ft_400M_random_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 'random_1000, 256 envs', 
+        'ft_1000M_env_256_random_10k_uniform_sample_KL_5_wo_PE+dropout': 'random 10k, 256 envs, 1000M steps', 
+        'ft_1000M_env_256_random_100k_uniform_sample_KL_5_wo_PE+dropout': 'random 100k, 256 envs, 1000M steps', 
+    }
+    suffix = 'mutate+random'
+    # generalization_curve(folders, names, 'random_100_holdout', suffix, plot_each_seed=False)
+    # generalization_curve(folders, names, 'test', suffix, plot_each_seed=False)
+    generalization_curve(folders, names, 'random_100_above_1000', suffix, plot_each_seed=False)
+
+    folders = {
+        'ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
+        'ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
+        # 'ft_400M_env_256_init_train_generation_LP_curation_uniform_KL_5_wo_PE+dropout': 100, 
+        # 'ft_400M_init_train_generation_LP_curation_uniform_start_30_KL_5_wo_PE+dropout': 100, 
+        # 'ft_400M_init_default_100_start_30_generation_uniform_curation_uniform_KL_5_wo_PE+dropout': 100, 
+        # 'ft_400M_init_mutate_400_generation_LP_curation_uniform_KL_5_wo_PE+dropout': 100, 
+        # 'ft_400M_init_mutate_400_start_30_generation_uniform_curation_uniform_KL_5_wo_PE+dropout': 100, 
+        'ft_400M_init_mutate_400_generation_uniform_balanced_curation_uniform_KL_5_wo_PE+dropout': 100, 
+        # 'ft_400M_init_mutate_400_start_30_generation_LP_curation_uniform_KL_5_wo_PE+dropout': 100, 
+        # 'ft_400M_init_mutate_400_generation_LP_new_curation_uniform_KL_5_wo_PE+dropout': 100, 
+        'ft_400M_init_mutate_400_generation_LP_new_balanced_curation_uniform_KL_5_wo_PE+dropout': 100, 
+        # 'ft_400M_init_base_generation_uniform_curation_uniform_KL_5_wo_PE+dropout': 100, 
+    }
+    names = {
+        'ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout': 'mutate 400, uniform sample', 
+        'ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 'mutate 1000, uniform sample', 
+        # 'ft_400M_env_256_init_train_generation_LP_curation_uniform_KL_5_wo_PE+dropout': 'LP generation, init train', 
+        # 'ft_400M_init_train_generation_LP_curation_uniform_start_30_KL_5_wo_PE+dropout': 'LP generation, init train', 
+        # 'ft_400M_init_default_100_start_30_generation_uniform_curation_uniform_KL_5_wo_PE+dropout': 'uniform generation, init train', 
+        # 'ft_400M_init_mutate_400_generation_LP_curation_uniform_KL_5_wo_PE+dropout': 'LP generation, init mutate 400', 
+        # 'ft_400M_init_mutate_400_start_30_generation_uniform_curation_uniform_KL_5_wo_PE+dropout': 'uniform generation, init mutate 400', 
+        'ft_400M_init_mutate_400_generation_uniform_balanced_curation_uniform_KL_5_wo_PE+dropout': 'uniform generation (balanced), init mutate 400', 
+        # 'ft_400M_init_mutate_400_start_30_generation_LP_curation_uniform_KL_5_wo_PE+dropout': 'LP generation, init mutate 400', 
+        # 'ft_400M_init_mutate_400_generation_LP_new_curation_uniform_KL_5_wo_PE+dropout': 'LP generation new, init mutate 400', 
+        'ft_400M_init_mutate_400_generation_LP_new_balanced_curation_uniform_KL_5_wo_PE+dropout': 'LP generation new (balanced), init mutate 400', 
+        # 'ft_400M_init_base_generation_uniform_curation_uniform_KL_5_wo_PE+dropout': 'uniform generation, init base', 
+    }
+    suffix = 'generation_LP'
+    # generalization_curve(folders, names, 'test', suffix, plot_each_seed=False)
+    generalization_curve(folders, names, 'random_100_holdout', suffix, plot_each_seed=False)
 
     # folder = 'output/ft_MLP_HN_IO_onehot_KL_5_wo_PE+dropout'
     # print_iter_prob(folder)
 
-    upper_bound = {}
+    # folders = [
+    #     'output/ft_400M_mutate_400_wo_height_check_env_256_uniform_sample_KL_5_wo_PE+dropout/1409', 
+    #     'output/ft_400M_mutate_400_wo_height_check_env_256_curation_regret_delta_0.1_KL_5_wo_PE+dropout/1409', 
+    #     'output/ft_400M_mutate_400_wo_height_check_env_256_curation_PVL_delta_0.1_KL_5_wo_PE+dropout/1409', 
+    # ]
+    # get_upper_bound(folders)
+
+    # folders = {
+    #     'ft_random_100_uniform_sample_KL_5_wo_PE+dropout': 600, 
+    #     'ft_random_100_curation_regret_KL_5_wo_PE+dropout': 600, 
+    #     'ft_random_100_curation_regret_alpha_0.1_KL_5_wo_PE+dropout': 600, 
+    #     'ft_random_100_curation_ratio_regret_KL_5_wo_PE+dropout': 600, 
+    #     'ft_400M_random_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
+    #     'ft_400M_random_1000_curation_regret_env_256_KL_5_wo_PE+dropout': 100, 
+    # }
+    # names = {
+    #     'ft_random_100_uniform_sample_KL_5_wo_PE+dropout': 'random 100, uniform sample', 
+    #     'ft_random_100_curation_regret_KL_5_wo_PE+dropout': 'random 100, regret curation', 
+    #     'ft_random_100_curation_regret_alpha_0.1_KL_5_wo_PE+dropout': 'random 100, regret curation, alpha = 0.1', 
+    #     'ft_random_100_curation_ratio_regret_KL_5_wo_PE+dropout': 'random 100, relative regret curation', 
+    #     'ft_400M_random_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 'random 1000, uniform sample', 
+    #     'ft_400M_random_1000_curation_regret_env_256_KL_5_wo_PE+dropout': 'random 1000, regret curation', 
+    # }
+    # suffix = 'curation_random_100+1000'
+    # generalization_curve(folders, names, 'test', suffix, plot_each_seed=False)
+    # generalization_curve(folders, names, 'random_100_holdout', suffix, plot_each_seed=False)
+
+    # shorten the old eval result name
+    # folders = [
+    #     'ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout', 
+    #     'ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout', 
+    #     'ft_400M_random_1000_env_256_uniform_sample_KL_5_wo_PE+dropout', 
+    # ]
+    # for folder in folders:
+    #     files = os.listdir(f'eval/{folder}')
+    #     for f in files:
+    #         if '1409' in f:
+    #             flag = '1409'
+    #         else:
+    #             flag = '1410'
+    #         if 'test' in f or 'random_100_holdout' in f:
+    #             new_f = flag + f.split(flag)[1]
+    #             os.system(f'mv eval/{folder}/{f} eval/{folder}/{new_f}')
+    #         else:
+    #             os.system(f'rm eval/{folder}/{f}')
+
+    # add seed number to eval result name
+    # folders = [
+    #     'ft_400M_mutate_400_curation_LP_env_256_KL_5_wo_PE+dropout', 
+    #     'ft_400M_mutate_1000_curation_LP_env_256_KL_5_wo_PE+dropout', 
+    #     'ft_400M_random_1000_curation_LP_env_256_KL_5_wo_PE+dropout', 
+    # ]
+    # for folder in folders:
+    #     files = os.listdir(f'eval/{folder}')
+    #     for f in files:
+    #         os.system(f'mv eval/{folder}/{f} eval/{folder}/{f[5:]}')
+
+    # folders = {
+    #     'ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
+    #     'ft_400M_mutate_400_curation_LP_env_256_KL_5_wo_PE+dropout': 100, 
+    #     'ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
+    #     'ft_400M_mutate_1000_curation_LP_env_256_KL_5_wo_PE+dropout': 100, 
+    #     'ft_400M_random_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
+    #     'ft_400M_random_1000_curation_LP_env_256_KL_5_wo_PE+dropout': 100, 
+    # }
+    # names = {
+    #     'ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout': 'mutate_400, uniform', 
+    #     'ft_400M_mutate_400_curation_LP_env_256_KL_5_wo_PE+dropout': 'mutate_400, LP curation', 
+    #     'ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 'mutate_1000, uniform', 
+    #     'ft_400M_mutate_1000_curation_LP_env_256_KL_5_wo_PE+dropout': 'mutate_1000, LP curation', 
+    #     'ft_400M_random_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 'random_1000, uniform', 
+    #     'ft_400M_random_1000_curation_LP_env_256_KL_5_wo_PE+dropout': 'random_1000, LP curation', 
+    # }
+    # suffix = 'curation_LP'
+    # generalization_curve(folders, names, 'test', suffix, plot_each_seed=False)
+    # generalization_curve(folders, names, 'random_100_holdout', suffix, plot_each_seed=False)
+
+    # folders = [
+    #     'baselines/ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout/1409', 
+    #     'output/ft_400M_mutate_400_curation_LP_env_256_KL_5_wo_PE+dropout/1409', 
+    #     'baselines/ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout/1410', 
+    # ]
+    # name = 'mutate_400_curation_LP'
+    # twin_plot_train_curve_sample_prob(folders, name)
+
+    # upper_bound = {}
 
     # optimal_score = {}
     # for agent in os.listdir('output2/ST_MLP_test'):
@@ -1884,28 +2129,43 @@ if __name__ == '__main__':
     # suffix = 'curation_PVL_400M_mutate_100_v2'
     # generalization_curve(folders, names, 'train_mutate_100_v2', suffix, plot_each_seed=False)
 
-    folders = {
-        'ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
-        'ft_400M_mutate_400_env_256_curation_PVL_KL_5_wo_PE+dropout': 100, 
-        # 'ft_400M_mutate_400_env_256_curation_PVL_delta_0.1_KL_5_wo_PE+dropout': 100, 
-        # 'ft_400M_mutate_400_env_256_curation_PVL_delta_0.3_KL_5_wo_PE+dropout': 100, 
-        # 'ft_400M_mutate_400_env_256_curation_true_PVL_KL_5_wo_PE+dropout': 100, 
-        # 'ft_400M_mutate_400_env_256_curation_regret_KL_5_wo_PE+dropout': 100, 
-        'ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
-        'ft_400M_mutate_1000_env_256_curation_PVL_KL_5_wo_PE+dropout': 100, 
-    }
-    names = {
-        'ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout': 'mutate_400, uniform, 256 envs', 
-        'ft_400M_mutate_400_env_256_curation_PVL_KL_5_wo_PE+dropout': 'mutation_400, L1 value loss curation, 256 envs', 
-        # 'ft_400M_mutate_400_env_256_curation_PVL_delta_0.1_KL_5_wo_PE+dropout': 'mutation_400, L1 value loss curation, 256 envs, delta=0.1', 
-        # 'ft_400M_mutate_400_env_256_curation_PVL_delta_0.3_KL_5_wo_PE+dropout': 'mutation_400, L1 value loss curation, 256 envs, delta=0.3', 
-        # 'ft_400M_mutate_400_env_256_curation_true_PVL_KL_5_wo_PE+dropout': 'mutation_400, PVL curation, 256 envs', 
-        # 'ft_400M_mutate_400_env_256_curation_regret_KL_5_wo_PE+dropout': 'mutation_400, regret curation, 256 envs', 
-         'ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 'mutate_1000, uniform, 256 envs', 
-        'ft_400M_mutate_1000_env_256_curation_PVL_KL_5_wo_PE+dropout': 'mutation_1000, L1 value loss curation, 256 envs', 
-    }
-    suffix = 'curation_PVL_400M'
-    generalization_curve(folders, names, 'test', suffix, plot_each_seed=False)
+    # folders = {
+    #     'ft_400M_mutate_400_wo_height_check_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
+    #     'ft_400M_mutate_400_wo_height_check_env_256_curation_PVL_delta_0.1_KL_5_wo_PE+dropout': 100, 
+    #     'ft_400M_mutate_400_wo_height_check_env_256_curation_regret_delta_0.1_KL_5_wo_PE+dropout': 100, 
+    # }
+    # names = {
+    #     'ft_400M_mutate_400_wo_height_check_env_256_uniform_sample_KL_5_wo_PE+dropout': 'mutate_400, uniform curation', 
+    #     'ft_400M_mutate_400_wo_height_check_env_256_curation_PVL_delta_0.1_KL_5_wo_PE+dropout': 'mutate_400, PVL curation', 
+    #     'ft_400M_mutate_400_wo_height_check_env_256_curation_regret_delta_0.1_KL_5_wo_PE+dropout': 'mutate_400, regret curation', 
+    # }
+    # suffix = 'height_check'
+    # generalization_curve(folders, names, 'test', suffix, height_check=True, plot_each_seed=False)
+    # name = 'wo_height_check_curation'
+    # twin_plot_train_curve_sample_prob([f'output/{x}/1409' for x in list(folders.keys())], name)
+
+    # folders = {
+    #     'ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
+    #     'ft_400M_mutate_400_env_256_curation_PVL_KL_5_wo_PE+dropout': 100, 
+    #     # 'ft_400M_mutate_400_env_256_curation_PVL_delta_0.1_KL_5_wo_PE+dropout': 100, 
+    #     # 'ft_400M_mutate_400_env_256_curation_PVL_delta_0.3_KL_5_wo_PE+dropout': 100, 
+    #     # 'ft_400M_mutate_400_env_256_curation_true_PVL_KL_5_wo_PE+dropout': 100, 
+    #     # 'ft_400M_mutate_400_env_256_curation_regret_KL_5_wo_PE+dropout': 100, 
+    #     'ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
+    #     'ft_400M_mutate_1000_env_256_curation_PVL_KL_5_wo_PE+dropout': 100, 
+    # }
+    # names = {
+    #     'ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout': 'mutate_400, uniform, 256 envs', 
+    #     'ft_400M_mutate_400_env_256_curation_PVL_KL_5_wo_PE+dropout': 'mutation_400, L1 value loss curation, 256 envs', 
+    #     # 'ft_400M_mutate_400_env_256_curation_PVL_delta_0.1_KL_5_wo_PE+dropout': 'mutation_400, L1 value loss curation, 256 envs, delta=0.1', 
+    #     # 'ft_400M_mutate_400_env_256_curation_PVL_delta_0.3_KL_5_wo_PE+dropout': 'mutation_400, L1 value loss curation, 256 envs, delta=0.3', 
+    #     # 'ft_400M_mutate_400_env_256_curation_true_PVL_KL_5_wo_PE+dropout': 'mutation_400, PVL curation, 256 envs', 
+    #     # 'ft_400M_mutate_400_env_256_curation_regret_KL_5_wo_PE+dropout': 'mutation_400, regret curation, 256 envs', 
+    #      'ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 'mutate_1000, uniform, 256 envs', 
+    #     'ft_400M_mutate_1000_env_256_curation_PVL_KL_5_wo_PE+dropout': 'mutation_1000, L1 value loss curation, 256 envs', 
+    # }
+    # suffix = 'curation_PVL_400M'
+    # generalization_curve(folders, names, 'test', suffix, plot_each_seed=False)
 
     # folders = {
     #     'ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout': 100, 
