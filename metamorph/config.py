@@ -376,11 +376,11 @@ _C.MODEL.ACTION_STD_FIXED = True
 # Types of proprioceptive obs to include
 _C.MODEL.PROPRIOCEPTIVE_OBS_TYPES = [
     "body_xpos", "body_xvelp", "body_xvelr", "body_xquat", 
-    "body_pos", "body_ipos", "body_iquat", "geom_quat", # limb model
-    "body_mass", "body_shape", # limb hardware
+    # "body_pos", "body_ipos", "body_iquat", "geom_quat", # limb model
+    # "body_mass", "body_shape", # limb hardware
     "qpos", "qvel", 
-    "jnt_pos", # joint model
-    "joint_range", "joint_axis", "gear" # joint hardware
+    # "jnt_pos", # joint model
+    # "joint_range", "joint_axis", "gear" # joint hardware
 ]
 
 _C.MODEL.CONTEXT_OBS_TYPES = [
@@ -389,6 +389,11 @@ _C.MODEL.CONTEXT_OBS_TYPES = [
     "jnt_pos", # joint model
     "joint_range", "joint_axis", "gear" # joint hardware
 ]
+# _C.MODEL.CONTEXT_OBS_TYPES = [
+#     "absolute_body_pos", "absolute_body_ipos", "body_iquat", # limb model
+#     "body_mass", "body_shape", # limb hardware
+#     "joint_range_onehot", "joint_axis", "gear_onehot" # joint hardware
+# ]
 
 # Model specific observation types to keep
 _C.MODEL.OBS_TYPES = [
@@ -427,25 +432,23 @@ _C.MODEL.TYPE = 'transformer'
 _C.MODEL.MLP = CN()
 _C.MODEL.MLP.HIDDEN_DIM = 256
 _C.MODEL.MLP.LAYER_NUM = 3
-_C.MODEL.MLP.CONSISTENT_PADDING = False
 # architecture choice
+_C.MODEL.MLP.CONTEXT_ENCODER_TYPE = 'linear'
 _C.MODEL.MLP.HN_INPUT = False
 _C.MODEL.MLP.HN_OUTPUT = False
-_C.MODEL.MLP.SHARE_INPUT = False
-_C.MODEL.MLP.SHARE_INPUT_INIT = False
 _C.MODEL.MLP.PER_NODE_EMBED = False
 _C.MODEL.MLP.PER_NODE_DECODER = False
 _C.MODEL.MLP.PER_ROBOT_HIDDEN_LAYERS = False
-# architecture for the value network
-_C.MODEL.MLP.SINGLE_VALUE = False
-_C.MODEL.MLP.RELU_AFTER_AGG = True
-_C.MODEL.MLP.AGG_FUNCTION = 'sum'
-_C.MODEL.MLP.NORM = None
-_C.MODEL.MLP.ANNEAL_HN_LR = False
-_C.MODEL.MLP.SQUASH_HN_OUTPUT = False
-_C.MODEL.MLP.SQUASH_SCALE = 1.
-# scale embedding by limb number
-_C.MODEL.MLP.SCALE_BY_LIMB_NUM = False
+# whether to add one-hot limb id to the context input
+_C.MODEL.MLP.LIMB_ONE_HOT = False
+# which init strategy to use for HN
+_C.MODEL.MLP.HN_INIT_STRATEGY = None
+# whether to use one-hot limb id ALONE as the context input (for diagnose only)
+_C.MODEL.MLP.ONE_HOT_CONTEXT = False
+# whether to use bias in HN's final linear layer
+_C.MODEL.MLP.BIAS_IN_HN_OUTPUT_LAYER = True
+# whether to use HN to generate bias of the base network
+_C.MODEL.MLP.HN_GENERATE_BIAS = False
 
 # hyperparameters for transformers
 _C.MODEL.TRANSFORMER = CN()

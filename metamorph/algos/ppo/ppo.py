@@ -111,6 +111,7 @@ class PPO:
         self.fps = 0
         os.system(f'mkdir {cfg.OUT_DIR}/iter_prob')
         os.system(f'mkdir {cfg.OUT_DIR}/proxy_score')
+        os.system(f'mkdir {cfg.OUT_DIR}/weight_stats')
 
         self.ST_performance = None
         self.last_probs = None
@@ -152,6 +153,7 @@ class PPO:
         self.buffer.to(self.device)
         self.start = time.time()
         num_env = obs['proprioceptive'].shape[0]
+        limb_obs_dim = obs['proprioceptive'].shape[1] // cfg.MODEL.MAX_LIMBS
 
         print ('obs')
         print (type(obs), len(obs))
@@ -176,6 +178,21 @@ class PPO:
         print ('Start training ...')
         for cur_iter in range(iter_start, cfg.PPO.MAX_ITERS):
 
+            # if cfg.MODEL.MLP.HN_INPUT:
+            #     mu_net_input_mean = torch.zeros(len(cfg.ENV.WALKERS), cfg.MODEL.MAX_LIMBS).cuda()
+            #     mu_net_input_std = torch.zeros(len(cfg.ENV.WALKERS), cfg.MODEL.MAX_LIMBS).cuda()
+            #     v_net_input_mean = torch.zeros(len(cfg.ENV.WALKERS), cfg.MODEL.MAX_LIMBS).cuda()
+            #     v_net_input_std = torch.zeros(len(cfg.ENV.WALKERS), cfg.MODEL.MAX_LIMBS).cuda()
+            #     mu_context_embedding = torch.zeros(len(cfg.ENV.WALKERS), cfg.MODEL.MAX_LIMBS, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE).cuda()
+            #     v_context_embedding = torch.zeros(len(cfg.ENV.WALKERS), cfg.MODEL.MAX_LIMBS, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE).cuda()
+            # obs_mean = torch.zeros(limb_obs_dim).cuda()
+            # obs_std = torch.zeros(limb_obs_dim).cuda()
+            # if cfg.MODEL.MLP.HN_OUTPUT:
+            #     mu_net_output_mean = torch.zeros(len(cfg.ENV.WALKERS), cfg.MODEL.MAX_LIMBS)
+            #     mu_net_output_std = torch.zeros(len(cfg.ENV.WALKERS), cfg.MODEL.MAX_LIMBS)
+            #     v_net_output_mean = torch.zeros(len(cfg.ENV.WALKERS), cfg.MODEL.MAX_LIMBS)
+            #     v_net_output_std = torch.zeros(len(cfg.ENV.WALKERS), cfg.MODEL.MAX_LIMBS)
+
             if cfg.PPO.EARLY_EXIT and cur_iter >= cfg.PPO.EARLY_EXIT_MAX_ITERS:
                 break
             
@@ -186,6 +203,22 @@ class PPO:
                 # Sample actions
                 unimal_ids = self.envs.get_unimal_idx()
                 val, act, logp = self.agent.act(obs, unimal_ids=unimal_ids)
+                # obs_mean += obs["proprioceptive"].reshape(-1, limb_obs_dim).mean(dim=0)
+                # obs_std += obs["proprioceptive"].reshape(-1, limb_obs_dim).std(dim=0)
+
+                # if cfg.MODEL.MLP.HN_INPUT:
+                #     mu_net_input_mean[unimal_ids] = self.agent.ac.mu_net.input_weight.mean(dim=(2, 3)).detach()
+                #     mu_net_input_std[unimal_ids] = self.agent.ac.mu_net.input_weight.std(dim=(2, 3)).detach()
+                #     v_net_input_mean[unimal_ids] = self.agent.ac.v_net.input_weight.mean(dim=(2, 3)).detach()
+                #     v_net_input_std[unimal_ids] = self.agent.ac.v_net.input_weight.std(dim=(2, 3)).detach()
+                #     mu_context_embedding[unimal_ids] = self.agent.ac.mu_net.context_embedding_input.detach()
+                #     v_context_embedding[unimal_ids] = self.agent.ac.v_net.context_embedding_input.detach()
+
+                # if cfg.MODEL.MLP.HN_OUTPUT:
+                #     mu_net_output_mean[unimal_ids] = self.agent.ac.mu_net.output_weight.mean(dim=(2, 3)).detach().cpu()
+                #     mu_net_output_std[unimal_ids] = self.agent.ac.mu_net.output_weight.std(dim=(2, 3)).detach().cpu()
+                #     v_net_output_mean[unimal_ids] = self.agent.ac.v_net.output_weight.mean(dim=(2, 3)).detach().cpu()
+                #     v_net_output_std[unimal_ids] = self.agent.ac.v_net.output_weight.std(dim=(2, 3)).detach().cpu()
 
                 if cfg.DYNAMICS.MODEL_STEP:
                     clipped_act = torch.clip(act, -1., 1.)
@@ -235,6 +268,42 @@ class PPO:
 
                 self.buffer.insert(obs, act, logp, val, reward, masks, timeouts, unimal_ids)
                 obs = next_obs
+
+            # if not cfg.MODEL.MLP.HN_INPUT:
+            #     mu_net_input_mean = self.agent.ac.mu_net.input_layer.weight.data.permute(1, 0).reshape(12, -1).mean(dim=1)
+            #     mu_net_input_std = self.agent.ac.mu_net.input_layer.weight.data.permute(1, 0).reshape(12, -1).std(dim=1)
+            #     v_net_input_mean = self.agent.ac.v_net.input_layer.weight.data.permute(1, 0).reshape(12, -1).mean(dim=1)
+            #     v_net_input_std = self.agent.ac.v_net.input_layer.weight.data.permute(1, 0).reshape(12, -1).std(dim=1)
+            # with open(f'{cfg.OUT_DIR}/weight_stats/input_{cur_iter}.pkl', 'wb') as f:
+            #     stats = {
+            #         'mu_net': {'mean': mu_net_input_mean.cpu(), 'std': mu_net_input_std.cpu()}, 
+            #         'v_net': {'mean': v_net_input_mean.cpu(), 'std': v_net_input_std.cpu()}
+            #     }
+            #     pickle.dump(stats, f)
+            # if cfg.MODEL.MLP.HN_INPUT:
+            #     stats = {
+            #         'mu_net': mu_context_embedding, 
+            #         'v_net': v_context_embedding, 
+            #     }
+            #     with open(f'{cfg.OUT_DIR}/weight_stats/input_context_embedding_{cur_iter}.pkl', 'wb') as f:
+            #         pickle.dump(stats, f)
+            #     stats = {
+            #         'mean': obs_mean.cpu() / cfg.PPO.TIMESTEPS, 'std': obs_std.cpu() / cfg.PPO.TIMESTEPS
+            #     }
+            #     with open(f'{cfg.OUT_DIR}/weight_stats/obs_{cur_iter}.pkl', 'wb') as f:
+            #         pickle.dump(stats, f)
+
+            # if not cfg.MODEL.MLP.HN_OUTPUT:
+            #     mu_net_output_mean = self.agent.ac.mu_net.output_layer.weight.data.reshape(12, -1).mean(dim=1)
+            #     mu_net_output_std = self.agent.ac.mu_net.output_layer.weight.data.reshape(12, -1).std(dim=1)
+            #     v_net_output_mean = self.agent.ac.v_net.output_layer.weight.data.reshape(12, -1).mean(dim=1)
+            #     v_net_output_std = self.agent.ac.v_net.output_layer.weight.data.reshape(12, -1).std(dim=1)
+            # with open(f'{cfg.OUT_DIR}/weight_stats/output_{cur_iter}.pkl', 'wb') as f:
+            #     stats = {
+            #         'mu_net': {'mean': mu_net_output_mean, 'std': mu_net_output_std}, 
+            #         'v_net': {'mean': v_net_output_mean, 'std': v_net_output_std}
+            #     }
+            #     pickle.dump(stats, f)
 
             self.train_meter.update_iter_returns(cur_iter)
 
@@ -575,9 +644,9 @@ class PPO:
     def save_model(self, cur_iter, path=None):
         if not path:
             path = os.path.join(cfg.OUT_DIR, self.file_prefix + ".pt")
-        torch.save([self.actor_critic, get_ob_rms(self.envs), get_ret_rms(self.envs), self.optimizer.state_dict()], path)
+        torch.save([self.actor_critic.state_dict(), get_ob_rms(self.envs), get_ret_rms(self.envs), self.optimizer.state_dict()], path)
         checkpoint_path = os.path.join(cfg.OUT_DIR, f"checkpoint_{cur_iter}.pt")
-        torch.save([self.actor_critic, get_ob_rms(self.envs), get_ret_rms(self.envs), self.optimizer.state_dict()], checkpoint_path)
+        torch.save([self.actor_critic.state_dict(), get_ob_rms(self.envs), get_ret_rms(self.envs), self.optimizer.state_dict()], checkpoint_path)
 
     def _log_stats(self, cur_iter):
         self._log_fps(cur_iter)
