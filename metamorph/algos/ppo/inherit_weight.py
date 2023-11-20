@@ -1,6 +1,8 @@
 import torch
+import sys
 
 from metamorph.config import cfg
+from metamorph.algos.ppo.model import ActorCritic
 
 
 def restore_from_checkpoint(ac):
@@ -14,7 +16,17 @@ def restore_from_checkpoint(ac):
         model_p, ob_rms, ret_rms, optimizer_state = checkpoint
 
     state_dict_c = ac.state_dict()
-    state_dict_p = model_p.state_dict()
+    if type(model_p) == ActorCritic:
+        state_dict_p = model_p.state_dict()
+    else:
+        state_dict_p = model_p
+    if set(state_dict_c.keys()) != set(state_dict_p.keys()):
+        print ('The params are not aligned!')
+        print ('The following params are in model, but not in checkpoint:')
+        print (set(state_dict_c.keys()) - set(state_dict_p.keys()))
+        print ('The following params are in checkpoint, but not in model:')
+        print (set(state_dict_p.keys()) - set(state_dict_c.keys()))
+        sys.exit()
 
     fine_tune_layers = set()
     layer_substrings = cfg.MODEL.FINETUNE.LAYER_SUBSTRING
@@ -38,6 +50,7 @@ def restore_from_checkpoint(ac):
             with torch.no_grad():
                 param.copy_(param_p)
         else:
+            print (name, param_p.shape, param.shape)
             raise ValueError(
                 "Checkpoint path is invalid as there is shape mismatch"
             )

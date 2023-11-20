@@ -7,6 +7,7 @@ import numpy as np
 import pickle
 import json
 import matplotlib.pyplot as plt
+import scipy
 
 from metamorph.config import cfg
 from metamorph.algos.ppo.ppo import PPO
@@ -37,6 +38,26 @@ def compute_GAE(episode_value, episode_reward, timeout=False):
     return episode_gae
 
 
+def plot_weights_histogram(params, name, agent, mask):
+    plt.figure()
+    for i in range(12):
+        plt.subplot(3, 4, i + 1)
+        data = params[i].cpu().numpy().ravel()
+        if len(data) > 1000:
+            bins = 100
+        else:
+            bins = 20
+        if mask[i] == 0:
+            color = 'blue'
+        else:
+            color = 'orange'
+        plt.hist(data, bins=bins, color=color)
+        plt.title(f'std: {data.std():.4f}')
+    plt.tight_layout()
+    plt.savefig(f'figures/analyze_HNMLP/{name}_{agent}.png')
+    plt.close()
+
+
 def evaluate(policy, env, agent, compute_gae=False):
 
     episode_return = np.zeros(cfg.PPO.NUM_ENVS)
@@ -54,6 +75,29 @@ def evaluate(policy, env, agent, compute_gae=False):
             episode_values.append(val)
         else:
             _, act, _ = policy.act(obs, return_attention=False, compute_val=False)
+        
+        # if t == 0:
+        #     # mask = obs['obs_padding_mask'][0]
+        #     # plot_weights_histogram(policy.ac.mu_net.context_embedding_input[0], 'input_context', agent, mask)
+        #     # plot_weights_histogram(policy.ac.mu_net.input_weight[0], 'input_weight', agent, mask)
+        #     # plot_weights_histogram(policy.ac.mu_net.context_embedding_output[0], 'output_context', agent, mask)
+        #     # plot_weights_histogram(policy.ac.mu_net.output_weight[0], 'output_weight', agent, mask)
+        #     try:
+        #         with open(f'weights_limb_id_in_context/{agent}.pkl', 'wb') as f:
+        #             data = {
+        #                 'input_context': policy.ac.mu_net.context_embedding_input[0], 
+        #                 'input_weight': policy.ac.mu_net.input_weight[0], 
+        #                 'output_context': policy.ac.mu_net.context_embedding_output[0], 
+        #                 'output_weight': policy.ac.mu_net.output_weight[0], 
+        #             }
+        #             pickle.dump(data, f)
+        #     except:
+        #         with open('weights_TF_context_encoder/MLP.pkl', 'wb') as f:
+        #             data = {
+        #                 'input_weight': policy.ac.mu_net.input_layer.weight.data, 
+        #                 'output_weight': policy.ac.mu_net.output_layer.weight.data, 
+        #             }
+        #             pickle.dump(data, f)
 
         if cfg.PPO.TANH == 'action':
             obs, reward, done, infos = env.step(torch.tanh(act))
@@ -187,8 +231,8 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
     cfg.TERMINATE_ON_FALL = terminate_on_fall
     cfg.DETERMINISTIC = deterministic
     set_cfg_options()
-    ppo_trainer = PPO()
     cfg.PPO.NUM_ENVS = 16
+    ppo_trainer = PPO()
     policy = ppo_trainer.agent
     # change to eval mode as we have dropout in the model
     policy.ac.eval()
@@ -211,23 +255,27 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
 
     all_obs = dict()
     for i, agent in enumerate(test_agents):
+        # with open(f'{agent_path}/metadata/{agent}.json', 'r') as f:
+        #     limb_num = json.load(f)["num_limbs"]
         if agent in eval_result and len(eval_result[agent]) == 3:
-            continue
-        envs = make_vec_envs(xml_file=agent, training=False, norm_rew=True, render_policy=True)
-        set_ob_rms(envs, get_ob_rms(ppo_trainer.envs))
-        set_ret_rms(envs, get_ret_rms(ppo_trainer.envs))
-        episode_return, ood_ratio, episode_gae = evaluate(policy, envs, agent, compute_gae=compute_gae)
-        envs.close()
-        print (agent, f'{episode_return.mean():.2f} +- {episode_return.std():.2f}', f'OOD ratio: {ood_ratio}')
-        # print ([np.maximum(x, 0.).mean() for x in episode_gae])
-        eval_result[agent] = [episode_return, ood_ratio, episode_gae]
-        ood_list[i] = ood_ratio
-        avg_score.append(np.array(episode_return).mean())
-        with open(f'eval/{output_name}.pkl', 'wb') as f:
-            pickle.dump(eval_result, f)     
+            episode_return, _, _ = eval_result[agent]
+            avg_score.append(np.array(episode_return).mean())
+        else:
+            envs = make_vec_envs(xml_file=agent, training=False, norm_rew=True, render_policy=True)
+            set_ob_rms(envs, get_ob_rms(ppo_trainer.envs))
+            set_ret_rms(envs, get_ret_rms(ppo_trainer.envs))
+            episode_return, ood_ratio, episode_gae = evaluate(policy, envs, agent, compute_gae=compute_gae)
+            envs.close()
+            print (agent, f'{episode_return.mean():.2f} +- {episode_return.std():.2f}', f'OOD ratio: {ood_ratio}')
+            # print ([np.maximum(x, 0.).mean() for x in episode_gae])
+            eval_result[agent] = [episode_return, ood_ratio, episode_gae]
+            ood_list[i] = ood_ratio
+            avg_score.append(np.array(episode_return).mean())
+            with open(f'eval/{output_name}.pkl', 'wb') as f:
+                pickle.dump(eval_result, f)
 
     print ('avg score across all test agents: ', np.array(avg_score).mean())
-    return np.array(avg_score)
+    return np.array(avg_score).mean()
 
 
 # def get_context(agent_path):
