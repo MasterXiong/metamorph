@@ -92,7 +92,7 @@ class Buffer(object):
             self.ret[step] = gae + val[step]
 
     def get_sampler(self, adv):
-        dset_size = cfg.PPO.TIMESTEPS * cfg.PPO.NUM_ENVS
+        dset_size = cfg.PPO.TIMESTEPS * adv.shape[1]
 
         assert dset_size >= cfg.PPO.BATCH_SIZE
 
@@ -104,21 +104,26 @@ class Buffer(object):
 
         for idxs in sampler:
             batch = {}
-            batch["ret"] = self.ret.view(-1, 1)[idxs]
+            batch["ret"] = self.ret[:, self.idx].view(-1, 1)[idxs]
 
             if isinstance(self.obs, dict):
                 batch["obs"] = {}
                 for ot, ov in self.obs.items():
-                        batch["obs"][ot] = ov.view(-1, *ov.size()[2:])[idxs]
+                        batch["obs"][ot] = ov[:, self.idx].view(-1, *ov.size()[2:])[idxs]
             else:
-                batch["obs"] = self.obs.view(-1, *self.obs.size()[2:])[idxs]
+                batch["obs"] = self.obs[:, self.idx].view(-1, *self.obs.size()[2:])[idxs]
 
-            batch["val"] = self.val.view(-1, 1)[idxs]
-            batch["act"] = self.act.view(-1, self.act.size(-1))[idxs]
+            batch["val"] = self.val[:, self.idx].view(-1, 1)[idxs]
+            batch["act"] = self.act[:, self.idx].view(-1, self.act.size(-1))[idxs]
             batch["adv"] = adv.view(-1, 1)[idxs]
-            batch["logp_old"] = self.logp.view(-1, 1)[idxs]
+            batch["logp_old"] = self.logp[:, self.idx].view(-1, 1)[idxs]
             # batch["dropout_mask_v"] = self.dropout_mask_v.view(-1, 12, 128)[idxs]
             # batch["dropout_mask_mu"] = self.dropout_mask_mu.view(-1, 12, 128)[idxs]
-            batch["unimal_ids"] = self.unimal_ids.view(-1)[idxs]
+            batch["unimal_ids"] = self.unimal_ids[:, self.idx].view(-1)[idxs]
             # batch["limb_logp_old"] = self.limb_logp.view(-1, 24)[idxs]
             yield batch
+
+    def filter(self, process_with_error):
+        self.idx = [True for _ in range(cfg.PPO.NUM_ENVS)]
+        for p in process_with_error:
+            self.idx[p] = False

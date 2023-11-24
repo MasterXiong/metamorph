@@ -123,7 +123,7 @@ def compare_ST_training(folders, output_folder, prefix, names, all_agents=None):
     plt.close()
 
 
-def compare_train_curve(folders, prefix, agents=['__env__'], seeds=[1409, 1410, 1411], plot_each_seed=False):
+def compare_train_curve(folders, prefix, agents=['__env__'], seeds=[1409, 1410, 1411], plot_each_seed=False, plot_mjstep_error=False):
 
     cmap = plt.get_cmap('tab10')
     colors = cmap.colors
@@ -140,10 +140,6 @@ def compare_train_curve(folders, prefix, agents=['__env__'], seeds=[1409, 1410, 
         c = colors[i]
         all_curves = []
         seed_count = 0
-        # if '/' in folders[i]:
-        #     folder = folders[i]
-        # else:
-        #     folder = 'output/' + folders[i]
         for seed in seeds:
             if str(seed) not in os.listdir(folder):
                 continue
@@ -161,31 +157,32 @@ def compare_train_curve(folders, prefix, agents=['__env__'], seeds=[1409, 1410, 
         print (seed_count)
         print ([x[-1] for x in all_curves])
         l = min([len(x) for x in all_curves])
-        avg_curve = np.stack([x[:l] for x in all_curves])
-        timesteps = np.arange(avg_curve.shape[1]) * cfg.PPO.NUM_ENVS * cfg.PPO.TIMESTEPS
-        plt.plot(timesteps, avg_curve.mean(axis=0), c=c, label=f'{name} ({seed_count} seeds)')
-        plt.fill_between(timesteps, avg_curve.mean(axis=0) - avg_curve.std(axis=0), avg_curve.mean(axis=0) + avg_curve.std(axis=0), alpha=0.25)
+        all_curves = np.stack([x[:l] for x in all_curves])
+        curve_avg = all_curves.mean(axis=0)
+        curve_std = all_curves.std(axis=0)
+        timesteps = np.arange(curve_avg.shape[0]) * cfg.PPO.NUM_ENVS * cfg.PPO.TIMESTEPS
+        plt.plot(timesteps, curve_avg, c=c, label=f'{name} ({seed_count} seeds)')
+        plt.fill_between(timesteps, curve_avg - curve_std, curve_avg + curve_std, alpha=0.25)
         if plot_each_seed:
             for x in all_curves:
                 plt.plot(x[:l], c=c, alpha=0.5)
-        print (name, avg_curve.mean(axis=0)[-1])
+        print (name, curve_avg[-1])
+        if plot_mjstep_error:
+            with open(f'{folder}/1409/mjstep_error.txt', 'r') as f:
+                lines = f.readlines()
+            for line in lines:
+                if line.startswith('iter'):
+                    iter_num = eval(line[5:].split(',')[0])
+                    print (iter_num)
+                    try:
+                        plt.plot([iter_num * cfg.PPO.NUM_ENVS * cfg.PPO.TIMESTEPS, iter_num * cfg.PPO.NUM_ENVS * cfg.PPO.TIMESTEPS], [0, curve_avg[iter_num]], c=c, linestyle='--')
+                    except:
+                        break
     plt.legend(loc='upper center', bbox_to_anchor=(0.5, 0.1), ncols=2, prop = {'size':5})
     plt.xlabel('Timesteps')
     plt.ylabel('return')
     plt.savefig(f'figures/train_curve_{prefix}.png')
     plt.close()
-
-    # path = 'output/log_hypernet_1410/checkpoint_500.pt'
-    # m, _ = torch.load(path)
-    # plt.figure()
-    # plt.subplot(1, 2, 1)
-    # w = m.v_net.hnet.weight.data
-    # plt.hist(w.cpu().numpy().ravel())
-    # plt.subplot(1, 2, 2)
-    # w = m.mu_net.hnet.weight.data
-    # plt.hist(w.cpu().numpy().ravel())
-    # plt.savefig('figures/hypernet_weight.png')
-    # plt.close()
 
 
 def compare_train_curves(folders, names, agent='__env__'):

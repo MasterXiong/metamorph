@@ -178,6 +178,10 @@ class PPO:
         print ('Start training ...')
         for cur_iter in range(iter_start, cfg.PPO.MAX_ITERS):
 
+            # save the robots and processes that have mjstep error
+            process_with_error = []
+            robot_with_error = []
+
             # if cfg.MODEL.MLP.HN_INPUT:
             #     mu_net_input_mean = torch.zeros(len(cfg.ENV.WALKERS), cfg.MODEL.MAX_LIMBS).cuda()
             #     mu_net_input_std = torch.zeros(len(cfg.ENV.WALKERS), cfg.MODEL.MAX_LIMBS).cuda()
@@ -248,6 +252,8 @@ class PPO:
                             print (obs['act_padding_mask'][process_id], file=f)
                             # limb_obs = next_obs['proprioceptive'][process_id, :52].detach().cpu().numpy().ravel()
                             # print (limb_obs, file=f)
+                        process_with_error.append(process_id)
+                        robot_with_error.append(info['name'])
 
                 finished_episode_index = np.where(done)[0]
                 self.train_meter.add_ep_info(infos, cur_iter, finished_episode_index)
@@ -310,6 +316,9 @@ class PPO:
             unimal_ids = self.envs.get_unimal_idx()
             next_val = self.agent.get_value(obs, unimal_ids=unimal_ids)
             self.buffer.compute_returns(next_val)
+            # filter out unstable trajectories
+            self.buffer.filter(process_with_error)
+            # train on batch
             self.train_on_batch(cur_iter)
 
             # with open(f'{cfg.OUT_DIR}/iter_sampled_agents/{cur_iter}.pkl', 'wb') as f:
@@ -321,7 +330,7 @@ class PPO:
                 with open(f'{cfg.OUT_DIR}/proxy_score/{cur_iter}.pkl', 'wb') as f:
                     pickle.dump([self.task_sampler.potential_score, self.task_sampler.staleness_score], f)
 
-            self.train_meter.update_mean()
+            # self.train_meter.update_mean()
             if len(self.train_meter.mean_ep_rews["reward"]):
                 cur_rew = self.train_meter.mean_ep_rews["reward"][-1]
                 self.writer.add_scalar(
@@ -524,6 +533,11 @@ class PPO:
             #     else:
             #         print ('no new agents added in this iteration')
 
+            # remove unstable robots from the walkers
+            robot_with_error = set(robot_with_error)
+            self.train_meter.delete_agents(robot_with_error)
+            for agent in robot_with_error:
+                cfg.ENV.WALKERS.remove(agent)
             with open(f'{cfg.OUT_DIR}/walkers_train.json', 'w') as f:
                 json.dump(cfg.ENV.WALKERS, f)
             # sample agents for next iteration
@@ -532,7 +546,7 @@ class PPO:
         print("Finished Training: {}".format(self.file_prefix))
 
     def train_on_batch(self, cur_iter):
-        adv = self.buffer.ret - self.buffer.val
+        adv = self.buffer.ret[:, self.buffer.idx] - self.buffer.val[:, self.buffer.idx]
         adv = (adv - adv.mean()) / (adv.std() + 1e-5)
 
         ratio_hist = [[] for _ in range(cfg.PPO.EPOCHS)]
