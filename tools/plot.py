@@ -8,7 +8,7 @@ from collections import defaultdict
 import argparse
 from metamorph.config import cfg
 
-from analyze import plot_training_stats
+from tools.analyze import plot_training_stats
 
 
 def run():

@@ -74,26 +74,26 @@ class PPO:
         self.buffer = Buffer(self.envs.observation_space, self.envs.action_space.shape)
 
         # Optimizer for both actor and critic
-        if not cfg.MODEL.MLP.ANNEAL_HN_LR:
-            self.optimizer = optim.Adam(
-                self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS, weight_decay=cfg.PPO.WEIGHT_DECAY
-            )
-            self.lr_scale = [1. for _ in self.optimizer.param_groups]
-        else:
-            # reduce the learning rate for HN in MLP
-            parameters, self.lr_scale = [], []
-            if cfg.MODEL.TYPE == 'mlp' and cfg.MODEL.MLP.HN_INPUT:
-                for name, param in self.actor_critic.named_parameters():
-                    if 'context_encoder_for_input' in name or 'hnet_input' in name:
-                        parameters += [{'params': [param], 'lr': cfg.PPO.BASE_LR}]
-                        self.lr_scale.append(1. / cfg.MODEL.MAX_LIMBS)
-                    else:
-                        parameters += [{'params': [param]}]
-                        self.lr_scale.append(1.)
-                    print (name, self.lr_scale[-1])
-            self.optimizer = optim.Adam(
-                parameters, lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
-            )
+        # if not cfg.MODEL.MLP.ANNEAL_HN_LR:
+        self.optimizer = optim.Adam(
+            self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS, weight_decay=cfg.PPO.WEIGHT_DECAY
+        )
+        self.lr_scale = [1. for _ in self.optimizer.param_groups]
+        # else:
+        #     # reduce the learning rate for HN in MLP
+        #     parameters, self.lr_scale = [], []
+        #     if cfg.MODEL.TYPE == 'mlp' and cfg.MODEL.MLP.HN_INPUT:
+        #         for name, param in self.actor_critic.named_parameters():
+        #             if 'context_encoder_for_input' in name or 'hnet_input' in name:
+        #                 parameters += [{'params': [param], 'lr': cfg.PPO.BASE_LR}]
+        #                 self.lr_scale.append(1. / cfg.MODEL.MAX_LIMBS)
+        #             else:
+        #                 parameters += [{'params': [param]}]
+        #                 self.lr_scale.append(1.)
+        #             print (name, self.lr_scale[-1])
+        #     self.optimizer = optim.Adam(
+        #         parameters, lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
+        #     )
         # load optimizer state
         if cfg.PPO.CHECKPOINT_PATH and cfg.PPO.CONTINUE_TRAINING:
             self.optimizer.load_state_dict(optimizer_state)

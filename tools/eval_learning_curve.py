@@ -30,7 +30,7 @@ def evaluate_checkpoint(folder, test_set, interval=600, additional_suffix=None, 
                 break
             score = evaluate_model(model_path, agent_path, policy_folder, suffix=suffix, compute_gae=False, \
                 terminate_on_fall=True)
-            seed_scores[interval] = score
+            seed_scores[iteration] = score
             iteration += interval
         all_seed_scores.append(seed_scores)
     for iteration in all_seed_scores[0].keys():
@@ -43,7 +43,7 @@ def evaluate_checkpoint(folder, test_set, interval=600, additional_suffix=None, 
 
 if __name__ == '__main__':
     
-    # python tools/eval_learning_curve.py --folder output/ft_MLP_HN_IO_TF_encoder_p2_norm_uniform_sample_KL_5_wo_PE+dropout --test_set data/test --interval 1200 --suffix wo_reward_update
+    # python tools/eval_learning_curve.py --folder output/ft_MLP_HN_IO_MLP_encoder_bias_init_maximin_sample_KL_5_wo_PE+dropout --test_set data/test --interval 1200 --suffix wo_reward_update
     # python tools/eval_learning_curve.py --folder output/ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout/1409 --test_set unimals_100/train --interval 100
     # python tools/eval_learning_curve.py --folder output/ft_400M_baseline_uniform_sample_KL_5_wo_PE+dropout/1409 --test_set unimals_100/train_remove_level_1 --interval 100
     # python tools/eval_learning_curve.py --folder output/ft_400M_mutate_1000_uniform_sample_KL_5_wo_PE+dropout/1409
