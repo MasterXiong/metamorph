@@ -25,12 +25,30 @@ class Agent:
             'body_shape': np.array([[0.05, 0.], [0.1, 0.22627417]]), 
         }
 
+        # joint context is all 0 for torso
         self.joint_context = {
             'jnt_pos': np.array([[-0.05, -0.05, 0.], [0.05, 0.05, 0.05]]), 
             'joint_range': np.array([[-1.57079633, 0.], [0., 1.57079633]]), 
             'joint_axis': np.array([[-0.5000024, -0.5000024, -1.], [1., 1., 1.]]), 
             'gear': np.array([[0.], [300.]])
         }
+
+        self.all_joint_angles = np.array([
+            [-30, 0], 
+            [0, 30], 
+            [-30, 30], 
+            [-45, 45], 
+            [-45, 0], 
+            [0, 45], 
+            [-60, 0], 
+            [0, 60], 
+            [-60, 60], 
+            [-90, 0], 
+            [0, 90], 
+            [-60, 30], 
+            [-30, 60]
+        ], dtype=float)
+        self.all_gear = np.array([150, 200, 250, 300]).reshape(4, 1)
 
     def modify_xml_step(self, env, root, tree):
         # Store agent height
@@ -138,6 +156,7 @@ class Agent:
         ]
         # self.edges, self.connectivity, self.traversals, self.tree_PE, self.graph_PE, self.SWAT_RE = self._get_edges(sim)
         self.edges = self._get_edges(sim)
+        self.children_list = self.get_children_list(self.edges)
         env.metadata["num_limbs"] = len(self.agent_body_idxs)
         env.metadata["num_joints"] = len(sim.model.joint_names) - 1
         # Useful for attention map analysis
@@ -151,6 +170,17 @@ class Agent:
         env.metadata["joint_mask_for_node_graph"] = self.joint_mask_for_node_graph
 
         self.context_limb, self.context_joint = self.get_context(sim)
+
+    def get_children_list(self, edges):
+        children_list = defaultdict(list)
+        edges = np.array(edges).reshape(-1, 2)
+        for i in range(edges.shape[0]):
+            # omit the second joint for the same edge if it exists
+            if i != 0 and (edges[i] != edges[i - 1]).sum() == 0:
+                continue
+            child_id, parent_id = edges[i]
+            children_list[parent_id].append(child_id)
+        return children_list
 
     def get_joint_mask_for_node_graph(self, edge_names):
         limb_joint_types = defaultdict(list)
@@ -261,8 +291,33 @@ class Agent:
         # adjacency_matrix = adjacency_matrix[idx, :][:, idx]
         # graph_PE = pe.create_graph_PE(adjacency_matrix, cfg.MODEL.TRANSFORMER.GRAPH_PE_DIM)
 
+        # get adjacency matrix
+        self.adjacency_matrix = np.eye(cfg.MODEL.MAX_LIMBS)
+        for i in range(len(joint_to)):
+            child_idx, parent_idx = joint_to[i], joint_from[i]
+            self.adjacency_matrix[parent_idx, child_idx] = 1.
+            self.adjacency_matrix[child_idx, parent_idx] = 1.
+
         # return np.vstack((joint_to, joint_from)).T.flatten(), connectivity, traversals, tree_PE, graph_PE, relational_features
         return np.vstack((joint_to, joint_from)).T.flatten()
+
+    def relative_pos_to_absolute_pos(self, relative_pos):
+        absolute_pos = relative_pos.copy()
+
+        def add_parent_pos(parent_id):
+            for child_id in self.children_list[parent_id]:
+                absolute_pos[child_id] += absolute_pos[parent_id]
+                add_parent_pos(child_id)
+        
+        add_parent_pos(0)
+        return absolute_pos
+
+    def convert_to_one_hot(self, numerical_features, category_set):
+        one_hot_features = np.zeros([numerical_features.shape[0], len(category_set)])
+        for i in range(numerical_features.shape[0]):
+            category = np.argmin(((numerical_features[i][None, :] - category_set) ** 2).sum(axis=1))
+            one_hot_features[i, category] = 1
+        return one_hot_features
 
     def get_context(self, sim):
         context_limb = {}
@@ -275,7 +330,13 @@ class Agent:
         # Hardware property
         context_limb["body_mass"] = sim.model.body_mass[body_idxs].copy()[:, np.newaxis]
         context_limb["body_shape"] = sim.model.geom_size[self.agent_geom_idxs, :2].copy()
+        # context_limb["body_density"] = sim.model.density
+        # context_limb["body_density"] = context_limb["body_mass"] / context_limb["body_shape"][:, 1].reshape(-1, 1)
         context_limb["body_friction"] = sim.model.geom_friction[self.agent_geom_idxs, 0:1].copy()
+
+        # get the absolute pos of each limb
+        context_limb["absolute_body_pos"] = self.relative_pos_to_absolute_pos(context_limb["body_pos"])
+        context_limb["absolute_body_ipos"] = context_limb["absolute_body_pos"] + context_limb["body_ipos"]
 
         for key in self.limb_context:
             lower_bound, upper_bound = self.limb_context[key][0], self.limb_context[key][1]
@@ -290,6 +351,11 @@ class Agent:
         context_joint["gear"] = sim.model.actuator_gear[:, 0:1].copy()
         context_joint["armature"] = sim.model.dof_armature[6:].copy()[:, np.newaxis]
         context_joint["damping"] = sim.model.dof_damping[6:].copy()[:, np.newaxis]
+
+        # convert joint_range to one-hot form
+        context_joint["joint_range_onehot"] = self.convert_to_one_hot(np.degrees(context_joint["joint_range"]), self.all_joint_angles)
+        # convert gear to one-hot form
+        context_joint["gear_onehot"] = self.convert_to_one_hot(context_joint["gear"], self.all_gear)
 
         for key in self.joint_context:
             lower_bound, upper_bound = self.joint_context[key][0], self.joint_context[key][1]
@@ -416,6 +482,7 @@ class Agent:
             # 'node_path_length': node_path_length, 
             # 'node_path_mask': node_path_mask, 
             # 'SWAT_RE': self.SWAT_RE, 
+            "adjacency_matrix": self.adjacency_matrix, 
         }
 
     def _add_fixed_cameras(self, worldbody):

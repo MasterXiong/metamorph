@@ -383,22 +383,23 @@ _C.MODEL.PROPRIOCEPTIVE_OBS_TYPES = [
     # "joint_range", "joint_axis", "gear" # joint hardware
 ]
 
-_C.MODEL.CONTEXT_OBS_TYPES = [
-    "body_pos", "body_ipos", "body_iquat", "geom_quat", # limb model
-    "body_mass", "body_shape", # limb hardware
-    "jnt_pos", # joint model
-    "joint_range", "joint_axis", "gear" # joint hardware
-]
 # _C.MODEL.CONTEXT_OBS_TYPES = [
-#     "absolute_body_pos", "absolute_body_ipos", "body_iquat", # limb model
+#     "body_pos", "body_ipos", "body_iquat", "geom_quat", # limb model
 #     "body_mass", "body_shape", # limb hardware
-#     "joint_range_onehot", "joint_axis", "gear_onehot" # joint hardware
+#     "jnt_pos", # joint model
+#     "joint_range", "joint_axis", "gear" # joint hardware
 # ]
+_C.MODEL.CONTEXT_OBS_TYPES = [
+    "absolute_body_pos", "absolute_body_ipos", "body_iquat", # limb model
+    "body_mass", "body_shape", # limb hardware
+    "joint_range_onehot", "joint_axis", "gear_onehot" # joint hardware
+]
 
 # Model specific observation types to keep
 _C.MODEL.OBS_TYPES = [
     "proprioceptive", "edges", "obs_padding_mask", "act_padding_mask", 
     "context", 
+    "adjacency_matrix", 
     # "connectivity", 
     # "node_depth", 
     # "traversals", 
@@ -449,6 +450,9 @@ _C.MODEL.MLP.ONE_HOT_CONTEXT = False
 _C.MODEL.MLP.BIAS_IN_HN_OUTPUT_LAYER = True
 # whether to use HN to generate bias of the base network
 _C.MODEL.MLP.HN_GENERATE_BIAS = False
+# 
+_C.MODEL.MLP.ENCODE_CONTEXT = True
+
 
 # hyperparameters for transformers
 _C.MODEL.TRANSFORMER = CN()

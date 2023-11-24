@@ -12,6 +12,7 @@ from metamorph.utils import model as tu
 
 from .transformer import TransformerEncoder
 from .transformer import TransformerEncoderLayerResidual
+from .gnn import GraphNeuralNetwork
 
 import time
 import matplotlib.pyplot as plt
@@ -42,6 +43,7 @@ class MLPModel(nn.Module):
             if self.model_args.CONTEXT_ENCODER_TYPE == 'linear':
                 self.context_encoder_for_input = tu.make_mlp_default(context_encoder_dim)
             elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
+                # self.context_embed_input = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                 context_embed = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                 context_encoder_layers = TransformerEncoderLayerResidual(
                     cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE,
@@ -56,6 +58,15 @@ class MLPModel(nn.Module):
                 self.context_encoder_for_input = nn.Sequential(
                     context_embed, 
                     context_encoder_TF, 
+                )
+                # self.context_encoder_for_input = context_encoder_TF
+            elif self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                # self.context_embed_input = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                self.context_encoder_for_input = GraphNeuralNetwork(
+                    input_dim = context_obs_size, 
+                    hidden_dims = [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE], 
+                    output_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
+                    final_nonlinearity=True
                 )
 
             self.hnet_input_weight = nn.Linear(HN_input_dim, limb_obs_size * self.model_args.HIDDEN_DIM, bias=self.model_args.BIAS_IN_HN_OUTPUT_LAYER)
@@ -105,6 +116,7 @@ class MLPModel(nn.Module):
                 self.context_encoder_for_output = tu.make_mlp_default(context_encoder_dim)
             elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
                 context_embed = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                # self.context_embed_output = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                 context_encoder_layers = TransformerEncoderLayerResidual(
                     cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE,
                     cfg.MODEL.TRANSFORMER.NHEAD,
@@ -118,6 +130,15 @@ class MLPModel(nn.Module):
                 self.context_encoder_for_output = nn.Sequential(
                     context_embed, 
                     context_encoder_TF, 
+                )
+                # self.context_encoder_for_output = context_encoder_TF
+            elif self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                # self.context_embed_output = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                self.context_encoder_for_output = GraphNeuralNetwork(
+                    input_dim = context_obs_size, 
+                    hidden_dims = [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE], 
+                    output_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
+                    final_nonlinearity=True
                 )
 
             self.hnet_output_weight = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM * self.limb_out_dim, bias=self.model_args.BIAS_IN_HN_OUTPUT_LAYER)
@@ -190,7 +211,12 @@ class MLPModel(nn.Module):
                 context_embedding = torch.eye(self.seq_len, device='cuda').unsqueeze(0).repeat(batch_size, 1, 1)
             else:
                 context_embedding = obs_context
-            context_embedding = self.context_encoder_for_input(context_embedding)
+            # context_embedding = self.context_embed_input(context_embedding)
+            # context_embedding = self.context_encoder_for_input(context_embedding, src_key_padding_mask=obs_mask)
+            if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                context_embedding = self.context_encoder_for_input(context_embedding, morphology_info["adjacency_matrix"])
+            else:
+                context_embedding = self.context_encoder_for_input(context_embedding)
             if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
                 context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
             input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
@@ -253,7 +279,12 @@ class MLPModel(nn.Module):
             else:
                 context_embedding = obs_context.reshape(batch_size, self.seq_len, -1)
 
-            context_embedding = self.context_encoder_for_output(context_embedding)
+            # context_embedding = self.context_embed_output(context_embedding)
+            # context_embedding = self.context_encoder_for_output(context_embedding, src_key_padding_mask=obs_mask)
+            if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                context_embedding = self.context_encoder_for_output(context_embedding, morphology_info["adjacency_matrix"])
+            else:
+                context_embedding = self.context_encoder_for_output(context_embedding)
             if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
                 context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
             output_weight = self.hnet_output_weight(context_embedding).reshape(batch_size, self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim)
@@ -947,6 +978,7 @@ class ActorCritic(nn.Module):
 
         # start = time.time()
         morphology_info = {}
+        morphology_info["adjacency_matrix"] = obs_dict["adjacency_matrix"]
         if cfg.MODEL.TRANSFORMER.USE_CONNECTIVITY_IN_ATTENTION:
             morphology_info['connectivity'] = obs_dict['connectivity'].bool()
         if cfg.MODEL.TRANSFORMER.USE_MORPHOLOGY_INFO_IN_ATTENTION:
