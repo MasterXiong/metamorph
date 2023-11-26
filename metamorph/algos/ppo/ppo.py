@@ -330,7 +330,7 @@ class PPO:
                 with open(f'{cfg.OUT_DIR}/proxy_score/{cur_iter}.pkl', 'wb') as f:
                     pickle.dump([self.task_sampler.potential_score, self.task_sampler.staleness_score], f)
 
-            # self.train_meter.update_mean()
+            self.train_meter.update_mean()
             if len(self.train_meter.mean_ep_rews["reward"]):
                 cur_rew = self.train_meter.mean_ep_rews["reward"][-1]
                 self.writer.add_scalar(
