@@ -240,6 +240,11 @@ class PPO:
                     else:
                         next_obs, reward, done, infos = self.envs.step(act)
 
+                # if step % 200 == 0:
+                #     embedding = self.agent.ac.mu_net.context_embedding_input.detach()
+                #     scale = (embedding ** 2).sum(dim=-1) * (1. - obs['obs_padding_mask'].float())
+                #     print (scale[0])
+
                 for process_id, info in enumerate(infos):
                     if info['mj_step_error']:
                         with open(f'{cfg.OUT_DIR}/mjstep_error.txt', 'a') as f:

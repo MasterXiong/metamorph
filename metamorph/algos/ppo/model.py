@@ -43,7 +43,6 @@ class MLPModel(nn.Module):
             if self.model_args.CONTEXT_ENCODER_TYPE == 'linear':
                 self.context_encoder_for_input = tu.make_mlp_default(context_encoder_dim)
             elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
-                # self.context_embed_input = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                 context_embed = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                 context_encoder_layers = TransformerEncoderLayerResidual(
                     cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE,
@@ -55,11 +54,14 @@ class MLPModel(nn.Module):
                 context_encoder_TF = TransformerEncoder(
                     context_encoder_layers, 1, norm=None,
                 )
-                self.context_encoder_for_input = nn.Sequential(
-                    context_embed, 
-                    context_encoder_TF, 
-                )
-                # self.context_encoder_for_input = context_encoder_TF
+                if self.model_args.CONTEXT_MASK:
+                    self.context_embed_input = context_embed
+                    self.context_encoder_for_input = context_encoder_TF
+                else:
+                    self.context_encoder_for_input = nn.Sequential(
+                        context_embed, 
+                        context_encoder_TF, 
+                    )
             elif self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
                 # self.context_embed_input = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                 self.context_encoder_for_input = GraphNeuralNetwork(
@@ -112,34 +114,39 @@ class MLPModel(nn.Module):
 
         if self.model_args.HN_OUTPUT:
             print ('use HN for output layer')
-            if self.model_args.CONTEXT_ENCODER_TYPE == 'linear':
-                self.context_encoder_for_output = tu.make_mlp_default(context_encoder_dim)
-            elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
-                context_embed = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
-                # self.context_embed_output = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
-                context_encoder_layers = TransformerEncoderLayerResidual(
-                    cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE,
-                    cfg.MODEL.TRANSFORMER.NHEAD,
-                    256,
-                    cfg.MODEL.TRANSFORMER.DROPOUT,
-                    batch_first=True, 
-                )
-                context_encoder_TF = TransformerEncoder(
-                    context_encoder_layers, 1, norm=None,
-                )
-                self.context_encoder_for_output = nn.Sequential(
-                    context_embed, 
-                    context_encoder_TF, 
-                )
-                # self.context_encoder_for_output = context_encoder_TF
-            elif self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
-                # self.context_embed_output = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
-                self.context_encoder_for_output = GraphNeuralNetwork(
-                    input_dim = context_obs_size, 
-                    hidden_dims = [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE], 
-                    output_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
-                    final_nonlinearity=True
-                )
+            if self.model_args.SHARE_CONTEXT_ENCODER:
+                self.context_encoder_for_output = self.context_encoder_for_input
+            else:
+                if self.model_args.CONTEXT_ENCODER_TYPE == 'linear':
+                    self.context_encoder_for_output = tu.make_mlp_default(context_encoder_dim)
+                elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
+                    context_embed = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                    context_encoder_layers = TransformerEncoderLayerResidual(
+                        cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE,
+                        cfg.MODEL.TRANSFORMER.NHEAD,
+                        256,
+                        cfg.MODEL.TRANSFORMER.DROPOUT,
+                        batch_first=True, 
+                    )
+                    context_encoder_TF = TransformerEncoder(
+                        context_encoder_layers, 1, norm=None,
+                    )
+                    if self.model_args.CONTEXT_MASK:
+                        self.context_embed_output = context_embed
+                        self.context_encoder_for_output = context_encoder_TF
+                    else:
+                        self.context_encoder_for_output = nn.Sequential(
+                            context_embed, 
+                            context_encoder_TF, 
+                        )
+                elif self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                    # self.context_embed_output = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                    self.context_encoder_for_output = GraphNeuralNetwork(
+                        input_dim = context_obs_size, 
+                        hidden_dims = [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE], 
+                        output_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
+                        final_nonlinearity=True
+                    )
 
             self.hnet_output_weight = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM * self.limb_out_dim, bias=self.model_args.BIAS_IN_HN_OUTPUT_LAYER)
 
@@ -177,13 +184,14 @@ class MLPModel(nn.Module):
             initrange = np.sqrt(1 / self.model_args.HIDDEN_DIM)
             self.output_layer.weight.data.normal_(std=initrange)
 
-        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-            self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
-            hidden_dims = [self.model_args.HIDDEN_DIM + self.hfield_encoder.obs_feat_dim] + [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM - 1)]
-            self.hidden_layers = tu.make_mlp_default(hidden_dims)
-        else:
-            hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
-            self.hidden_layers = tu.make_mlp_default(hidden_dims)
+        if self.model_args.LAYER_NUM > 1:
+            if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+                self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
+                hidden_dims = [self.model_args.HIDDEN_DIM + self.hfield_encoder.obs_feat_dim] + [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM - 1)]
+                self.hidden_layers = tu.make_mlp_default(hidden_dims)
+            else:
+                hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
+                self.hidden_layers = tu.make_mlp_default(hidden_dims)
 
         if self.model_args.PER_ROBOT_HIDDEN_LAYERS:
             initrange = 1. / 16
@@ -215,6 +223,12 @@ class MLPModel(nn.Module):
             # context_embedding = self.context_encoder_for_input(context_embedding, src_key_padding_mask=obs_mask)
             if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
                 context_embedding = self.context_encoder_for_input(context_embedding, morphology_info["adjacency_matrix"])
+            elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
+                if self.model_args.CONTEXT_MASK:
+                    context_embedding = self.context_embed_input(context_embedding)
+                    context_embedding = self.context_encoder_for_input(context_embedding, src_key_padding_mask=obs_mask)
+                else:
+                    context_embedding = self.context_encoder_for_input(context_embedding)
             else:
                 context_embedding = self.context_encoder_for_input(context_embedding)
             if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
@@ -261,15 +275,16 @@ class MLPModel(nn.Module):
             embedding = torch.cat([embedding, hfield_embedding], 1)
         
         # hidden layers
-        if not self.model_args.PER_ROBOT_HIDDEN_LAYERS:
-            embedding = self.hidden_layers(embedding)
-        else:
-            embedding = (embedding[:, :, None] * self.hidden_weights_1[unimal_ids]).sum(dim=-2) + self.hidden_bias_1[unimal_ids]
-            embedding = F.relu(embedding)
-            embedding = (embedding[:, :, None] * self.hidden_weights_2[unimal_ids]).sum(dim=-2) + self.hidden_bias_2[unimal_ids]
-            embedding = F.relu(embedding)
-            embedding = (embedding[:, :, None] * self.hidden_weights_3[unimal_ids]).sum(dim=-2) + self.hidden_bias_3[unimal_ids]
-            embedding = F.relu(embedding)
+        if self.model_args.LAYER_NUM > 1:
+            if not self.model_args.PER_ROBOT_HIDDEN_LAYERS:
+                embedding = self.hidden_layers(embedding)
+            else:
+                embedding = (embedding[:, :, None] * self.hidden_weights_1[unimal_ids]).sum(dim=-2) + self.hidden_bias_1[unimal_ids]
+                embedding = F.relu(embedding)
+                embedding = (embedding[:, :, None] * self.hidden_weights_2[unimal_ids]).sum(dim=-2) + self.hidden_bias_2[unimal_ids]
+                embedding = F.relu(embedding)
+                embedding = (embedding[:, :, None] * self.hidden_weights_3[unimal_ids]).sum(dim=-2) + self.hidden_bias_3[unimal_ids]
+                embedding = F.relu(embedding)
 
         # output layer
         if self.model_args.HN_OUTPUT:
@@ -283,6 +298,12 @@ class MLPModel(nn.Module):
             # context_embedding = self.context_encoder_for_output(context_embedding, src_key_padding_mask=obs_mask)
             if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
                 context_embedding = self.context_encoder_for_output(context_embedding, morphology_info["adjacency_matrix"])
+            elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
+                if self.model_args.CONTEXT_MASK:
+                    context_embedding = self.context_embed_output(context_embedding)
+                    context_embedding = self.context_encoder_for_output(context_embedding, src_key_padding_mask=obs_mask)
+                else:
+                    context_embedding = self.context_encoder_for_output(context_embedding)
             else:
                 context_embedding = self.context_encoder_for_output(context_embedding)
             if self.model_args.HN_INIT_STRATEGY == 'p2_norm':

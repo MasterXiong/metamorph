@@ -450,9 +450,10 @@ _C.MODEL.MLP.ONE_HOT_CONTEXT = False
 _C.MODEL.MLP.BIAS_IN_HN_OUTPUT_LAYER = True
 # whether to use HN to generate bias of the base network
 _C.MODEL.MLP.HN_GENERATE_BIAS = False
-# 
-_C.MODEL.MLP.ENCODE_CONTEXT = True
-
+# whether to use obs mask in TF context encoder
+_C.MODEL.MLP.CONTEXT_MASK = False
+# share context encoder for different layers
+_C.MODEL.MLP.SHARE_CONTEXT_ENCODER = False
 
 # hyperparameters for transformers
 _C.MODEL.TRANSFORMER = CN()
