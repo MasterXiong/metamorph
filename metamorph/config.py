@@ -437,6 +437,7 @@ _C.MODEL.MLP.LAYER_NUM = 3
 _C.MODEL.MLP.CONTEXT_ENCODER_TYPE = 'linear'
 _C.MODEL.MLP.HN_INPUT = False
 _C.MODEL.MLP.HN_OUTPUT = False
+_C.MODEL.MLP.HN_HIDDEN = False
 _C.MODEL.MLP.PER_NODE_EMBED = False
 _C.MODEL.MLP.PER_NODE_DECODER = False
 _C.MODEL.MLP.PER_ROBOT_HIDDEN_LAYERS = False
@@ -454,6 +455,8 @@ _C.MODEL.MLP.HN_GENERATE_BIAS = False
 _C.MODEL.MLP.CONTEXT_MASK = False
 # share context encoder for different layers
 _C.MODEL.MLP.SHARE_CONTEXT_ENCODER = False
+# use different lr for HN
+_C.MODEL.MLP.ADJUST_LR = False
 
 # hyperparameters for transformers
 _C.MODEL.TRANSFORMER = CN()

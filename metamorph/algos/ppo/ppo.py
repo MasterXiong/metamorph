@@ -74,26 +74,29 @@ class PPO:
         self.buffer = Buffer(self.envs.observation_space, self.envs.action_space.shape)
 
         # Optimizer for both actor and critic
-        # if not cfg.MODEL.MLP.ANNEAL_HN_LR:
-        self.optimizer = optim.Adam(
-            self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS, weight_decay=cfg.PPO.WEIGHT_DECAY
-        )
-        self.lr_scale = [1. for _ in self.optimizer.param_groups]
-        # else:
-        #     # reduce the learning rate for HN in MLP
-        #     parameters, self.lr_scale = [], []
-        #     if cfg.MODEL.TYPE == 'mlp' and cfg.MODEL.MLP.HN_INPUT:
-        #         for name, param in self.actor_critic.named_parameters():
-        #             if 'context_encoder_for_input' in name or 'hnet_input' in name:
-        #                 parameters += [{'params': [param], 'lr': cfg.PPO.BASE_LR}]
-        #                 self.lr_scale.append(1. / cfg.MODEL.MAX_LIMBS)
-        #             else:
-        #                 parameters += [{'params': [param]}]
-        #                 self.lr_scale.append(1.)
-        #             print (name, self.lr_scale[-1])
-        #     self.optimizer = optim.Adam(
-        #         parameters, lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
-        #     )
+        if not cfg.MODEL.MLP.ADJUST_LR:
+            self.optimizer = optim.Adam(
+                self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS, weight_decay=cfg.PPO.WEIGHT_DECAY
+            )
+            self.lr_scale = [1. for _ in self.optimizer.param_groups]
+        else:
+            # reduce the learning rate for the final linear layer of HN
+            params, self.lr_scale = [{'params': [], 'lr': cfg.PPO.BASE_LR} for _ in range(5)], [1. for _ in range(5)]
+            for name, param in self.actor_critic.named_parameters():
+                if 'mu_net.hnet_input_weight' in name:
+                    params[1]['params'].append(param)
+                elif 'mu_net.hnet_output_weight' in name:
+                    params[2]['params'].append(param)
+                elif 'v_net.hnet_input_weight' in name:
+                    params[3]['params'].append(param)
+                elif 'v_net.hnet_output_weight' in name:
+                    params[4]['params'].append(param)
+                else:
+                    params[0]['params'].append(param)
+            print (params[1:])
+            self.optimizer = optim.Adam(
+                params, lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS
+            )
         # load optimizer state
         if cfg.PPO.CHECKPOINT_PATH and cfg.PPO.CONTINUE_TRAINING:
             self.optimizer.load_state_dict(optimizer_state)
@@ -112,6 +115,7 @@ class PPO:
         os.system(f'mkdir {cfg.OUT_DIR}/iter_prob')
         os.system(f'mkdir {cfg.OUT_DIR}/proxy_score')
         os.system(f'mkdir {cfg.OUT_DIR}/weight_stats')
+        os.system(f'mkdir {cfg.OUT_DIR}/context_embedding_norm')
 
         self.ST_performance = None
         self.last_probs = None
@@ -200,8 +204,8 @@ class PPO:
             if cfg.PPO.EARLY_EXIT and cur_iter >= cfg.PPO.EARLY_EXIT_MAX_ITERS:
                 break
             
-            lr = ou.get_iter_lr(cur_iter)
-            ou.set_lr(self.optimizer, lr, self.lr_scale)
+            self.iter_lr = lr = ou.get_iter_lr(cur_iter)
+            ou.set_lr(self.optimizer, lr, [1. for _ in range(5)])
 
             for step in range(cfg.PPO.TIMESTEPS):
                 # Sample actions
@@ -558,6 +562,15 @@ class PPO:
         grad_norm_dict, grad_correlation_dict = defaultdict(list), defaultdict(list)
         limb_ratio_record = []
 
+        def get_scale(embedding, mask, limb_num):
+            norm_square = (embedding ** 2).sum(dim=-1).detach()
+            scale = (norm_square * mask).sum().item() / limb_num
+            return 1. / scale
+
+        # batch_context_embedding = {
+        #     'mean': [], 
+        #     'var': [], 
+        # }
         for i in range(cfg.PPO.EPOCHS):
             batch_sampler = self.buffer.get_sampler(adv)
 
@@ -571,11 +584,26 @@ class PPO:
                 ratio = torch.exp(logp - batch["logp_old"])
                 approx_kl = (batch["logp_old"] - logp).mean().item()
 
+                # save context embedding stats
+                if cfg.MODEL.MLP.ADJUST_LR:
+                    # mask = 1. - batch['obs']['obs_padding_mask'].float()
+                    # limb_num = mask.sum().item()
+                    # mu_input_HN_scale = get_scale(self.actor_critic.mu_net.context_embedding_input, mask, limb_num)
+                    # mu_output_HN_scale = get_scale(self.actor_critic.mu_net.context_embedding_output, mask, limb_num)
+                    # v_input_HN_scale = get_scale(self.actor_critic.v_net.context_embedding_input, mask, limb_num)
+                    # v_output_HN_scale = get_scale(self.actor_critic.v_net.context_embedding_output, mask, limb_num)
+                    # lr_scale = [1., mu_input_HN_scale, mu_output_HN_scale, v_input_HN_scale, v_output_HN_scale]
+                    lr_scale = [1., 0.1, 0.1, 0.1, 0.1]
+                # batch_context_embedding['mean'].append(embedding_norm.mean().item())
+                # batch_context_embedding['var'].append(embedding_norm.var().item())
+
                 if cfg.PPO.KL_TARGET_COEF is not None and approx_kl > cfg.PPO.KL_TARGET_COEF * 0.01:
                     self.train_meter.add_train_stat("approx_kl", approx_kl)
                     if cfg.SAVE_HIST_RATIO:
                         with open(os.path.join(cfg.OUT_DIR, 'ratio_hist', f'ratio_hist_{cur_iter}.pkl'), 'wb') as f:
                             pickle.dump(ratio_hist, f)
+                    # with open(f'{cfg.OUT_DIR}/context_embedding_norm/{cur_iter}.pkl', 'wb') as f:
+                    #     pickle.dump(batch_context_embedding, f)
                     print (f'early stop iter {cur_iter} at epoch {i + 1}/{cfg.PPO.EPOCHS}, batch {j + 1} with approx_kl {approx_kl}')
                     return
 
@@ -632,9 +660,14 @@ class PPO:
                 self.train_meter.add_train_stat("surr2", surr2.mean().item())
                 self.train_meter.add_train_stat("clip_frac", clip_frac)
 
+                if cfg.MODEL.MLP.ADJUST_LR:
+                    ou.set_lr(self.optimizer, self.iter_lr, lr_scale)
+
                 self.optimizer.step()
 
         # self.std_record.append(std_record)
+        # with open(f'{cfg.OUT_DIR}/context_embedding_norm/{cur_iter}.pkl', 'wb') as f:
+        #     pickle.dump(batch_context_embedding, f)
 
         if cfg.SAVE_LIMB_RATIO and cur_iter % self.stat_save_freq == 0:
             # save the grad results
