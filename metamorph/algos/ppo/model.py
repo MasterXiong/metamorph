@@ -332,7 +332,7 @@ class MLPModel(nn.Module):
             context_embedding = self.context_encoder_for_hidden(obs_context)
             # aggregate the context embedding
             # TODO: which aggregation function to use here?
-            context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1)
+            context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
             for layer in self.HN_hidden_weight:
                 weight = layer(context_embedding).view(batch_size, self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM)
                 embedding = (embedding[:, :, None] * weight).sum(dim=1)
