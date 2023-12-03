@@ -178,7 +178,8 @@ def compare_train_curve(folders, prefix, agents=['__env__'], seeds=[1409, 1410, 
                         plt.plot([iter_num * cfg.PPO.NUM_ENVS * cfg.PPO.TIMESTEPS, iter_num * cfg.PPO.NUM_ENVS * cfg.PPO.TIMESTEPS], [0, curve_avg[iter_num]], c=c, linestyle='--')
                     except:
                         break
-    plt.legend(loc='upper center', bbox_to_anchor=(0.5, 0.1), ncols=2, prop = {'size':5})
+    # plt.legend(loc='upper center', bbox_to_anchor=(0.5, 0.1), ncols=2, prop = {'size':5})
+    plt.legend(loc='lower right', ncols=1, prop = {'size':5})
     plt.xlabel('Timesteps')
     plt.ylabel('return')
     plt.savefig(f'figures/train_curve_{prefix}.png')
@@ -235,6 +236,23 @@ def compare_per_robot_score(folders):
     plt.savefig(f'figures/per_robot_train_score.png')
     plt.close()
 
+
+def analyze_context_embedding_norm(folder):
+    norm_mean, norm_var = [], []
+    for i in range(1210):
+        if not os.path.exists(f'{folder}/1409/context_embedding_norm/{i}.pkl'):
+            break
+        with open(f'{folder}/1409/context_embedding_norm/{i}.pkl', 'rb') as f:
+            record = pickle.load(f)
+        norm_mean.append(np.mean(record['mean']))
+        norm_var.append(np.mean(record['var']))
+    norm_mean = np.array(norm_mean)
+    norm_std = np.sqrt(np.array(norm_var))
+    plt.figure()
+    plt.plot(norm_mean)
+    plt.savefig('figures/context_embeddding_norm.png')
+    plt.close()
+    
 
 # def build_unimals_hard():
 #     agents = os.listdir('unimals_single_task')
