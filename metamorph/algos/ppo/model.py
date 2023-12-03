@@ -93,7 +93,8 @@ class MLPModel(nn.Module):
                 # use a heuristic value as the init range
                 initrange = 0.001
                 self.hnet_input_weight.weight.data.uniform_(-initrange, initrange)
-                self.hnet_input_weight.bias.data.zero_()
+                if self.model_args.BIAS_IN_HN_OUTPUT_LAYER:
+                    self.hnet_input_weight.bias.data.zero_()
 
             if self.model_args.HN_GENERATE_BIAS:
                 self.hnet_input_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
@@ -168,7 +169,8 @@ class MLPModel(nn.Module):
             else:
                 initrange = 0.001
                 self.hnet_output_weight.weight.data.uniform_(-initrange, initrange)
-                self.hnet_output_weight.bias.data.zero_()
+                if self.model_args.BIAS_IN_HN_OUTPUT_LAYER:
+                    self.hnet_output_weight.bias.data.zero_()
 
             if self.model_args.HN_GENERATE_BIAS:
                 self.hnet_output_bias = nn.Linear(HN_input_dim, self.limb_out_dim)
@@ -184,7 +186,67 @@ class MLPModel(nn.Module):
             initrange = np.sqrt(1 / self.model_args.HIDDEN_DIM)
             self.output_layer.weight.data.normal_(std=initrange)
 
-        if self.model_args.LAYER_NUM > 1:
+        if self.model_args.HN_HIDDEN:
+            print ('use HN for hidden layer')
+            if not self.model_args.SHARE_CONTEXT_ENCODER:
+                if self.model_args.CONTEXT_ENCODER_TYPE == 'linear':
+                    self.context_encoder_for_hidden = tu.make_mlp_default(context_encoder_dim)
+                elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
+                    context_embed = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                    context_encoder_layers = TransformerEncoderLayerResidual(
+                        cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE,
+                        cfg.MODEL.TRANSFORMER.NHEAD,
+                        256,
+                        cfg.MODEL.TRANSFORMER.DROPOUT,
+                        batch_first=True, 
+                    )
+                    context_encoder_TF = TransformerEncoder(
+                        context_encoder_layers, 1, norm=None,
+                    )
+                    if self.model_args.CONTEXT_MASK:
+                        self.context_embed_hidden = context_embed
+                        self.context_encoder_for_hidden = context_encoder_TF
+                    else:
+                        self.context_encoder_for_hidden = nn.Sequential(
+                            context_embed, 
+                            context_encoder_TF, 
+                        )
+                elif self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                    # self.context_embed_output = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                    self.context_encoder_for_hidden = GraphNeuralNetwork(
+                        input_dim = context_obs_size, 
+                        hidden_dims = [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE], 
+                        output_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
+                        final_nonlinearity=True
+                    )
+
+            HN_output_layers = []
+            for i in range(self.model_args.LAYER_NUM - 1):
+                output_layer = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM * self.model_args.HIDDEN_DIM, bias=self.model_args.BIAS_IN_HN_OUTPUT_LAYER)
+                if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
+                    initrange = np.sqrt(1 / self.model_args.HIDDEN_DIM)
+                    output_layer.weight.data.normal_(std=initrange)
+                    if self.model_args.BIAS_IN_HN_OUTPUT_LAYER:
+                        output_layer.bias.data.zero_()
+                elif self.model_args.HN_INIT_STRATEGY == 'HN_paper':
+                    # Var = d_hidden * d_contexts * E[e^2]
+                    # hardcode E[e^2]: 16
+                    initrange = np.sqrt(1 / (self.model_args.HIDDEN_DIM * HN_input_dim * 16))
+                    output_layer.weight.data.normal_(std=initrange)
+                    output_layer.bias.data.zero_()
+                elif self.model_args.HN_INIT_STRATEGY == 'bias_init':
+                    initrange = np.sqrt(1 / self.model_args.HIDDEN_DIM)
+                    output_layer.weight.data.zero_()
+                    output_layer.bias.data.normal_(std=initrange)
+                else:
+                    initrange = 0.001
+                    output_layer.weight.data.uniform_(-initrange, initrange)
+                    if self.model_args.BIAS_IN_HN_OUTPUT_LAYER:
+                        output_layer.bias.data.zero_()
+                HN_output_layers.append(output_layer)
+            self.HN_hidden_weight = nn.ModuleList(HN_output_layers)
+
+        elif self.model_args.LAYER_NUM > 1:
             if "hfield" in cfg.ENV.KEYS_TO_KEEP:
                 self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
                 hidden_dims = [self.model_args.HIDDEN_DIM + self.hfield_encoder.obs_feat_dim] + [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM - 1)]
@@ -193,20 +255,11 @@ class MLPModel(nn.Module):
                 hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
                 self.hidden_layers = tu.make_mlp_default(hidden_dims)
 
-        if self.model_args.PER_ROBOT_HIDDEN_LAYERS:
-            initrange = 1. / 16
-            self.hidden_weights_1 = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
-            self.hidden_bias_1 = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
-            self.hidden_weights_2 = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
-            self.hidden_bias_2 = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
-            self.hidden_weights_3 = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
-            self.hidden_bias_3 = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
-
     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, unimal_ids=None):
 
         batch_size = obs.shape[0]
 
-        obs_context = obs_context.reshape(batch_size, self.seq_len, -1)
+        obs_context = obs_context.view(batch_size, self.seq_len, -1)
         if self.model_args.LIMB_ONE_HOT:
             # concatenate one-hot limb id to the context features
             coding = torch.eye(self.seq_len, device='cuda').unsqueeze(0).repeat(batch_size, 1, 1)
@@ -233,12 +286,12 @@ class MLPModel(nn.Module):
                 context_embedding = self.context_encoder_for_input(context_embedding)
             if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
                 context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
-            input_weight = self.hnet_input_weight(context_embedding).reshape(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
+            input_weight = self.hnet_input_weight(context_embedding).view(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
             # save for diagnose
             self.context_embedding_input = context_embedding
             self.input_weight = input_weight
 
-            obs = obs.reshape(batch_size, self.seq_len, -1)
+            obs = obs.view(batch_size, self.seq_len, -1)
             if self.model_args.HN_GENERATE_BIAS:
                 input_bias = self.hnet_input_bias(context_embedding)
                 embedding = (obs[:, :, :, None] * input_weight).sum(dim=-2) + input_bias
@@ -275,16 +328,18 @@ class MLPModel(nn.Module):
             embedding = torch.cat([embedding, hfield_embedding], 1)
         
         # hidden layers
-        if self.model_args.LAYER_NUM > 1:
-            if not self.model_args.PER_ROBOT_HIDDEN_LAYERS:
-                embedding = self.hidden_layers(embedding)
-            else:
-                embedding = (embedding[:, :, None] * self.hidden_weights_1[unimal_ids]).sum(dim=-2) + self.hidden_bias_1[unimal_ids]
+        if self.model_args.HN_HIDDEN:
+            context_embedding = self.context_encoder_for_hidden(obs_context)
+            # aggregate the context embedding
+            # TODO: which aggregation function to use here?
+            context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1)
+            for layer in self.HN_hidden_weight:
+                weight = layer(context_embedding).view(batch_size, self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM)
+                embedding = (embedding[:, :, None] * weight).sum(dim=1)
                 embedding = F.relu(embedding)
-                embedding = (embedding[:, :, None] * self.hidden_weights_2[unimal_ids]).sum(dim=-2) + self.hidden_bias_2[unimal_ids]
-                embedding = F.relu(embedding)
-                embedding = (embedding[:, :, None] * self.hidden_weights_3[unimal_ids]).sum(dim=-2) + self.hidden_bias_3[unimal_ids]
-                embedding = F.relu(embedding)
+
+        elif self.model_args.LAYER_NUM > 1:
+            embedding = self.hidden_layers(embedding)
 
         # output layer
         if self.model_args.HN_OUTPUT:
@@ -292,7 +347,7 @@ class MLPModel(nn.Module):
             if self.model_args.ONE_HOT_CONTEXT:
                 context_embedding = torch.eye(self.seq_len, device='cuda').unsqueeze(0).repeat(batch_size, 1, 1)
             else:
-                context_embedding = obs_context.reshape(batch_size, self.seq_len, -1)
+                context_embedding = obs_context
 
             # context_embedding = self.context_embed_output(context_embedding)
             # context_embedding = self.context_encoder_for_output(context_embedding, src_key_padding_mask=obs_mask)
@@ -308,7 +363,7 @@ class MLPModel(nn.Module):
                 context_embedding = self.context_encoder_for_output(context_embedding)
             if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
                 context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
-            output_weight = self.hnet_output_weight(context_embedding).reshape(batch_size, self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim)
+            output_weight = self.hnet_output_weight(context_embedding).view(batch_size, self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim)
             # save for diagnose
             self.context_embedding_output = context_embedding
             self.output_weight = output_weight
