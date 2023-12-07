@@ -303,7 +303,14 @@ class MLPModel(nn.Module):
             embedding = embedding * (1. - obs_mask.float())[:, :, None]
 
             # aggregate all limbs' embedding
-            embedding = embedding.sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+            if cfg.MODEL.MLP.INPUT_AGGREGATION == 'limb_num':
+                embedding = embedding.sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+            elif cfg.MODEL.MLP.INPUT_AGGREGATION == 'sqrt_limb_num':
+                embedding = embedding.sum(dim=1) / torch.sqrt((1. - obs_mask.float()).sum(dim=1, keepdim=True))
+            if cfg.MODEL.MLP.INPUT_AGGREGATION == 'max_limb_num':
+                embedding = embedding.mean(dim=1)
+            else:
+                embedding = embedding.sum(dim=1)
             # add bias
             if not self.model_args.HN_GENERATE_BIAS:
                 embedding = embedding + self.hidden_bias

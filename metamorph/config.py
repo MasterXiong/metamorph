@@ -457,6 +457,9 @@ _C.MODEL.MLP.CONTEXT_MASK = False
 _C.MODEL.MLP.SHARE_CONTEXT_ENCODER = False
 # use different lr for HN
 _C.MODEL.MLP.ADJUST_LR = False
+# how to aggregate limb embedding into the first hidden layer
+# choices: sum (default), limb_num, sqrt_limb_num, max_limb_num
+_C.MODEL.MLP.INPUT_AGGREGATION = 'sum'
 
 # hyperparameters for transformers
 _C.MODEL.TRANSFORMER = CN()
