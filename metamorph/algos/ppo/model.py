@@ -117,9 +117,7 @@ class MLPModel(nn.Module):
 
         if self.model_args.HN_OUTPUT:
             print ('use HN for output layer')
-            if self.model_args.SHARE_CONTEXT_ENCODER:
-                self.context_encoder_for_output = self.context_encoder_for_input
-            else:
+            if not self.model_args.SHARE_CONTEXT_ENCODER:
                 if self.model_args.CONTEXT_ENCODER_TYPE == 'linear':
                     self.context_encoder_for_output = tu.make_mlp_default(context_encoder_dim)
                 elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
@@ -308,6 +306,8 @@ class MLPModel(nn.Module):
             embedding = embedding * (1. - obs_mask.float())[:, :, None]
 
             # aggregate all limbs' embedding
+            if cfg.MODEL.MLP.RELU_BEFORE_AGG:
+                embedding = F.relu(embedding)
             if cfg.MODEL.MLP.INPUT_AGGREGATION == 'limb_num':
                 embedding = embedding.sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
             elif cfg.MODEL.MLP.INPUT_AGGREGATION == 'sqrt_limb_num':
@@ -319,7 +319,8 @@ class MLPModel(nn.Module):
             # add bias
             if not self.model_args.HN_GENERATE_BIAS:
                 embedding = embedding + self.hidden_bias
-            embedding = F.relu(embedding)
+            if not cfg.MODEL.MLP.RELU_BEFORE_AGG:
+                embedding = F.relu(embedding)
 
         elif self.model_args.PER_NODE_EMBED:
             obs = obs.reshape(batch_size, self.seq_len, -1) * (1. - obs_mask.float())[:, :, None]
@@ -343,14 +344,17 @@ class MLPModel(nn.Module):
         # hidden layers
         if self.model_args.LAYER_NUM > 1:
             if self.model_args.HN_HIDDEN:
-                context_embedding = self.context_encoder_for_hidden(obs_context)
-                # aggregate the context embedding
-                # need to aggregate with mean. sum will lead to significant KL divergence
-                context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
-                for layer in self.HN_hidden_weight:
-                    weight = layer(context_embedding).view(batch_size, self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM)
-                    embedding = (embedding[:, :, None] * weight).sum(dim=1)
-                    embedding = F.relu(embedding)
+                if self.model_args.SHARE_CONTEXT_ENCODER:
+                    context_embedding = self.context_embedding_input
+                else:
+                    context_embedding = self.context_encoder_for_hidden(obs_context)
+                    # aggregate the context embedding
+                    # need to aggregate with mean. sum will lead to significant KL divergence
+                    context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+                    for layer in self.HN_hidden_weight:
+                        weight = layer(context_embedding).view(batch_size, self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM)
+                        embedding = (embedding[:, :, None] * weight).sum(dim=1)
+                        embedding = F.relu(embedding)
             else:
                 embedding = self.hidden_layers(embedding)
 
@@ -361,21 +365,22 @@ class MLPModel(nn.Module):
                 context_embedding = torch.eye(self.seq_len, device='cuda').unsqueeze(0).repeat(batch_size, 1, 1)
             else:
                 context_embedding = obs_context
-
-            # context_embedding = self.context_embed_output(context_embedding)
-            # context_embedding = self.context_encoder_for_output(context_embedding, src_key_padding_mask=obs_mask)
-            if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
-                context_embedding = self.context_encoder_for_output(context_embedding, morphology_info["adjacency_matrix"])
-            elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
-                if self.model_args.CONTEXT_MASK:
-                    context_embedding = self.context_embed_output(context_embedding)
-                    context_embedding = self.context_encoder_for_output(context_embedding, src_key_padding_mask=obs_mask)
+            
+            if self.model_args.SHARE_CONTEXT_ENCODER:
+                context_embedding = self.context_embedding_input
+            else:
+                if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                    context_embedding = self.context_encoder_for_output(context_embedding, morphology_info["adjacency_matrix"])
+                elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
+                    if self.model_args.CONTEXT_MASK:
+                        context_embedding = self.context_embed_output(context_embedding)
+                        context_embedding = self.context_encoder_for_output(context_embedding, src_key_padding_mask=obs_mask)
+                    else:
+                        context_embedding = self.context_encoder_for_output(context_embedding)
                 else:
                     context_embedding = self.context_encoder_for_output(context_embedding)
-            else:
-                context_embedding = self.context_encoder_for_output(context_embedding)
-            if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
-                context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
+                if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
+                    context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
             output_weight = self.hnet_output_weight(context_embedding).view(batch_size, self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim)
             # save for diagnose
             self.context_embedding_output = context_embedding

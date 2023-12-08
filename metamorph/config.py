@@ -460,6 +460,8 @@ _C.MODEL.MLP.ADJUST_LR = False
 # how to aggregate limb embedding into the first hidden layer
 # choices: sum (default), limb_num, sqrt_limb_num, max_limb_num
 _C.MODEL.MLP.INPUT_AGGREGATION = 'sum'
+# relu before agg
+_C.MODEL.MLP.RELU_BEFORE_AGG = False
 
 # hyperparameters for transformers
 _C.MODEL.TRANSFORMER = CN()
