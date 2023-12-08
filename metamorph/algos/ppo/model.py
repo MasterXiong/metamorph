@@ -98,6 +98,8 @@ class MLPModel(nn.Module):
 
             if self.model_args.HN_GENERATE_BIAS:
                 self.hnet_input_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
+                self.hnet_input_bias.weight.data.zero_()
+                self.hnet_input_bias.bias.data.zero_()
             else:
                 self.hidden_bias = nn.Parameter(torch.zeros(1, self.model_args.HIDDEN_DIM))
 
@@ -174,6 +176,8 @@ class MLPModel(nn.Module):
 
             if self.model_args.HN_GENERATE_BIAS:
                 self.hnet_output_bias = nn.Linear(HN_input_dim, self.limb_out_dim)
+                self.hnet_output_bias.weight.data.zero_()
+                self.hnet_output_bias.bias.data.zero_()
 
         elif self.model_args.PER_NODE_DECODER:
             print ('independent output weights for each node')
@@ -286,6 +290,7 @@ class MLPModel(nn.Module):
             else:
                 context_embedding = self.context_encoder_for_input(context_embedding)
             if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
+                # TODO: should we include gradient for the normalization op?
                 context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
             input_weight = self.hnet_input_weight(context_embedding).view(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
             # save for diagnose
@@ -307,7 +312,7 @@ class MLPModel(nn.Module):
                 embedding = embedding.sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
             elif cfg.MODEL.MLP.INPUT_AGGREGATION == 'sqrt_limb_num':
                 embedding = embedding.sum(dim=1) / torch.sqrt((1. - obs_mask.float()).sum(dim=1, keepdim=True))
-            if cfg.MODEL.MLP.INPUT_AGGREGATION == 'max_limb_num':
+            elif cfg.MODEL.MLP.INPUT_AGGREGATION == 'max_limb_num':
                 embedding = embedding.mean(dim=1)
             else:
                 embedding = embedding.sum(dim=1)
