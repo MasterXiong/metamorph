@@ -249,6 +249,15 @@ class MLPModel(nn.Module):
                     HN_output_layers.append(output_layer)
                 self.HN_hidden_weight = nn.ModuleList(HN_output_layers)
 
+                if self.model_args.HN_GENERATE_BIAS:
+                    layers = []
+                    for i in range(self.model_args.LAYER_NUM - 1):
+                        hnet_hidden_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
+                        hnet_hidden_bias.weight.data.zero_()
+                        hnet_hidden_bias.bias.data.zero_()
+                        layers.append(hnet_hidden_bias)
+                    self.HN_hidden_bias = nn.ModuleList(layers)
+
             else:
                 if "hfield" in cfg.ENV.KEYS_TO_KEEP:
                     self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
@@ -275,8 +284,7 @@ class MLPModel(nn.Module):
                 context_embedding = torch.eye(self.seq_len, device='cuda').unsqueeze(0).repeat(batch_size, 1, 1)
             else:
                 context_embedding = obs_context
-            # context_embedding = self.context_embed_input(context_embedding)
-            # context_embedding = self.context_encoder_for_input(context_embedding, src_key_padding_mask=obs_mask)
+
             if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
                 context_embedding = self.context_encoder_for_input(context_embedding, morphology_info["adjacency_matrix"])
             elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
@@ -351,9 +359,13 @@ class MLPModel(nn.Module):
                     # aggregate the context embedding
                     # need to aggregate with mean. sum will lead to significant KL divergence
                     context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
-                    for layer in self.HN_hidden_weight:
+                    for i, layer in enumerate(self.HN_hidden_weight):
                         weight = layer(context_embedding).view(batch_size, self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM)
-                        embedding = (embedding[:, :, None] * weight).sum(dim=1)
+                        if self.model_args.HN_GENERATE_BIAS:
+                            bias = self.HN_hidden_bias[i](context_embedding)
+                            embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
+                        else:
+                            embedding = (embedding[:, :, None] * weight).sum(dim=1)
                         embedding = F.relu(embedding)
             else:
                 embedding = self.hidden_layers(embedding)
