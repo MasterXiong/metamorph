@@ -355,6 +355,7 @@ class MLPModel(nn.Module):
                 if self.model_args.SHARE_CONTEXT_ENCODER:
                     context_embedding = self.context_embedding_input
                 else:
+                    context_embedding = obs_context
                     if self.model_args.CONTEXT_MASK:
                         context_embedding = self.context_embed_hidden(context_embedding)
                         context_embedding = self.context_encoder_for_hidden(context_embedding, src_key_padding_mask=obs_mask)
