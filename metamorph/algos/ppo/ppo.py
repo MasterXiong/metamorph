@@ -75,9 +75,14 @@ class PPO:
 
         # Optimizer for both actor and critic
         if not cfg.MODEL.MLP.ADJUST_LR:
-            self.optimizer = optim.Adam(
-                self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS, weight_decay=cfg.PPO.WEIGHT_DECAY
-            )
+            if cfg.PPO.OPTIMIZER == 'adam':
+                self.optimizer = optim.Adam(
+                    self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, eps=cfg.PPO.EPS, weight_decay=cfg.PPO.WEIGHT_DECAY
+                )
+            elif cfg.PPO.OPTIMIZER == 'sgd':
+                self.optimizer = optim.SGD(
+                    self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, weight_decay=cfg.PPO.WEIGHT_DECAY
+                )
             self.lr_scale = [1. for _ in self.optimizer.param_groups]
         else:
             # reduce the learning rate for the final linear layer of HN

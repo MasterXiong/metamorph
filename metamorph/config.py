@@ -337,6 +337,9 @@ _C.PPO.ABS_CLIP_THRESHOLD = 0.2
 
 _C.PPO.TANH = None
 
+# optimizer
+_C.PPO.OPTIMIZER = 'adam'
+
 # --------------------------------------------------------------------------- #
 # Task sampling options
 # --------------------------------------------------------------------------- #
@@ -392,7 +395,8 @@ _C.MODEL.PROPRIOCEPTIVE_OBS_TYPES = [
 _C.MODEL.CONTEXT_OBS_TYPES = [
     "absolute_body_pos", "absolute_body_ipos", "body_iquat", # limb model
     "body_mass", "body_shape", # limb hardware
-    "joint_range_onehot", "joint_axis", "gear_onehot" # joint hardware
+    "joint_range_onehot", "joint_axis", "gear_onehot",  # joint hardware
+    # "body_pos", "body_ipos", "torso_limb_indicator", 
 ]
 
 # Model specific observation types to keep
@@ -462,6 +466,10 @@ _C.MODEL.MLP.ADJUST_LR = False
 _C.MODEL.MLP.INPUT_AGGREGATION = 'sum'
 # relu before agg
 _C.MODEL.MLP.RELU_BEFORE_AGG = False
+# whether to use layer norm in the base network or not
+_C.MODEL.MLP.LAYER_NORM = False
+# context embedding normalization
+_C.MODEL.MLP.CONTEXT_EMBEDDING_NORM = None
 
 # hyperparameters for transformers
 _C.MODEL.TRANSFORMER = CN()

@@ -267,6 +267,16 @@ class MLPModel(nn.Module):
                     hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
                     self.hidden_layers = tu.make_mlp_default(hidden_dims)
 
+        if self.model_args.LAYER_NORM:
+            norm_layers = [nn.LayerNorm(cfg.MODEL.MLP.HIDDEN_DIM, elementwise_affine=False) for _ in range(cfg.MODEL.MLP.LAYER_NUM)]
+            self.LN_layers = nn.ModuleList(norm_layers)
+
+        if self.model_args.CONTEXT_EMBEDDING_NORM == 'layer_norm':
+            self.layer_norm_input = nn.LayerNorm(HN_input_dim)
+            self.layer_norm_hidden = nn.LayerNorm(HN_input_dim)
+            self.layer_norm_output = nn.LayerNorm(HN_input_dim)
+
+
     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, unimal_ids=None):
 
         batch_size = obs.shape[0]
@@ -298,6 +308,10 @@ class MLPModel(nn.Module):
             if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
                 # TODO: should we include gradient for the normalization op?
                 context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
+            if self.model_args.CONTEXT_EMBEDDING_NORM == 'p2_norm':
+                context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
+            elif self.model_args.CONTEXT_EMBEDDING_NORM == 'layer_norm':
+                context_embedding = self.layer_norm_input(context_embedding)
             input_weight = self.hnet_input_weight(context_embedding).view(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
             # save for diagnose
             self.context_embedding_input = context_embedding
@@ -327,6 +341,8 @@ class MLPModel(nn.Module):
             # add bias
             if not self.model_args.HN_GENERATE_BIAS:
                 embedding = embedding + self.hidden_bias
+            if self.model_args.LAYER_NORM:
+                embedding = self.LN_layers[0](embedding)
             if not cfg.MODEL.MLP.RELU_BEFORE_AGG:
                 embedding = F.relu(embedding)
 
@@ -364,6 +380,10 @@ class MLPModel(nn.Module):
                     # aggregate the context embedding
                     # need to aggregate with mean. sum will lead to significant KL divergence
                     context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+                    if self.model_args.CONTEXT_EMBEDDING_NORM == 'p2_norm':
+                        context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
+                    elif self.model_args.CONTEXT_EMBEDDING_NORM == 'layer_norm':
+                        context_embedding = self.layer_norm_hidden(context_embedding)
                     for i, layer in enumerate(self.HN_hidden_weight):
                         weight = layer(context_embedding).view(batch_size, self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM)
                         if self.model_args.HN_GENERATE_BIAS:
@@ -371,6 +391,8 @@ class MLPModel(nn.Module):
                             embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
                         else:
                             embedding = (embedding[:, :, None] * weight).sum(dim=1)
+                        if self.model_args.LAYER_NORM:
+                            embedding = self.LN_layers[i + 1](embedding)
                         embedding = F.relu(embedding)
             else:
                 embedding = self.hidden_layers(embedding)
@@ -398,6 +420,10 @@ class MLPModel(nn.Module):
                     context_embedding = self.context_encoder_for_output(context_embedding)
                 if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
                     context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
+            if self.model_args.CONTEXT_EMBEDDING_NORM == 'p2_norm':
+                context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
+            elif self.model_args.CONTEXT_EMBEDDING_NORM == 'layer_norm':
+                context_embedding = self.layer_norm_output(context_embedding)
             output_weight = self.hnet_output_weight(context_embedding).view(batch_size, self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim)
             # save for diagnose
             self.context_embedding_output = context_embedding
