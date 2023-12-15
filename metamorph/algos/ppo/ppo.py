@@ -83,6 +83,14 @@ class PPO:
                 self.optimizer = optim.SGD(
                     self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, weight_decay=cfg.PPO.WEIGHT_DECAY
                 )
+            elif cfg.PPO.OPTIMIZER == 'momentum':
+                self.optimizer = optim.SGD(
+                    self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, momentum=0.9, weight_decay=cfg.PPO.WEIGHT_DECAY
+                )
+            elif cfg.PPO.OPTIMIZER == 'rms':
+                self.optimizer = optim.RMSprop(
+                    self.actor_critic.parameters(), lr=cfg.PPO.BASE_LR, weight_decay=cfg.PPO.WEIGHT_DECAY
+                )
             self.lr_scale = [1. for _ in self.optimizer.param_groups]
         else:
             # reduce the learning rate for the final linear layer of HN
