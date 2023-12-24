@@ -38,7 +38,6 @@ def get_iter_lr(cur_iter):
         alpha = cur_iter / cfg.PPO.WARMUP_ITERS
         warmup_factor = cfg.PPO.WARMUP_FACTOR * (1.0 - alpha) + alpha
         lr *= warmup_factor
-    print (f'lr={lr} for iter {cur_iter}')
     return lr
 
 

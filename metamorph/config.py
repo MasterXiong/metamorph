@@ -290,8 +290,10 @@ _C.PPO.NUM_ENVS = 32
 _C.PPO.BASE_LR = 3e-4
 _C.PPO.MIN_LR = 0.0
 
-# Learning rate policy select from {'cos', 'lin', 'constant'}
+# Learning rate policy select from {'cos', 'lin', 'constant', 'adaptive'}
 _C.PPO.LR_POLICY = "cos"
+# when to anneal lr if using adaptive lr policy
+_C.PPO.LR_ANNEAL_THRESHOLD = 32
 
 # Start the warm up from OPTIM.BASE_LR * OPTIM.WARMUP_FACTOR
 _C.PPO.WARMUP_FACTOR = 0.1
@@ -396,6 +398,7 @@ _C.MODEL.CONTEXT_OBS_TYPES = [
     "absolute_body_pos", "absolute_body_ipos", "body_iquat", # limb model
     "body_mass", "body_shape", # limb hardware
     "joint_range_onehot", "joint_axis", "gear_onehot",  # joint hardware
+    # "torso_limb_indicator", 
     # "body_pos", "body_ipos", "torso_limb_indicator", 
 ]
 
@@ -470,6 +473,8 @@ _C.MODEL.MLP.RELU_BEFORE_AGG = False
 _C.MODEL.MLP.LAYER_NORM = False
 # context embedding normalization
 _C.MODEL.MLP.CONTEXT_EMBEDDING_NORM = None
+# context embedding dropout
+_C.MODEL.MLP.CONTEXT_EMBEDDING_DROPOUT = False
 
 # hyperparameters for transformers
 _C.MODEL.TRANSFORMER = CN()
@@ -644,6 +649,18 @@ _C.DYNAMICS.WEIGHT_DECAY = 0.
 
 _C.DYNAMICS.MODEL_STEP = False
 _C.DYNAMICS.MODEL_PATH = ''
+
+# parameters for policy distillation
+_C.DISTILL = CN()
+
+_C.DISTILL.PER_AGENT_SAMPLE_NUM = 64000
+_C.DISTILL.BATCH_SIZE = 25600
+_C.DISTILL.EPOCH_NUM = 100
+_C.DISTILL.BASE_LR = 1e-4
+_C.DISTILL.EPS = 1e-5
+_C.DISTILL.WEIGHT_DECAY = 0.
+_C.DISTILL.SOURCE = ''
+_C.DISTILL.TARGET = ''
 
 # ----------------------------------------------------------------------------#
 # Misc Options

@@ -193,6 +193,8 @@ class PPO:
             iter_start = 0
 
         print ('Start training ...')
+        self.ES_record = []
+        self.lr_record = []
         for cur_iter in range(iter_start, cfg.PPO.MAX_ITERS):
 
             # save the robots and processes that have mjstep error
@@ -217,8 +219,24 @@ class PPO:
             if cfg.PPO.EARLY_EXIT and cur_iter >= cfg.PPO.EARLY_EXIT_MAX_ITERS:
                 break
             
-            self.iter_lr = lr = ou.get_iter_lr(cur_iter)
-            ou.set_lr(self.optimizer, lr, [1. for _ in range(5)])
+            if cfg.PPO.LR_POLICY == 'adaptive':
+                print (self.ES_record)
+                if cur_iter <= cfg.PPO.WARMUP_ITERS:
+                    alpha = cur_iter / cfg.PPO.WARMUP_ITERS
+                    warmup_factor = cfg.PPO.WARMUP_FACTOR * (1.0 - alpha) + alpha
+                    self.iter_lr = cfg.PPO.BASE_LR * warmup_factor
+                else:
+                    if len(self.ES_record) >= 5:
+                        if np.mean(self.ES_record[-5:]) < cfg.PPO.LR_ANNEAL_THRESHOLD:
+                            self.iter_lr = self.iter_lr * 0.95
+                            self.ES_record = []
+            else:
+                self.iter_lr = ou.get_iter_lr(cur_iter)
+            ou.set_lr(self.optimizer, self.iter_lr, [1. for _ in range(5)])
+            print (f'lr={self.iter_lr} for iter {cur_iter}')
+            self.lr_record.append(self.iter_lr)
+            with open(f'{cfg.OUT_DIR}/iter_lr.pkl', 'wb') as f:
+                pickle.dump(self.lr_record, f)
 
             for step in range(cfg.PPO.TIMESTEPS):
                 # Sample actions
@@ -597,6 +615,9 @@ class PPO:
                 ratio = torch.exp(logp - batch["logp_old"])
                 approx_kl = (batch["logp_old"] - logp).mean().item()
 
+                if i == 0 and j == 0:
+                    print ('initial approx kl', approx_kl)
+
                 # save context embedding stats
                 if cfg.MODEL.MLP.ADJUST_LR:
                     # mask = 1. - batch['obs']['obs_padding_mask'].float()
@@ -618,6 +639,7 @@ class PPO:
                     # with open(f'{cfg.OUT_DIR}/context_embedding_norm/{cur_iter}.pkl', 'wb') as f:
                     #     pickle.dump(batch_context_embedding, f)
                     print (f'early stop iter {cur_iter} at epoch {i + 1}/{cfg.PPO.EPOCHS}, batch {j + 1} with approx_kl {approx_kl}')
+                    self.ES_record.append(i * 16 + j)
                     return
 
                 if cfg.SAVE_HIST_RATIO:
@@ -705,6 +727,8 @@ class PPO:
                 except NotImplementedError:
                     # If layer does not have .grad move on
                     continue
+        
+        self.ES_record.append(128)
 
     def save_model(self, cur_iter, path=None):
         if not path:
