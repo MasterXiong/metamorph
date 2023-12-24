@@ -2,6 +2,7 @@ import numpy as np
 import os
 import pickle
 import torch
+import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
 from metamorph.config import cfg
@@ -118,6 +119,8 @@ def distill_policy(source_folder, target_folder, agents):
     }
     for agent in agents:
         data_path = f'expert_data/{source_folder}/{agent}.pkl'
+        if not os.path.exists(data_path):
+            continue
         with open(data_path, 'rb') as f:
             agent_data = pickle.load(f)
         for key in agent_data:
@@ -135,13 +138,10 @@ def distill_policy(source_folder, target_folder, agents):
         weight_decay=cfg.DISTILL.WEIGHT_DECAY
     )
 
-    output_path = f'distilled_policy/{target_folder}'
-    os.makedirs(output_path, exist_ok=True)
-
     for i in range(cfg.DISTILL.EPOCH_NUM):
 
         if i % 10 == 0:
-            torch.save(model.state_dict(), f'{output_path}/checkpoint_{i}.pt')
+            torch.save(model.state_dict(), f'{cfg.OUT_DIR}/checkpoint_{i}.pt')
 
         batch_losses = []
         for obs, act, context, obs_mask, act_mask in train_dataloader:
@@ -160,8 +160,8 @@ def distill_policy(source_folder, target_folder, agents):
             loss.backward()
             optimizer.step()
 
-            batch_losses.append(loss)
+            batch_losses.append(loss.item())
 
         print (f'epoch {i}, average batch loss: {np.mean(batch_losses)}')
 
-    torch.save(model.state_dict(), f'{output_path}/checkpoint_final.pt')
+    torch.save(model.state_dict(), f'{cfg.OUT_DIR}/checkpoint_final.pt')
