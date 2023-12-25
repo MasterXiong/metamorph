@@ -16,7 +16,7 @@ from metamorph.utils import file as fu
 from metamorph.utils import sample as su
 from metamorph.utils import sweep as swu
 from metamorph.envs.vec_env.pytorch_vec_env import VecPyTorch
-from metamorph.algos.ppo.model import Agent
+from metamorph.algos.ppo.model import Agent, MLPModel
 
 from tools.train_ppo import set_cfg_options
 
@@ -68,6 +68,8 @@ def evaluate(policy, env, agent, compute_gae=False):
 
     obs = env.reset()
     ood_ratio = (obs['proprioceptive'].abs() == 10.).float().mean().item()
+    if type(policy.ac.mu_net) == MLPModel:
+        policy.ac.mu_net.generate_params(obs['context'], obs['obs_padding_mask'])
 
     for t in range(2000):
         if compute_gae:

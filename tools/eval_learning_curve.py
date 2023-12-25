@@ -43,7 +43,7 @@ def evaluate_checkpoint(folder, test_set, interval=600, additional_suffix=None, 
 
 if __name__ == '__main__':
     
-    # python tools/eval_learning_curve.py --folder output/ft_MLP_HN_IO_MLP_encoder_bias_init_maximin_sample_KL_5_wo_PE+dropout --test_set data/test --interval 1200 --suffix wo_reward_update
+    # python tools/eval_learning_curve.py --folder distilled_policy/MT_TF_to_HN-MLP_lr_1e-3 --test_set data/test --interval 10 --seed 1409
     # python tools/eval_learning_curve.py --folder output/ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout/1409 --test_set unimals_100/train --interval 100
     # python tools/eval_learning_curve.py --folder output/ft_400M_baseline_uniform_sample_KL_5_wo_PE+dropout/1409 --test_set unimals_100/train_remove_level_1 --interval 100
     # python tools/eval_learning_curve.py --folder output/ft_400M_mutate_1000_uniform_sample_KL_5_wo_PE+dropout/1409
@@ -52,6 +52,12 @@ if __name__ == '__main__':
     parser.add_argument("--test_set", default='unimals_100/test', type=str)
     parser.add_argument("--interval", default=600, type=int)
     parser.add_argument("--suffix", type=str)
+    parser.add_argument("--seed", type=str, default='')
     args = parser.parse_args()
 
-    evaluate_checkpoint(args.folder, args.test_set, args.interval, args.suffix)
+    if args.seed == '':
+        seeds = None
+    else:
+        seeds = [eval(x) for x in args.seed.split('+')]
+
+    evaluate_checkpoint(args.folder, args.test_set, args.interval, args.suffix, seeds=seeds)

@@ -385,6 +385,31 @@ class MLPModel(nn.Module):
 
         batch_size = obs.shape[0]
 
+        if not self.training:
+            obs = obs.view(batch_size, self.seq_len, -1)
+            embedding = (obs[:, :, :, None] * self.input_weight).sum(dim=-2) + self.input_bias
+            embedding = embedding * (1. - obs_mask.float())[:, :, None]
+            # aggregate all limbs' embedding
+            if cfg.MODEL.MLP.RELU_BEFORE_AGG:
+                embedding = F.relu(embedding)
+            if cfg.MODEL.MLP.INPUT_AGGREGATION == 'limb_num':
+                embedding = embedding.sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+            elif cfg.MODEL.MLP.INPUT_AGGREGATION == 'sqrt_limb_num':
+                embedding = embedding.sum(dim=1) / torch.sqrt((1. - obs_mask.float()).sum(dim=1, keepdim=True))
+            elif cfg.MODEL.MLP.INPUT_AGGREGATION == 'max_limb_num':
+                embedding = embedding.mean(dim=1)
+            else:
+                embedding = embedding.sum(dim=1)
+            embedding = F.relu(embedding)
+
+            for weight, bias in zip(self.hidden_weights, self.hidden_bias):
+                embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
+                embedding = F.relu(embedding)
+
+            output = (embedding[:, None, :, None] * self.output_weight).sum(dim=-2) + self.output_bias
+            output = output.reshape(batch_size, -1)
+            return output, None
+
         obs_context = obs_context.view(batch_size, self.seq_len, -1)
         if self.model_args.LIMB_ONE_HOT:
             # concatenate one-hot limb id to the context features
@@ -553,6 +578,76 @@ class MLPModel(nn.Module):
             output = self.output_layer(embedding)
 
         return output, None
+
+    @torch.no_grad()
+    def generate_params(self, obs_context, obs_mask, morphology_info=None):
+
+        batch_size = obs_context.shape[0]
+        obs_context = obs_context.view(batch_size, self.seq_len, -1)
+
+        # input layer
+        if self.model_args.HN_INPUT:
+            context_embedding = obs_context
+            if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                context_embedding = self.context_encoder_for_input(context_embedding, morphology_info["adjacency_matrix"])
+            elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
+                if self.model_args.CONTEXT_MASK:
+                    context_embedding = self.context_embed_input(context_embedding)
+                    context_embedding = self.context_encoder_for_input(context_embedding, src_key_padding_mask=obs_mask)
+                else:
+                    context_embedding = self.context_encoder_for_input(context_embedding)
+            else:
+                context_embedding = self.context_encoder_for_input(context_embedding)
+            if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
+                context_embedding = self.input_dropout(context_embedding)
+            self.input_weight = self.hnet_input_weight(context_embedding).view(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
+            self.input_bias = self.hnet_input_bias(context_embedding)
+
+        # hidden layers
+        if self.model_args.LAYER_NUM > 1:
+            if self.model_args.HN_HIDDEN:
+                if self.model_args.SHARE_CONTEXT_ENCODER:
+                    context_embedding = self.context_embedding_input
+                else:
+                    context_embedding = obs_context
+                    if self.model_args.CONTEXT_MASK:
+                        context_embedding = self.context_embed_hidden(context_embedding)
+                        context_embedding = self.context_encoder_for_hidden(context_embedding, src_key_padding_mask=obs_mask)
+                    else:
+                        context_embedding = self.context_encoder_for_hidden(context_embedding)
+                    # aggregate the context embedding
+                    # need to aggregate with mean. sum will lead to significant KL divergence
+                    context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+                    if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
+                        context_embedding = self.hidden_dropout(context_embedding)
+                    self.hidden_weights, self.hidden_bias = [], []
+                    for i, layer in enumerate(self.HN_hidden_weight):
+                        weight = layer(context_embedding).view(batch_size, self.hidden_dims[i], self.hidden_dims[i + 1])
+                        self.hidden_weights.append(weight)
+                        bias = self.HN_hidden_bias[i](context_embedding)
+                        self.hidden_bias.append(bias)
+
+        # output layer
+        if self.model_args.HN_OUTPUT:
+            
+            if self.model_args.SHARE_CONTEXT_ENCODER:
+                context_embedding = self.context_embedding_input
+            else:
+                context_embedding = obs_context
+                if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                    context_embedding = self.context_encoder_for_output(context_embedding, morphology_info["adjacency_matrix"])
+                elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
+                    if self.model_args.CONTEXT_MASK:
+                        context_embedding = self.context_embed_output(context_embedding)
+                        context_embedding = self.context_encoder_for_output(context_embedding, src_key_padding_mask=obs_mask)
+                    else:
+                        context_embedding = self.context_encoder_for_output(context_embedding)
+                else:
+                    context_embedding = self.context_encoder_for_output(context_embedding)
+            if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
+                context_embedding = self.output_dropout(context_embedding)
+            self.output_weight = self.hnet_output_weight(context_embedding).view(batch_size, self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim)
+            self.output_bias = self.hnet_output_bias(context_embedding)
 
 
 # J: Max num joints between two limbs. 1 for 2D envs, 2 for unimal
