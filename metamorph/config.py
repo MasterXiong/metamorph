@@ -381,11 +381,11 @@ _C.MODEL.ACTION_STD_FIXED = True
 # Types of proprioceptive obs to include
 _C.MODEL.PROPRIOCEPTIVE_OBS_TYPES = [
     "body_xpos", "body_xvelp", "body_xvelr", "body_xquat", 
-    # "body_pos", "body_ipos", "body_iquat", "geom_quat", # limb model
-    # "body_mass", "body_shape", # limb hardware
+    "body_pos", "body_ipos", "body_iquat", "geom_quat", # limb model
+    "body_mass", "body_shape", # limb hardware
     "qpos", "qvel", 
-    # "jnt_pos", # joint model
-    # "joint_range", "joint_axis", "gear" # joint hardware
+    "jnt_pos", # joint model
+    "joint_range", "joint_axis", "gear" # joint hardware
 ]
 
 # _C.MODEL.CONTEXT_OBS_TYPES = [
@@ -661,6 +661,9 @@ _C.DISTILL.EPS = 1e-5
 _C.DISTILL.WEIGHT_DECAY = 0.
 _C.DISTILL.SOURCE = ''
 _C.DISTILL.TARGET = ''
+_C.DISTILL.SAVE_FREQ = 10
+# whether use sampled action 'act' or action mean 'act_mean' as distillation target
+_C.DISTILL.IMITATION_TARGET = 'act'
 
 # ----------------------------------------------------------------------------#
 # Misc Options

@@ -16,7 +16,7 @@ torch.manual_seed(0)
 np.random.seed(0)
 
 
-def generate_expert_data(model_path, agent_path):
+def generate_expert_data(model_path, agent_path, start=0, end=100):
 
     data_path = 'expert_data/' + '/'.join(model_path.split('/')[1:])
     os.makedirs(data_path, exist_ok=True)
@@ -33,13 +33,13 @@ def generate_expert_data(model_path, agent_path):
     def collect_data(agent, num_env=64, timesteps=2000):
         envs = make_vec_envs(xml_file=agent, training=False, norm_rew=True, render_policy=True, num_env=num_env, seed=0)
         set_ob_rms(envs, get_ob_rms(ppo_trainer.envs))
-        set_ret_rms(envs, get_ret_rms(ppo_trainer.envs))
 
         obs_buffer = torch.zeros(timesteps, num_env, envs.observation_space['proprioceptive'].shape[0], device='cuda')
         act_buffer = torch.zeros(timesteps, num_env, envs.action_space.shape[0], device='cuda')
-        context_buffer = torch.zeros(timesteps, num_env, envs.observation_space['context'].shape[0], device='cuda')
-        obs_mask_buffer = torch.zeros(timesteps, num_env, envs.observation_space['obs_padding_mask'].shape[0], device='cuda')
-        act_mask_buffer = torch.zeros(timesteps, num_env, envs.observation_space['act_padding_mask'].shape[0], device='cuda')
+        act_mean_buffer = torch.zeros(timesteps, num_env, envs.action_space.shape[0], device='cuda')
+        # context_buffer = torch.zeros(timesteps, num_env, envs.observation_space['context'].shape[0], device='cuda')
+        # obs_mask_buffer = torch.zeros(timesteps, num_env, envs.observation_space['obs_padding_mask'].shape[0], device='cuda')
+        # act_mask_buffer = torch.zeros(timesteps, num_env, envs.observation_space['act_padding_mask'].shape[0], device='cuda')
 
         obs = envs.reset()
         score = []
@@ -47,9 +47,10 @@ def generate_expert_data(model_path, agent_path):
             _, act, _ = policy.act(obs, return_attention=False, compute_val=False)
             obs_buffer[t] = obs['proprioceptive'].clone()
             act_buffer[t] = act.detach().clone()
-            context_buffer[t] = obs['context'].clone()
-            obs_mask_buffer[t] = obs['obs_padding_mask'].clone()
-            act_mask_buffer[t] = obs['act_padding_mask'].clone()
+            act_mean_buffer[t] = policy.pi.loc.detach().clone()
+            # context_buffer[t] = obs['context'].clone()
+            # obs_mask_buffer[t] = obs['obs_padding_mask'].clone()
+            # act_mask_buffer[t] = obs['act_padding_mask'].clone()
             obs, reward, done, infos = envs.step(act)
             for info in infos:
                 if 'episode' in info:
@@ -60,9 +61,10 @@ def generate_expert_data(model_path, agent_path):
         data = {
             'obs': obs_buffer.view(-1, obs_buffer.shape[-1]).cpu(), 
             'act': act_buffer.view(-1, act_buffer.shape[-1]).cpu(), 
-            'context': context_buffer.view(-1, context_buffer.shape[-1]).cpu(), 
-            'obs_mask': obs_mask_buffer.view(-1, obs_mask_buffer.shape[-1]).cpu(), 
-            'act_mask': act_mask_buffer.view(-1, act_mask_buffer.shape[-1]).cpu(), 
+            'act_mean': act_mean_buffer.view(-1, act_mean_buffer.shape[-1]).cpu(), 
+            # 'context': context_buffer.view(-1, context_buffer.shape[-1]).cpu(), 
+            # 'obs_mask': obs_mask_buffer.view(-1, obs_mask_buffer.shape[-1]).cpu(), 
+            # 'act_mask': act_mask_buffer.view(-1, act_mask_buffer.shape[-1]).cpu(), 
         }
 
         with open(f'{data_path}/{agent}.pkl', 'wb') as f:
@@ -70,11 +72,10 @@ def generate_expert_data(model_path, agent_path):
         
         return np.mean(score)
 
-    agents = [x[:-4] for x in os.listdir(f'{agent_path}/xml')]
+    agents = [x[:-4] for x in os.listdir(f'{agent_path}/xml')][start:end]
     all_agent_scores = []
     for agent in agents:
-        # collect_data(agent, num_env=2, timesteps=100)
-        score = collect_data(agent)
+        score = collect_data(agent, timesteps=1000)
         print (score)
         all_agent_scores.append(score)
     print ('avg expert score: ', np.mean(all_agent_scores))
@@ -94,37 +95,47 @@ class DistillationDataset(Dataset):
     def __getitem__(self, index):
         obs = self.data['obs'][index]
         act = self.data['act'][index]
+        act_mean = self.data['act_mean'][index]
         context = self.data['context'][index]
-        obs_mask = self.data['obs_mask'][index]
-        act_mask = self.data['act_mask'][index]
-        return obs, act, context, obs_mask, act_mask
+        obs_mask = self.data['obs_padding_mask'][index]
+        act_mask = self.data['act_padding_mask'][index]
+        return obs, act, act_mean, context, obs_mask, act_mask
 
 
 def distill_policy(source_folder, target_folder, agents):
 
     cfg.ENV.WALKER_DIR = 'data/train'
     cfg.ENV.WALKERS = agents
-    cfg.DISTILL.PER_AGENT_SAMPLE_NUM = 16000
     set_cfg_options()
     envs = make_vec_envs()
-    model = ActorCritic(envs.observation_space, envs.action_space)
+    model = ActorCritic(envs.observation_space, envs.action_space).cuda()
+
+    with open(f'expert_data/{source_folder}/obs_rms.pkl', 'rb') as f:
+        obs_rms = pickle.load(f)
 
     # merge the training data
     buffer = {
         'obs': [], 
         'act': [], 
+        'act_mean': [], 
         'context': [], 
-        'obs_mask': [], 
-        'act_mask': [], 
+        'obs_padding_mask': [], 
+        'act_padding_mask': [], 
     }
-    for agent in agents:
+    for i, agent in enumerate(agents):
         data_path = f'expert_data/{source_folder}/{agent}.pkl'
         if not os.path.exists(data_path):
             continue
         with open(data_path, 'rb') as f:
             agent_data = pickle.load(f)
-        for key in agent_data:
+        envs = make_vec_envs(xml_file=agent, training=False, norm_rew=True, render_policy=True, num_env=2, seed=0)
+        init_obs = envs.reset()
+        envs.close()
+        for key in ['obs', 'act', 'act_mean']:
             buffer[key].append(agent_data[key][:cfg.DISTILL.PER_AGENT_SAMPLE_NUM])
+        for key in ['context', 'obs_padding_mask', 'act_padding_mask']:
+            value = init_obs[key][0].cpu().unsqueeze(0).repeat(cfg.DISTILL.PER_AGENT_SAMPLE_NUM, 1)
+            buffer[key].append(value)
     for key in buffer:
         buffer[key] = torch.cat(buffer[key], dim=0)
 
@@ -140,20 +151,23 @@ def distill_policy(source_folder, target_folder, agents):
 
     for i in range(cfg.DISTILL.EPOCH_NUM):
 
-        if i % 10 == 0:
-            torch.save(model.state_dict(), f'{cfg.OUT_DIR}/checkpoint_{i}.pt')
+        if i % cfg.DISTILL.SAVE_FREQ == 0:
+            torch.save([model.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{i}.pt')
 
         batch_losses = []
-        for obs, act, context, obs_mask, act_mask in train_dataloader:
+        for obs, act, act_mean, context, obs_mask, act_mask in train_dataloader:
 
             obs_dict = {
-                'proprioceptive': obs, 
-                'context': context, 
-                'obs_padding_mask': obs_mask, 
-                'act_padding_mask': act_mask, 
+                'proprioceptive': obs.cuda(), 
+                'context': context.cuda(), 
+                'obs_padding_mask': obs_mask.cuda(), 
+                'act_padding_mask': act_mask.cuda(), 
             }
 
-            _, pi, logp, _ = model(obs_dict, act=act, compute_val=False)
+            if cfg.DISTILL.IMITATION_TARGET == 'act':
+                _, pi, logp, _ = model(obs_dict, act=act.cuda(), compute_val=False)
+            else:
+                _, pi, logp, _ = model(obs_dict, act=act_mean.cuda(), compute_val=False)
             loss = -logp.mean()
 
             optimizer.zero_grad()
@@ -164,4 +178,4 @@ def distill_policy(source_folder, target_folder, agents):
 
         print (f'epoch {i}, average batch loss: {np.mean(batch_losses)}')
 
-    torch.save(model.state_dict(), f'{cfg.OUT_DIR}/checkpoint_final.pt')
+    torch.save([model.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{cfg.DISTILL.EPOCH_NUM}.pt')
