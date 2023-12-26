@@ -69,7 +69,7 @@ def evaluate(policy, env, agent, compute_gae=False):
     obs = env.reset()
     ood_ratio = (obs['proprioceptive'].abs() == 10.).float().mean().item()
     if type(policy.ac.mu_net) == MLPModel:
-        policy.ac.mu_net.generate_params(obs['context'], obs['obs_padding_mask'])
+        policy.ac.mu_net.generate_params(obs['context'], obs['obs_padding_mask'].bool())
 
     for t in range(2000):
         if compute_gae:

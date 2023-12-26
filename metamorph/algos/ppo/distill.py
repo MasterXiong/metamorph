@@ -126,6 +126,7 @@ def distill_policy(source_folder, target_folder, agents):
         data_path = f'expert_data/{source_folder}/{agent}.pkl'
         if not os.path.exists(data_path):
             continue
+        print (agent)
         with open(data_path, 'rb') as f:
             agent_data = pickle.load(f)
         envs = make_vec_envs(xml_file=agent, training=False, norm_rew=True, render_policy=True, num_env=2, seed=0)
