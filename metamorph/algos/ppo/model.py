@@ -66,17 +66,17 @@ class HNMLP(nn.Module):
     def __init__(self, obs_space, out_dim):
         super(HNMLP, self).__init__()
         self.seq_len = cfg.MODEL.MAX_LIMBS
-        self.limb_obs_size = limb_obs_size = obs_space["proprioceptive"].shape[0] // self.seq_len
+        self.limb_obs_size = obs_space["proprioceptive"].shape[0] // self.seq_len
         self.limb_out_dim = out_dim // self.seq_len
         self.HN_args = cfg.MODEL.HYPERNET
         self.base_args = cfg.MODEL.MLP
 
         self.input_context_encoder = ContextEncoder(obs_space)
-        self.input_HN_layer = HypernetLayer(self.limb_obs_size, self.base_args.HIDDEN_DIM)
+        self.input_HN_layer = HypernetLayer(self.limb_obs_size, self.base_args.HIDDEN_DIM, init_dim=obs_space["proprioceptive"].shape[0])
 
         if not self.HN_args.SHARE_CONTEXT_ENCODER:
             self.output_context_encoder = ContextEncoder(obs_space)
-        self.output_HN_layer = HypernetLayer(self.base_args.HIDDEN_DIM, self.limb_out_dim)
+        self.output_HN_layer = HypernetLayer(self.base_args.HIDDEN_DIM, self.limb_out_dim, init_dim=self.base_args.HIDDEN_DIM)
 
         if self.base_args.LAYER_NUM > 1:
             if not self.HN_args.SHARE_CONTEXT_ENCODER:
@@ -87,7 +87,7 @@ class HNMLP(nn.Module):
             #     self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
             #     self.hidden_dims[0] += cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS[-1]
             for i in range(self.base_args.LAYER_NUM - 1):
-                layer = HypernetLayer(self.hidden_dims[i], self.hidden_dims[i + 1])
+                layer = HypernetLayer(self.hidden_dims[i], self.hidden_dims[i + 1], init_dim=self.hidden_dims[i])
                 self.hidden_HN_layers.append(layer)
             self.hidden_HN_layers = nn.ModuleList(self.hidden_HN_layers)
 
@@ -107,6 +107,7 @@ class HNMLP(nn.Module):
                 hidden_context_embedding = input_context_embedding
             else:
                 hidden_context_embedding = self.hidden_context_encoder(obs_context, obs_mask)
+            hidden_context_embedding = (hidden_context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
             self.hidden_weights, self.hidden_bias = [], []
             for i, HN_layer in enumerate(self.hidden_HN_layers):
                 weight, bias = HN_layer(hidden_context_embedding)
@@ -124,7 +125,7 @@ class HNMLP(nn.Module):
 
     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, unimal_ids=None):
 
-        # only use this for training, so that we only need to generate weights once during evaluation
+        # we only need to generate weights once for evaluation
         if self.training:
             self.generate_params(obs_context, obs_mask)
 
@@ -742,14 +743,15 @@ class ActorCritic(nn.Module):
     def __init__(self, obs_space, action_space):
         super(ActorCritic, self).__init__()
         self.seq_len = cfg.MODEL.MAX_LIMBS
-        if cfg.MODEL.TYPE == 'transformer':
-            self.v_net = TransformerModel(obs_space, 1)
-        elif cfg.MODEL.TYPE == 'mlp':
-            self.v_net = MLPModel(obs_space, cfg.MODEL.MAX_LIMBS)
-        elif cfg.MODEL.TYPE == 'hnmlp':
-            self.v_net = HNMLP(obs_space, cfg.MODEL.MAX_LIMBS)
-        else:
-            self.v_net = VanillaMLP(obs_space, cfg.MODEL.MAX_LIMBS)
+        if cfg.DISTILL.VALUE_NET:
+            if cfg.MODEL.TYPE == 'transformer':
+                self.v_net = TransformerModel(obs_space, 1)
+            elif cfg.MODEL.TYPE == 'mlp':
+                self.v_net = MLPModel(obs_space, cfg.MODEL.MAX_LIMBS)
+            elif cfg.MODEL.TYPE == 'hnmlp':
+                self.v_net = HNMLP(obs_space, cfg.MODEL.MAX_LIMBS)
+            else:
+                self.v_net = VanillaMLP(obs_space, cfg.MODEL.MAX_LIMBS)
 
         if cfg.ENV_NAME == "Unimal-v0":
             if cfg.MODEL.TYPE == 'transformer':
@@ -871,7 +873,7 @@ class ActorCritic(nn.Module):
                 normed_obs[:, :, self.state_norm_index] = -1. + 2. * (obs[:, :, self.state_norm_index] - self.state_min) / (self.state_max - self.state_min)
                 obs = normed_obs
 
-        if compute_val:
+        if compute_val and cfg.DISTILL.VALUE_NET:
             # Per limb critic values
             limb_vals, v_attention_maps = self.v_net(
                 obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, 

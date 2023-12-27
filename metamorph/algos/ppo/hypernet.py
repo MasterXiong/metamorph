@@ -64,10 +64,11 @@ class ContextEncoder(nn.Module):
 
 
 class HypernetLayer(nn.Module):
-    def __init__(self, base_input_dim, base_output_dim):
+    def __init__(self, base_input_dim, base_output_dim, init_dim=None):
         super(HypernetLayer, self).__init__()
         self.base_input_dim = base_input_dim
         self.base_output_dim = base_output_dim
+        self.init_dim = init_dim
         self.model_args = cfg.MODEL.HYPERNET
         HN_input_dim = self.model_args.CONTEXT_EMBED_SIZE
 
@@ -82,9 +83,13 @@ class HypernetLayer(nn.Module):
             self.HN_weight.weight.data.zero_()
             self.HN_weight.bias.data.normal_(std=initrange)
         elif self.model_args.HN_INIT_STRATEGY == 'bias_init_v2':
-            initrange = np.sqrt(1 / self.base_input_dim)
+            initrange = np.sqrt(1 / self.init_dim)
             self.HN_weight.weight.data.zero_()
             self.HN_weight.bias.data.uniform_(-initrange, initrange)
+        elif self.model_args.HN_INIT_STRATEGY == 'bias_init_v3':
+            initrange = np.sqrt(1 / self.init_dim)
+            self.HN_weight.weight.data.zero_()
+            self.HN_weight.bias.data.normal_(std=initrange)
         else:
             # use a heuristic value as the init range
             initrange = 0.001
@@ -92,7 +97,7 @@ class HypernetLayer(nn.Module):
             self.HN_weight.bias.data.zero_()
 
         if self.model_args.HN_INIT_STRATEGY == 'bias_init_v2':
-            initrange = np.sqrt(1 / self.base_input_dim)
+            initrange = np.sqrt(1 / self.init_dim)
             self.HN_bias.weight.data.zero_()
             self.HN_bias.bias.data.uniform_(-initrange, initrange)
         else:
