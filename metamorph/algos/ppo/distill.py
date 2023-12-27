@@ -112,6 +112,12 @@ def distill_policy(source_folder, target_folder, agents):
 
     with open(f'expert_data/{source_folder}/obs_rms.pkl', 'rb') as f:
         obs_rms = pickle.load(f)
+    if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6:
+        dims = list(range(13)) + [30, 31] + [41, 42]
+        new_mean = obs_rms['proprioceptive'].mean.reshape(cfg.MODEL.MAX_LIMBS, -1)
+        obs_rms['proprioceptive'].mean = new_mean[:, dims].ravel()
+        new_var = obs_rms['proprioceptive'].var.reshape(cfg.MODEL.MAX_LIMBS, -1)
+        obs_rms['proprioceptive'].var = new_var[:, dims].ravel()
 
     # merge the training data
     buffer = {
@@ -176,7 +182,10 @@ def distill_policy(source_folder, target_folder, agents):
                 _, pi, logp, _ = model(obs_dict, act=act.cuda(), compute_val=False)
             else:
                 _, pi, logp, _ = model(obs_dict, act=act_mean.cuda(), compute_val=False)
-            loss = -logp.mean()
+            if cfg.DISTILL.BALANCED_LOSS:
+                loss = -((model.limb_logp * (1 - obs_dict['act_padding_mask'])).sum(dim=1, keepdim=True) / (1 - obs_dict['act_padding_mask']).sum(dim=1, keepdim=True)).mean()
+            else:
+                loss = -logp.mean()
 
             optimizer.zero_grad()
             loss.backward()

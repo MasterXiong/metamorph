@@ -742,6 +742,7 @@ class MLPObsEncoder(nn.Module):
 class ActorCritic(nn.Module):
     def __init__(self, obs_space, action_space):
         super(ActorCritic, self).__init__()
+        print (obs_space)
         self.seq_len = cfg.MODEL.MAX_LIMBS
         if cfg.DISTILL.VALUE_NET:
             if cfg.MODEL.TYPE == 'transformer':

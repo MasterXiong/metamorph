@@ -675,6 +675,7 @@ _C.DISTILL.SAVE_FREQ = 10
 # whether use sampled action 'act' or action mean 'act_mean' as distillation target
 _C.DISTILL.IMITATION_TARGET = 'act'
 _C.DISTILL.VALUE_NET = True
+_C.DISTILL.BALANCED_LOSS = False
 
 # ----------------------------------------------------------------------------#
 # Misc Options
