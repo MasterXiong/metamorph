@@ -132,6 +132,13 @@ def distill_policy(source_folder, target_folder, agents):
         env = make_env(cfg.ENV_NAME, 0, 0, xml_file=agent)()
         init_obs = env.reset()
         env.close()
+        # drop context features from obs if needed
+        if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6:
+            dims = list(range(13)) + [30, 31] + [41, 42]
+            data_size = agent_data['obs'].shape[0]
+            new_obs = agent_data['obs'].view(data_size, cfg.MODEL.MAX_LIMBS, -1)
+            new_obs = new_obs[:, :, dims]
+            agent_data['obs'] = new_obs.view(data_size, -1)
         for key in ['obs', 'act', 'act_mean']:
             buffer[key].append(agent_data[key][:cfg.DISTILL.PER_AGENT_SAMPLE_NUM])
         for key in ['context', 'obs_padding_mask', 'act_padding_mask']:

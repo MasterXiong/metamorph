@@ -79,17 +79,13 @@ class HypernetLayer(nn.Module):
 
     def init_hypernet(self):
         if self.model_args.HN_INIT_STRATEGY == 'bias_init':
-            initrange = np.sqrt(1 / self.base_input_dim)
+            initrange = np.sqrt(1 / self.init_dim)
             self.HN_weight.weight.data.zero_()
             self.HN_weight.bias.data.normal_(std=initrange)
         elif self.model_args.HN_INIT_STRATEGY == 'bias_init_v2':
             initrange = np.sqrt(1 / self.init_dim)
             self.HN_weight.weight.data.zero_()
             self.HN_weight.bias.data.uniform_(-initrange, initrange)
-        elif self.model_args.HN_INIT_STRATEGY == 'bias_init_v3':
-            initrange = np.sqrt(1 / self.init_dim)
-            self.HN_weight.weight.data.zero_()
-            self.HN_weight.bias.data.normal_(std=initrange)
         else:
             # use a heuristic value as the init range
             initrange = 0.001
