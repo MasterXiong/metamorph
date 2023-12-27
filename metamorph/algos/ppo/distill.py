@@ -129,13 +129,13 @@ def distill_policy(source_folder, target_folder, agents):
         print (agent)
         with open(data_path, 'rb') as f:
             agent_data = pickle.load(f)
-        envs = make_vec_envs(xml_file=agent, training=False, norm_rew=True, render_policy=True, num_env=2, seed=0)
-        init_obs = envs.reset()
-        envs.close()
+        env = make_env(cfg.ENV_NAME, 0, 0, xml_file=agent)()
+        init_obs = env.reset()
+        env.close()
         for key in ['obs', 'act', 'act_mean']:
             buffer[key].append(agent_data[key][:cfg.DISTILL.PER_AGENT_SAMPLE_NUM])
         for key in ['context', 'obs_padding_mask', 'act_padding_mask']:
-            value = init_obs[key][0].cpu().unsqueeze(0).repeat(cfg.DISTILL.PER_AGENT_SAMPLE_NUM, 1)
+            value = torch.from_numpy(init_obs[key]).float().unsqueeze(0).repeat(cfg.DISTILL.PER_AGENT_SAMPLE_NUM, 1)
             buffer[key].append(value)
     for key in buffer:
         buffer[key] = torch.cat(buffer[key], dim=0)
