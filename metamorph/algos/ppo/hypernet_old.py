@@ -17,8 +17,8 @@ class MLPObsEncoder(nn.Module):
 
     def __init__(self, obs_dim):
         super(MLPObsEncoder, self).__init__()
-        mlp_dims = [obs_dim] + cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS
-        self.encoder = tu.make_mlp_default(mlp_dims)
+        mlp_dims = [obs_dim] + cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS + [cfg.MODEL.MLP.HIDDEN_DIM]
+        self.encoder = tu.make_mlp_default(mlp_dims, final_nonlinearity=False)
         self.obs_feat_dim = mlp_dims[-1]
 
     def forward(self, obs):
@@ -267,9 +267,6 @@ class MLPModel(nn.Module):
 
                 HN_output_layers = []
                 self.hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
-                if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-                    self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
-                    self.hidden_dims[0] += cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS[-1]
                 for i in range(self.model_args.LAYER_NUM - 1):
                     output_layer = nn.Linear(HN_input_dim, self.hidden_dims[i] * self.hidden_dims[i + 1], bias=self.model_args.BIAS_IN_HN_OUTPUT_LAYER)
                     if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
@@ -322,14 +319,8 @@ class MLPModel(nn.Module):
                         layers.append(hnet_hidden_bias)
                     self.HN_hidden_bias = nn.ModuleList(layers)
 
-            else:
-                if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-                    self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
-                    hidden_dims = [self.model_args.HIDDEN_DIM + self.hfield_encoder.obs_feat_dim] + [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM - 1)]
-                    self.hidden_layers = tu.make_mlp_default(hidden_dims)
-                else:
-                    hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
-                    self.hidden_layers = tu.make_mlp_default(hidden_dims)
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
 
         if self.model_args.LAYER_NORM:
             norm_layers = [nn.LayerNorm(cfg.MODEL.MLP.HIDDEN_DIM, elementwise_affine=False) for _ in range(cfg.MODEL.MLP.LAYER_NUM)]
@@ -365,11 +356,16 @@ class MLPModel(nn.Module):
                 embedding = embedding.mean(dim=1)
             else:
                 embedding = embedding.sum(dim=1)
-            embedding = F.relu(embedding)
 
             if "hfield" in cfg.ENV.KEYS_TO_KEEP:
                 hfield_embedding = self.hfield_encoder(obs_env["hfield"])
-                embedding = torch.cat([embedding, hfield_embedding], 1)
+                embedding = embedding + hfield_embedding
+
+            embedding = F.relu(embedding)
+
+            # if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            #     hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+            #     embedding = torch.cat([embedding, hfield_embedding], 1)
 
             for weight, bias in zip(self.hidden_weights, self.hidden_bias):
                 embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
@@ -443,27 +439,12 @@ class MLPModel(nn.Module):
                 embedding = embedding + self.hidden_bias
             if self.model_args.LAYER_NORM:
                 embedding = self.LN_layers[0](embedding)
-            if not cfg.MODEL.MLP.RELU_BEFORE_AGG:
-                embedding = F.relu(embedding)
 
-        elif self.model_args.PER_NODE_EMBED:
-            obs = obs.reshape(batch_size, self.seq_len, -1) * (1. - obs_mask.float())[:, :, None]
-            obs = obs.reshape(batch_size, -1)
-            embedding = obs[:, :, None] * self.limb_embed_weights[unimal_ids, :, :]
-            embedding = embedding.sum(dim=-2, keepdim=False) + self.limb_embed_bias[unimal_ids, :]
+            if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+                hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+                embedding = embedding + hfield_embedding
+
             embedding = F.relu(embedding)
-
-        else:
-            # zero-padding limbs won't have zero value due to vector normalization. 
-            # Need to explicitly set them as 0 to avoid their influence on the hidden layer computation
-            obs = obs.reshape(batch_size, self.seq_len, -1) * (1. - obs_mask.float())[:, :, None]
-            obs = obs.reshape(batch_size, -1)
-            embedding = self.input_layer(obs)
-            embedding = F.relu(embedding)
-
-        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-            hfield_embedding = self.hfield_encoder(obs_env["hfield"])
-            embedding = torch.cat([embedding, hfield_embedding], 1)
         
         # hidden layers
         if self.model_args.LAYER_NUM > 1:
