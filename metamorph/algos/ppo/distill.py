@@ -32,7 +32,11 @@ class DistillationDataset(Dataset):
         context = self.data['context'][index]
         obs_mask = self.data['obs_padding_mask'][index]
         act_mask = self.data['act_padding_mask'][index]
-        return obs, act, act_mean, context, obs_mask, act_mask
+        if 'hfield' in self.data:
+            hfield = self.data['hfield'][index]
+        else:
+            hfield = None
+        return obs, act, act_mean, context, obs_mask, act_mask, hfield
 
 
 def distill_policy(source_folder, target_folder, agents):
@@ -61,6 +65,8 @@ def distill_policy(source_folder, target_folder, agents):
         'obs_padding_mask': [], 
         'act_padding_mask': [], 
     }
+    if cfg.ENV.KEYS_TO_KEEP:
+        buffer['hfield'] = []
     for i, agent in enumerate(agents):
         # if i == 5:
         #     break
@@ -96,6 +102,9 @@ def distill_policy(source_folder, target_folder, agents):
         for key in ['context', 'obs_padding_mask', 'act_padding_mask']:
             value = torch.from_numpy(init_obs[key]).float().unsqueeze(0).repeat(cfg.DISTILL.PER_AGENT_SAMPLE_NUM, 1)
             buffer[key].append(value)
+        if 'hfield' in cfg.ENV.KEYS_TO_KEEP:
+            buffer['hfield'].append(agent_data['hfield'])
+
     for key in buffer:
         buffer[key] = torch.cat(buffer[key], dim=0)
 
@@ -115,7 +124,7 @@ def distill_policy(source_folder, target_folder, agents):
             torch.save([model.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{i}.pt')
 
         batch_losses = []
-        for obs, act, act_mean, context, obs_mask, act_mask in train_dataloader:
+        for obs, act, act_mean, context, obs_mask, act_mask, hfield in train_dataloader:
 
             obs_dict = {
                 'proprioceptive': obs.cuda(), 
@@ -123,6 +132,8 @@ def distill_policy(source_folder, target_folder, agents):
                 'obs_padding_mask': obs_mask.cuda(), 
                 'act_padding_mask': act_mask.cuda(), 
             }
+            if 'hfield' in cfg.ENV.KEYS_TO_KEEP:
+                obs_dict['hfield'] = hfield.cuda()
 
             if cfg.DISTILL.IMITATION_TARGET == 'act':
                 _, pi, logp, _ = model(obs_dict, act=act.cuda(), compute_val=False)

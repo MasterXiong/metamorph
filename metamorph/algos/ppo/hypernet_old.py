@@ -12,6 +12,19 @@ from .transformer import TransformerEncoder
 from .transformer import TransformerEncoderLayerResidual
 
 
+class MLPObsEncoder(nn.Module):
+    """Encoder for env obs like hfield."""
+
+    def __init__(self, obs_dim):
+        super(MLPObsEncoder, self).__init__()
+        mlp_dims = [obs_dim] + cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS
+        self.encoder = tu.make_mlp_default(mlp_dims)
+        self.obs_feat_dim = mlp_dims[-1]
+
+    def forward(self, obs):
+        return self.encoder(obs)
+
+
 class MLPModel(nn.Module):
     def __init__(self, obs_space, out_dim):
         super(MLPModel, self).__init__()
@@ -353,6 +366,10 @@ class MLPModel(nn.Module):
             else:
                 embedding = embedding.sum(dim=1)
             embedding = F.relu(embedding)
+
+            if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+                hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+                embedding = torch.cat([embedding, hfield_embedding], 1)
 
             for weight, bias in zip(self.hidden_weights, self.hidden_bias):
                 embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
