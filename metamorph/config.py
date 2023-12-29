@@ -399,7 +399,7 @@ _C.MODEL.CONTEXT_OBS_TYPES = [
     "body_mass", "body_shape", # limb hardware
     "joint_range_onehot", "joint_axis", "gear_onehot",  # joint hardware
     # "torso_limb_indicator", 
-    # "body_pos", "body_ipos", "torso_limb_indicator", 
+    # "body_pos", "body_ipos", 
 ]
 
 # Model specific observation types to keep
@@ -676,6 +676,9 @@ _C.DISTILL.SAVE_FREQ = 10
 _C.DISTILL.IMITATION_TARGET = 'act'
 _C.DISTILL.VALUE_NET = True
 _C.DISTILL.BALANCED_LOSS = False
+_C.DISTILL.GRAD_NORM = None
+_C.DISTILL.SAMPLE_STRATEGY = 'env_first'
+_C.DISTILL.LOSS_TYPE = 'logp'
 
 # ----------------------------------------------------------------------------#
 # Misc Options

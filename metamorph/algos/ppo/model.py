@@ -894,6 +894,7 @@ class ActorCritic(nn.Module):
             return_attention=return_attention, 
             unimal_ids=unimal_ids, 
         )
+        self.action_mu = mu
         if cfg.PPO.TANH == 'mean':
             mu = torch.tanh(mu)
         std = torch.exp(self.log_std)
