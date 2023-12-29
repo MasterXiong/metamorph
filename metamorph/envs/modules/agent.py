@@ -16,9 +16,9 @@ class Agent:
 
         self.np_random = random_state
 
-        self.limb_context = {
-            'body_pos': np.array([[-0.5, -0.45, -0.49], [0.5, 0.45, 2.04]]), 
-            'body_ipos': np.array([[-0.225, -0.225, -0.225], [0.225, 0.225, 0.]]), 
+        self.limb_context_range = {
+            # 'body_pos': np.array([[-0.5, -0.45, -0.49], [0.5, 0.45, 2.04]]), 
+            # 'body_ipos': np.array([[-0.225, -0.225, -0.225], [0.225, 0.225, 0.]]), 
             'body_iquat': np.array([[0.70710678, -0.70710678, -0.70710678, 0.], [1., 0.70710678, 0.70710678, 0.]]), 
             'geom_quat': np.array([[0.70710678, -0.70710678, -0.70710678, 0.], [1., 0.70710678, 0.70710678, 0.]]), 
             'body_mass': np.array([[1.17809725], [4.1887902]]), 
@@ -26,7 +26,7 @@ class Agent:
         }
 
         # joint context is all 0 for torso
-        self.joint_context = {
+        self.joint_context_range = {
             'jnt_pos': np.array([[-0.05, -0.05, 0.], [0.05, 0.05, 0.05]]), 
             'joint_range': np.array([[-1.57079633, 0.], [0., 1.57079633]]), 
             'joint_axis': np.array([[-0.5000024, -0.5000024, -1.], [1., 1., 1.]]), 
@@ -338,8 +338,17 @@ class Agent:
         context_limb["absolute_body_pos"] = self.relative_pos_to_absolute_pos(context_limb["body_pos"])
         context_limb["absolute_body_ipos"] = context_limb["absolute_body_pos"] + context_limb["body_ipos"]
 
-        for key in self.limb_context:
-            lower_bound, upper_bound = self.limb_context[key][0], self.limb_context[key][1]
+        # binary indicator of torso or limb
+        torso_indicator = np.zeros(context_limb["body_pos"].shape[0])
+        torso_indicator[0] = 1.
+        limb_indicator = np.ones_like(torso_indicator)
+        limb_indicator[0] = 0.
+        context_limb["torso_limb_indicator"] = np.stack([torso_indicator, limb_indicator], axis=1)
+
+        # TODO: node depth
+
+        for key in self.limb_context_range:
+            lower_bound, upper_bound = self.limb_context_range[key][0], self.limb_context_range[key][1]
             context_limb[key] = -1. * (lower_bound != upper_bound) + 2. * (context_limb[key] - lower_bound) / (upper_bound - lower_bound + 1e-8)
         context_limb = self._select_obs(context_limb, cfg.MODEL.CONTEXT_OBS_TYPES)
         
@@ -357,8 +366,8 @@ class Agent:
         # convert gear to one-hot form
         context_joint["gear_onehot"] = self.convert_to_one_hot(context_joint["gear"], self.all_gear)
 
-        for key in self.joint_context:
-            lower_bound, upper_bound = self.joint_context[key][0], self.joint_context[key][1]
+        for key in self.joint_context_range:
+            lower_bound, upper_bound = self.joint_context_range[key][0], self.joint_context_range[key][1]
             context_joint[key] = -1. * (lower_bound != upper_bound) + 2. * (context_joint[key] - lower_bound) / (upper_bound - lower_bound + 1e-8)
         context_joint = self._select_obs(context_joint, cfg.MODEL.CONTEXT_OBS_TYPES)
 
