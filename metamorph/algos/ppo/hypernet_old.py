@@ -508,7 +508,7 @@ class MLPModel(nn.Module):
                 context_embedding = self.layer_norm_output(context_embedding)
             if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
                 context_embedding = self.output_dropout(context_embedding)
-            output_weight = self.hnet_output_weight(context_embedding).view(batch_size, self.seq_len, self.model_args.HIDDEN_DIM, self.limb_out_dim)
+            output_weight = self.hnet_output_weight(context_embedding).view(batch_size, self.seq_len, self.final_input_dim, self.limb_out_dim)
             # save for diagnose
             self.context_embedding_output = context_embedding
             self.output_weight = output_weight
