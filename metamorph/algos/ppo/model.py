@@ -50,6 +50,7 @@ class VanillaMLP(nn.Module):
         obs = obs.reshape(batch_size, self.seq_len, -1) * (1. - obs_mask.float())[:, :, None]
         obs = obs.reshape(batch_size, -1)
         embedding = self.input_layer(obs)
+        embedding = embedding / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
         embedding = F.relu(embedding)
         # hidden layers
         if self.model_args.LAYER_NUM > 1:

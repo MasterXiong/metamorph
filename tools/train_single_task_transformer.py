@@ -18,8 +18,8 @@ def create_data(source_folder, target_folder):
 
 
 def train(agent, output_folder, seed, task, extra_args=''):
-    os.system(f'python tools/train_ppo.py --cfg ./configs/{task}.yaml OUT_DIR ./output/{output_folder}/{agent}/{seed} \
-        ENV.WALKER_DIR ./unimals_single_task/{agent} PPO.MAX_STATE_ACTION_PAIRS 10000000.0 RNG_SEED {seed} \
+    os.system(f'python tools/train_ppo.py --cfg ./configs/{task}.yaml OUT_DIR output/{output_folder}/{agent}/{seed} \
+        ENV.WALKER_DIR data_single_robot/{agent} PPO.MAX_STATE_ACTION_PAIRS 10000000.0 RNG_SEED {seed} \
         MODEL.TRANSFORMER.EMBEDDING_DROPOUT False \
         {extra_args}')
 
@@ -86,22 +86,12 @@ def compare_subset(folder):
 
 if __name__ == '__main__':
     
-    # python tools/train_single_task_transformer.py --model_type linear --task ft --output_folder MLP_ST_ft_256*3_KL_5 --seed 1409 --start 0 --end 50
+    # vanilla MLP
+    # python tools/train_single_task_transformer.py --model_type linear --task ft --output_folder MLP_ST_ft_256*2_KL_5 --kl 5. --seed 1410 --start 0 --end 50
+    # python tools/train_single_task_transformer.py --model_type linear --task csr --output_folder MLP_ST_csr_256*2_KL_3 --kl 3. --seed 1409 --start 0 --end 50
+    # Transformer
     # python tools/train_single_task_transformer.py --model_type transformer --task ft --output_folder TF_ST_ft_KL_5_wo_dropout --seed 1409 --start 0 --end 10
     # python tools/train_single_task_transformer.py --model_type transformer --task csr --output_folder TF_ST_csr_KL_3_wo_PE+dropout --no_PE --seed 1409 --start 0 --end 10
-    # for the KL project
-    # constant lr
-    # python tools/train_single_task_transformer.py --model_type transformer --task incline --output_folder TF_ST_incline_constant_lr_KL_3_wo_dropout --kl 3. --lr 0.0003 --seed 1409 --start 0 --end 5
-    # python tools/train_single_task_transformer.py --model_type linear --task ft --output_folder MLP_ST_ft_512*6_constant_lr_KL_5 --kl 5. --lr 0.0003 --seed 1409 --start 0 --end 10
-    # constant lr + learned std
-    # python tools/train_single_task_transformer.py --model_type linear --task incline --output_folder MLP_ST_incline_1024*2_constant_lr_learnt_std_KL_5 --kl 5. --lr 0.0003 --std learn --seed 1409 --start 0 --end 5
-    # python tools/train_single_task_transformer.py --model_type transformer --task ft --output_folder TF_ST_ft_constant_lr_learnt_std_KL_5_wo_dropout --kl 5. --lr 0.0003 --std learn --seed 1409 --start 0 --end 5
-    # change model size
-    # python tools/train_single_task_transformer.py --model_type transformer --task incline --output_folder TF_ST_incline_2_layer_KL_5_wo_dropout --tf_num_layer 2 --kl 5. --seed 1409 --start 0 --end 5
-    # python tools/train_single_task_transformer.py --model_type linear --task incline --output_folder MLP_ST_incline_1024*2_KL_5 --seed 1409 --start 0 --end 10
-    # check limb ratio
-    # python tools/train_single_task_transformer.py --model_type linear --task ft --output_folder MLP_ST_ft_1024*2_constant_lr_KL_5 --kl 5. --lr 0.0003 --save_limb_ratio --seed 1409 --start 0 --end 10
-    # python tools/train_single_task_transformer.py --model_type transformer --task ft --output_folder TF_ST_ft_constant_lr_KL_5_wo_dropout --kl 5. --lr 0.0003 --save_limb_ratio --seed 1409 --start 0 --end 5
     parser = argparse.ArgumentParser(description="Train a RL agent")
     parser.add_argument("--start", default=0, type=int)
     parser.add_argument("--end", default=100, type=int)
@@ -115,11 +105,12 @@ if __name__ == '__main__':
     parser.add_argument("--lr", default=0.0003, type=float)
     parser.add_argument("--std", default='fixed', type=str)
     parser.add_argument("--save_limb_ratio", action="store_true")
+    parser.add_argument("--fix_obs_rms", type=str)
     args = parser.parse_args()
     
-    # create_data('unimals_100/test', 'unimals_single_task_test')
+    # create_data('data/train', 'data_single_robot')
 
-    agent_names = [x.split('.')[0] for x in os.listdir('unimals_100/train/xml')]
+    agent_names = [x.split('.')[0] for x in os.listdir('data/train/xml')]
     agents = agent_names[args.start:args.end]
     print (agents)
 
@@ -163,11 +154,13 @@ if __name__ == '__main__':
     #     extra_args.append('PPO.KL_TARGET_COEF 3.')
     extra_args.append(f'PPO.KL_TARGET_COEF {args.kl}')
     if args.model_type == 'linear':
-        extra_args.append('MODEL.TYPE mlp')
+        extra_args.append('MODEL.TYPE vanilla_mlp')
     if args.no_PE:
         extra_args.append('MODEL.TRANSFORMER.POS_EMBEDDING None')
     if args.tf_num_layer is not None:
         extra_args.append(f'MODEL.TRANSFORMER.NLAYERS {args.tf_num_layer}')
+    if args.fix_obs_rms is not None:
+        extra_args.append(f'ENV.FIX_OBS_NORM {args.fix_obs_rms}')
     extra_args = ' '.join(extra_args)
     print (extra_args)
 
@@ -178,34 +171,3 @@ if __name__ == '__main__':
         train(agent, args.output_folder, args.seed, args.task, extra_args)
         # os.system(f'cp unimals_100/train/xml/{agent}.xml unimals_20/xml/')
         # os.system(f'cp unimals_100/train/metadata/{agent}.json unimals_20/metadata/')
-    
-    #compare()
-    '''
-    test_idx = [1,2,53,74,90]
-    test_idx = [1,2,90]
-    for idx in test_idx:
-        agent = agent_names[idx]
-        with open('log_origin/Unimal-v0_results.json', 'r') as f:
-	        result_MT = json.load(f)
-        #with open(f'log_single_task/{agent}/Unimal-v0_results.json', 'r') as f:
-	    #    result_ST = json.load(f)
-        reward_MT = result_MT[agent]['reward']['reward'][-1]
-        #reward_ST = result_ST[agent]['reward']['reward'][-1]
-        print (agent, 'MT', reward_MT)
-    '''
-    '''
-    # create a subset of training morphologies for a fair comparison with ST training
-    agent_names = [x.split('.')[0] for x in os.listdir('unimals_100/train/xml')]
-    subset_agents = []
-    for agent in agent_names:
-        if 'Unimal-v0_results.json' in os.listdir('output/log_single_task/%s' %(agent)):
-            subset_agents.append(agent)
-    subset_agents = subset_agents[2::3][:10]
-    os.mkdir('unimals_100/train_subset_2')
-    os.mkdir('unimals_100/train_subset_2/xml')
-    os.mkdir('unimals_100/train_subset_2/metadata')
-    for agent in subset_agents:
-        os.system(f'cp unimals_100/train/xml/{agent}.xml unimals_100/train_subset_2/xml/')
-        os.system(f'cp unimals_100/train/metadata/{agent}.json unimals_100/train_subset_2/metadata/')
-    '''
-    #compare_subset('subset_2')
