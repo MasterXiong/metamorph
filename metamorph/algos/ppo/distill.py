@@ -32,18 +32,19 @@ class DistillationDataset(Dataset):
         context = self.data['context'][index]
         obs_mask = self.data['obs_padding_mask'][index]
         act_mask = self.data['act_padding_mask'][index]
+        unimal_ids = self.data['unimal_ids'][index]
         if 'hfield' in self.data:
             hfield = self.data['hfield'][index]
         else:
-            hfield = None
-        return obs, act, act_mean, context, obs_mask, act_mask, hfield
+            hfield = torch.zeros(1)
+        return obs, act, act_mean, context, obs_mask, act_mask, hfield, unimal_ids
 
 
-def distill_policy(source_folder, target_folder, agents):
+def distill_policy(source_folder, target_folder, agent_path):
 
-    cfg.ENV.WALKER_DIR = 'data/train'
-    cfg.ENV.WALKERS = agents
+    cfg.ENV.WALKER_DIR = agent_path
     set_cfg_options()
+    agents = cfg.ENV.WALKERS
     envs = make_vec_envs()
     model = ActorCritic(envs.observation_space, envs.action_space).cuda()
 
@@ -64,9 +65,11 @@ def distill_policy(source_folder, target_folder, agents):
         'context': [], 
         'obs_padding_mask': [], 
         'act_padding_mask': [], 
+        'unimal_ids': [], 
     }
     if cfg.ENV.KEYS_TO_KEEP:
         buffer['hfield'] = []
+    # all_context = []
     for i, agent in enumerate(agents):
         # if i == 5:
         #     break
@@ -78,6 +81,7 @@ def distill_policy(source_folder, target_folder, agents):
             agent_data = pickle.load(f)
         env = make_env(cfg.ENV_NAME, 0, 0, xml_file=agent)()
         init_obs = env.reset()
+        # all_context.append(init_obs['context'])
         env.close()
         # drop context features from obs if needed
         if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6:
@@ -102,8 +106,15 @@ def distill_policy(source_folder, target_folder, agents):
         for key in ['context', 'obs_padding_mask', 'act_padding_mask']:
             value = torch.from_numpy(init_obs[key]).float().unsqueeze(0).repeat(cfg.DISTILL.PER_AGENT_SAMPLE_NUM, 1)
             buffer[key].append(value)
+        buffer['unimal_ids'].append(torch.ones(cfg.DISTILL.PER_AGENT_SAMPLE_NUM, dtype=torch.long) * i)
         if 'hfield' in cfg.ENV.KEYS_TO_KEEP:
             buffer['hfield'].append(agent_data['hfield'])
+    # all_context = np.stack(all_context, axis=0)
+    # all_context = all_context.reshape(1200, -1)
+    # for i in range(all_context.shape[1]):
+    #     print (i, all_context[:, i].min(), all_context[:, i].max())
+    # with open('context_norm.pkl', 'wb') as f:
+    #     pickle.dump([all_context.min(axis=0), all_context.max(axis=0)], f)
 
     for key in buffer:
         buffer[key] = torch.cat(buffer[key], dim=0)
@@ -118,13 +129,14 @@ def distill_policy(source_folder, target_folder, agents):
         weight_decay=cfg.DISTILL.WEIGHT_DECAY
     )
 
+    loss_curve = []
     for i in range(cfg.DISTILL.EPOCH_NUM):
 
         if i % cfg.DISTILL.SAVE_FREQ == 0:
             torch.save([model.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{i}.pt')
 
         batch_losses = []
-        for obs, act, act_mean, context, obs_mask, act_mask, hfield in train_dataloader:
+        for obs, act, act_mean, context, obs_mask, act_mask, hfield, unimal_ids in train_dataloader:
 
             obs_dict = {
                 'proprioceptive': obs.cuda(), 
@@ -136,9 +148,9 @@ def distill_policy(source_folder, target_folder, agents):
                 obs_dict['hfield'] = hfield.cuda()
 
             if cfg.DISTILL.IMITATION_TARGET == 'act':
-                _, pi, logp, _ = model(obs_dict, act=act.cuda(), compute_val=False)
+                _, pi, logp, _ = model(obs_dict, act=act.cuda(), compute_val=False, unimal_ids=unimal_ids)
             else:
-                _, pi, logp, _ = model(obs_dict, act=act_mean.cuda(), compute_val=False)
+                _, pi, logp, _ = model(obs_dict, act=act_mean.cuda(), compute_val=False, unimal_ids=unimal_ids)
             if cfg.DISTILL.LOSS_TYPE == 'KL':
                 if cfg.DISTILL.BALANCED_LOSS:
                     loss = 0.5 * (((model.action_mu - act_mean.cuda()).square() * (1 - obs_dict['act_padding_mask'])).sum(dim=1) / (1 - obs_dict['act_padding_mask']).sum(dim=1)).mean()
@@ -163,5 +175,8 @@ def distill_policy(source_folder, target_folder, agents):
             batch_losses.append(loss.item())
 
         print (f'epoch {i}, average batch loss: {np.mean(batch_losses)}')
+        loss_curve.append(np.mean(batch_losses))
 
     torch.save([model.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{cfg.DISTILL.EPOCH_NUM}.pt')
+    with open(f'{cfg.OUT_DIR}/loss_curve.pkl', 'wb') as f:
+        pickle.dump(loss_curve, f)

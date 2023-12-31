@@ -68,15 +68,30 @@ def evaluate(policy, env, agent, compute_gae=False):
 
     obs = env.reset()
     ood_ratio = (obs['proprioceptive'].abs() == 10.).float().mean().item()
+    if cfg.MODEL.NORMALIZE_CONTEXT:
+        with open('context_norm.pkl', 'rb') as f:
+            context_min, context_max = pickle.load(f)
+        context_min = torch.Tensor(context_min).float().unsqueeze(0).cuda()
+        context_max = torch.Tensor(context_max).float().unsqueeze(0).cuda()
+        context_range = context_max - context_min
+        context_range[context_range == 0] = 1e-8
+        obs_context = obs['context']
+        batch_size = obs_context.shape[0]
+        obs_context = obs_context.view(batch_size * 12, -1)
+        obs_context = (obs_context - context_min) / context_range
+        obs_context = obs_context.view(batch_size, -1)
+        obs['context'] = obs_context
+
     if type(policy.ac.mu_net) == MLPModel or type(policy.ac.mu_net) == HNMLP:
         policy.ac.mu_net.generate_params(obs['context'], obs['obs_padding_mask'].bool())
 
     for t in range(2000):
+        unimal_ids = env.get_unimal_idx()
         if compute_gae:
-            val, act, _ = policy.act(obs, return_attention=False, compute_val=True)
+            val, act, _ = policy.act(obs, return_attention=False, compute_val=True, unimal_ids=unimal_ids)
             episode_values.append(val)
         else:
-            _, act, _ = policy.act(obs, return_attention=False, compute_val=False)
+            _, act, _ = policy.act(obs, return_attention=False, compute_val=False, unimal_ids=unimal_ids)
         
         # if t == 0:
         #     # mask = obs['obs_padding_mask'][0]

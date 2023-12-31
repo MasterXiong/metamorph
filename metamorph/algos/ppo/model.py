@@ -1,4 +1,5 @@
 import math
+import pickle
 
 import numpy as np
 import torch
@@ -59,6 +60,50 @@ class VanillaMLP(nn.Module):
 
         # output layer
         output = self.output_layer(embedding)
+        return output, None
+
+
+class PerAgentMLP(nn.Module):
+    def __init__(self, obs_space, out_dim):
+        super(PerAgentMLP, self).__init__()
+        self.model_args = cfg.MODEL.MLP
+        self.seq_len = cfg.MODEL.MAX_LIMBS
+        # input layer
+        initrange = np.sqrt(1. / obs_space["proprioceptive"].shape[0])
+        self.input_weight = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+        self.input_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+        # hidden layers
+        initrange = np.sqrt(1. / self.model_args.HIDDEN_DIM)
+        self.hidden_weight = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM, self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+        self.hidden_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
+        # hfield
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
+            self.final_input_dim = self.model_args.HIDDEN_DIM + cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS[-1]
+        else:
+            self.final_input_dim = self.model_args.HIDDEN_DIM
+        # output layer
+        initrange = np.sqrt(1. / self.final_input_dim)
+        self.output_weight = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.final_input_dim, out_dim).uniform_(-initrange, initrange))
+        self.output_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), out_dim).uniform_(-initrange, initrange))
+
+    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, unimal_ids=None):
+        batch_size = obs.shape[0]
+        # input layer
+        obs = obs.reshape(batch_size, self.seq_len, -1) * (1. - obs_mask.float())[:, :, None]
+        obs = obs.reshape(batch_size, -1)
+        embedding = obs[:, :, None] * self.input_weight[unimal_ids]
+        embedding = embedding.sum(dim=-2) / (1. - obs_mask.float()).sum(dim=1, keepdim=True) + self.input_bias[unimal_ids, :]
+        embedding = F.relu(embedding)
+        # hidden layers
+        embedding = (embedding[:, :, None] * self.hidden_weight[unimal_ids]).sum(dim=-2) + self.hidden_bias[unimal_ids]
+        embedding = F.relu(embedding)
+        # hfield
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+            embedding = torch.cat([embedding, hfield_embedding], 1)
+        # output layer
+        output = (embedding[:, :, None] * self.output_weight[unimal_ids]).sum(dim=-2) + self.output_bias[unimal_ids]
         return output, None
 
 
@@ -751,6 +796,8 @@ class ActorCritic(nn.Module):
                 self.v_net = MLPModel(obs_space, cfg.MODEL.MAX_LIMBS)
             elif cfg.MODEL.TYPE == 'hnmlp':
                 self.v_net = HNMLP(obs_space, cfg.MODEL.MAX_LIMBS)
+            elif cfg.MODEL.TYPE == 'per_agent_mlp':
+                self.v_net = PerAgentMLP(obs_space, cfg.MODEL.MAX_LIMBS)
             else:
                 self.v_net = VanillaMLP(obs_space, cfg.MODEL.MAX_LIMBS)
 
@@ -761,6 +808,8 @@ class ActorCritic(nn.Module):
                 self.mu_net = MLPModel(obs_space, cfg.MODEL.MAX_LIMBS * 2)
             elif cfg.MODEL.TYPE == 'hnmlp':
                 self.mu_net = HNMLP(obs_space, cfg.MODEL.MAX_LIMBS * 2)
+            elif cfg.MODEL.TYPE == 'per_agent_mlp':
+                self.mu_net = PerAgentMLP(obs_space, cfg.MODEL.MAX_LIMBS * 2)
             else:
                 self.mu_net = VanillaMLP(obs_space, cfg.MODEL.MAX_LIMBS * 2)
             self.num_actions = cfg.MODEL.MAX_LIMBS * 2
@@ -806,6 +855,14 @@ class ActorCritic(nn.Module):
             self.state_min = torch.Tensor(self.state_min.reshape(1, 1, -1)).cuda()
             self.state_max = torch.Tensor(self.state_max.reshape(1, 1, -1)).cuda()
 
+        if cfg.MODEL.NORMALIZE_CONTEXT:
+            with open('context_norm.pkl', 'rb') as f:
+                self.context_min, self.context_max = pickle.load(f)
+            self.context_min = torch.Tensor(self.context_min).float().unsqueeze(0).cuda()
+            self.context_max = torch.Tensor(self.context_max).float().unsqueeze(0).cuda()
+            self.context_range = self.context_max - self.context_min
+            self.context_range[self.context_range == 0] = 1e-8
+
     def forward(self, obs, act=None, return_attention=False, unimal_ids=None, compute_val=True):
         
         # all_start = time.time()
@@ -827,6 +884,11 @@ class ActorCritic(nn.Module):
             obs_context = obs['context']
         else:
             obs_context = None
+
+        if cfg.MODEL.NORMALIZE_CONTEXT:
+            obs_context = obs_context.view(batch_size * self.seq_len, -1)
+            obs_context = (obs_context - self.context_min) / self.context_range
+            obs_context = obs_context.view(batch_size, -1)
 
         obs_dict = obs
         obs, obs_mask, act_mask = (

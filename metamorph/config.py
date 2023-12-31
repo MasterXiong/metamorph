@@ -420,6 +420,7 @@ _C.MODEL.OBS_TO_NORM = ["proprioceptive"]
 
 # Context normalization with RunningMeanStd or fixed range
 _C.MODEL.BASE_CONTEXT_NORM = 'running'
+_C.MODEL.NORMALIZE_CONTEXT = False
 
 # normalize state inputs with fixed range
 _C.MODEL.OBS_FIX_NORM = False
@@ -475,6 +476,8 @@ _C.MODEL.MLP.LAYER_NORM = False
 _C.MODEL.MLP.CONTEXT_EMBEDDING_NORM = None
 # context embedding dropout
 _C.MODEL.MLP.CONTEXT_EMBEDDING_DROPOUT = False
+# hidden context
+_C.MODEL.MLP.HIDDEN_CONTEXT = 'mean'
 
 # hyperparameters for hypernet
 _C.MODEL.HYPERNET = CN()

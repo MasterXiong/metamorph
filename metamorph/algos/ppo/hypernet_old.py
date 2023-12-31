@@ -127,18 +127,6 @@ class MLPModel(nn.Module):
             else:
                 self.hidden_bias = nn.Parameter(torch.zeros(1, self.model_args.HIDDEN_DIM))
 
-        elif self.model_args.PER_NODE_EMBED:
-            print ('independent input weights for each node')
-            initrange = 0.04
-            self.limb_embed_weights = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
-            self.limb_embed_bias = nn.Parameter(torch.zeros(len(cfg.ENV.WALKERS), self.model_args.HIDDEN_DIM).uniform_(-initrange, initrange))
-
-        else:
-            self.input_layer = nn.Linear(obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM)
-            initrange = np.sqrt(1 / obs_space["proprioceptive"].shape[0])
-            self.input_layer.weight.data.normal_(std=initrange)
-            self.input_layer.bias.data.zero_()
-
         if self.model_args.HN_OUTPUT:
             print ('use HN for output layer')
             if not self.model_args.SHARE_CONTEXT_ENCODER:
