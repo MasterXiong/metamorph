@@ -38,7 +38,13 @@ class PPO:
         #     # do not update normalizer when fine-tuning
         #     self.envs = make_vec_envs(training=False)
         # else:
-        self.envs = make_vec_envs()
+        if cfg.ENV.FIX_OBS_NORM is not None:
+            self.envs = make_vec_envs(training=False)
+            with open(f'{cfg.ENV.FIX_OBS_NORM}/obs_rms.pkl', 'rb') as f:
+                fix_obs_rms = pickle.load(f)
+            set_ob_rms(self.envs, fix_obs_rms)
+        else:
+            self.envs = make_vec_envs()
         self.file_prefix = cfg.ENV_NAME
 
         # use learned model for rollout step

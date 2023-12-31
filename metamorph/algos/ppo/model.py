@@ -27,17 +27,19 @@ class VanillaMLP(nn.Module):
         self.model_args = cfg.MODEL.MLP
         self.seq_len = cfg.MODEL.MAX_LIMBS
 
+        # input layer
         self.input_layer = nn.Linear(obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM)
-        self.output_layer = nn.Linear(self.model_args.HIDDEN_DIM, out_dim)
-
+        # hidden layers
         if self.model_args.LAYER_NUM > 1:
-            if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-                self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
-                hidden_dims = [self.model_args.HIDDEN_DIM + self.hfield_encoder.obs_feat_dim] + [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM - 1)]
-                self.hidden_layers = tu.make_mlp_default(hidden_dims)
-            else:
-                hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
-                self.hidden_layers = tu.make_mlp_default(hidden_dims)
+            hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
+            self.hidden_layers = tu.make_mlp_default(hidden_dims)
+        # output layer
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
+            self.final_input_dim = self.model_args.HIDDEN_DIM + cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS[-1]
+        else:
+            self.final_input_dim = self.model_args.HIDDEN_DIM 
+        self.output_layer = nn.Linear(self.final_input_dim, out_dim)
 
     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, unimal_ids=None):
 
@@ -49,15 +51,13 @@ class VanillaMLP(nn.Module):
         obs = obs.reshape(batch_size, -1)
         embedding = self.input_layer(obs)
         embedding = F.relu(embedding)
-
-        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-            hfield_embedding = self.hfield_encoder(obs_env["hfield"])
-            embedding = torch.cat([embedding, hfield_embedding], 1)
-        
         # hidden layers
         if self.model_args.LAYER_NUM > 1:
             embedding = self.hidden_layers(embedding)
-
+        # hfield
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+            embedding = torch.cat([embedding, hfield_embedding], 1)
         # output layer
         output = self.output_layer(embedding)
         return output, None

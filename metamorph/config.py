@@ -104,6 +104,9 @@ _C.ENV.FILTER_WALKERS = False
 _C.ENV.FILTER_SCORE_FOLDER = ''
 _C.ENV.FILTER_THRESHOLD = 0.
 
+# fix obs norm
+_C.ENV.FIX_OBS_NORM = None
+
 # ----------------------------------------------------------------------------#
 # Terrain Options
 # ----------------------------------------------------------------------------#
