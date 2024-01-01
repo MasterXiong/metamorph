@@ -310,6 +310,8 @@ def distill_evaluation_curve(folders, names, test_set, suffix, plot_each_seed=Fa
                 all_seed_x.append(xdata)
                 all_seed_y.append(ydata)
         seed_num = len(all_seed_x)
+        if seed_num == 0:
+            continue
         print (all_seed_y)
         min_len = min([len(x) for x in all_seed_x])
         plot_x = all_seed_x[0][:min_len]
@@ -322,7 +324,9 @@ def distill_evaluation_curve(folders, names, test_set, suffix, plot_each_seed=Fa
             for y in all_seed_y:
                 plt.plot(plot_x, y[:min_len], c=colors[i], alpha=0.5)
     if bound is not None:
-        plt.plot([plot_x[0], plot_x[-1]], [bound, bound], 'k--')
+        bound_mean, bound_std = np.mean(bound), np.std(bound)
+        plt.plot([plot_x[0], plot_x[-1]], [bound_mean, bound_mean], 'k--')
+        plt.fill_between([plot_x[0], plot_x[-1]], bound_mean - bound_std, bound_mean + bound_std, color='k', alpha=0.25)
     plt.legend(loc='lower right', ncols=1, prop = {'size':5})
     plt.title(f'Generalization to {test_set}')
     plt.xlabel('Distill epoch')
@@ -352,24 +356,26 @@ def plot_loss_curve(folders, names, suffix):
 
 test_bound = {
     'ft': 1170, 
-    'csr': 767, 
+    'csr': [653, 735], 
     'obstacle': 829, 
 }
 train_bound = {
     'ft': 3595, 
-    'csr': 1658, 
+    'csr': [1703, 1584], 
     'obstacle': 1992, 
 }
 
 folders = {
-    'csr_MT_TF_to_TF_lr_1e-3': 10, 
-    'csr_MT_TF_to_TF_lr_1e-3_expert_size_64000': 10, 
-    'csr_MT_TF_to_HN-MLP_v3_lr_1e-3_decouple_grad_norm_0.5_KL_loss_balanced': 10, 
+    'csr_MT_TF_to_TF_lr_1e-3': 4, 
+    'csr_MT_TF_to_TF_lr_1e-3_expert_size_64000': 4, 
+    'csr_MT_TF_to_TF_lr_3e-4': 10, 
+    'csr_MT_TF_to_TF_lr_3e-4_expert_size_64000': 10, 
 }
 names = [
     'TF, lr=1e-3, grad norm, KL loss balanced', 
     'TF, lr=1e-3, grad norm, KL loss balanced, expert size=64000', 
-    'HN-MLP, lr=1e-3, decouple, grad norm, KL loss balanced'
+    'TF, lr=3e-4, grad norm, KL loss balanced', 
+    'TF, lr=3e-4, grad norm, KL loss balanced, expert size=64000', 
 ]
 distill_evaluation_curve(folders, names, 'test', 'csr', bound=test_bound['csr'])
 distill_evaluation_curve(folders, names, 'train', 'csr', bound=train_bound['csr'])

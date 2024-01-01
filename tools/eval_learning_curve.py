@@ -19,7 +19,10 @@ def evaluate_checkpoint(folder, test_set, interval=600, additional_suffix=None, 
             suffix = f'{seed}_{test_set_name}_cp_{iteration}'
             if additional_suffix is not None:
                 suffix = suffix + '_' + additional_suffix
-            model_path = f'{folder}/{seed}/checkpoint_{iteration}.pt'
+            if iteration == -1:
+                model_path = f'{folder}/{seed}/Unimal-v0.pt'
+            else:
+                model_path = f'{folder}/{seed}/checkpoint_{iteration}.pt'
             agent_path = test_set
             policy_folder = f'{folder}/{seed}'
             print (model_path)
@@ -31,6 +34,8 @@ def evaluate_checkpoint(folder, test_set, interval=600, additional_suffix=None, 
             score = evaluate_model(model_path, agent_path, policy_folder, suffix=suffix, compute_gae=False, \
                 terminate_on_fall=True)
             seed_scores[iteration] = score
+            if iteration == -1:
+                break
             iteration += interval
         all_seed_scores.append(seed_scores)
     for iteration in all_seed_scores[0].keys():
@@ -43,7 +48,7 @@ def evaluate_checkpoint(folder, test_set, interval=600, additional_suffix=None, 
 
 if __name__ == '__main__':
     
-    # python tools/eval_learning_curve.py --folder distilled_policy/MT_TF_to_HN-MLP_lr_1e-3 --test_set data/test --interval 10 --seed 1409
+    # python tools/eval_learning_curve.py --folder baselines/csr_200M_baseline_KL_3_wo_PE+dropout --test_set data/test --interval -1 --seed 1409
     # python tools/eval_learning_curve.py --folder output/ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout/1409 --test_set unimals_100/train --interval 100
     # python tools/eval_learning_curve.py --folder output/ft_400M_baseline_uniform_sample_KL_5_wo_PE+dropout/1409 --test_set unimals_100/train_remove_level_1 --interval 100
     # python tools/eval_learning_curve.py --folder output/ft_400M_mutate_1000_uniform_sample_KL_5_wo_PE+dropout/1409
