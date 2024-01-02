@@ -270,6 +270,13 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
     else:
         eval_result = {}
 
+    obs_rms = get_ob_rms(ppo_trainer.envs)
+    try:
+        obs_rms['proprioceptive'].mean = obs_rms['proprioceptive'].mean.numpy()
+        obs_rms['proprioceptive'].var = obs_rms['proprioceptive'].var.numpy()
+    except:
+        pass
+
     all_obs = dict()
     for i, agent in enumerate(test_agents):
         # with open(f'{agent_path}/metadata/{agent}.json', 'r') as f:
@@ -279,7 +286,7 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
             avg_score.append(np.array(episode_return).mean())
         else:
             envs = make_vec_envs(xml_file=agent, training=False, norm_rew=True, render_policy=True)
-            set_ob_rms(envs, get_ob_rms(ppo_trainer.envs))
+            set_ob_rms(envs, obs_rms)
             set_ret_rms(envs, get_ret_rms(ppo_trainer.envs))
             episode_return, ood_ratio, episode_gae = evaluate(policy, envs, agent, compute_gae=compute_gae)
             envs.close()
