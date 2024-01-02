@@ -10,6 +10,7 @@ from metamorph.config import cfg
 from metamorph.algos.ppo.ppo import PPO
 from metamorph.algos.ppo.envs import *
 from metamorph.algos.ppo.model import ActorCritic, Agent
+from metamorph.envs.vec_env.running_mean_std import RunningMeanStd
 
 from tools.train_ppo import set_cfg_options
 
@@ -40,22 +41,13 @@ class DistillationDataset(Dataset):
         return obs, act, act_mean, context, obs_mask, act_mask, hfield, unimal_ids
 
 
-def distill_policy(source_folder, target_folder, agent_path):
+def distill_policy(source_folder, target_folder, agent_path, teacher_mode):
 
     cfg.ENV.WALKER_DIR = agent_path
     set_cfg_options()
     agents = cfg.ENV.WALKERS
     envs = make_vec_envs()
     model = ActorCritic(envs.observation_space, envs.action_space).cuda()
-
-    with open(f'expert_data/{source_folder}/obs_rms.pkl', 'rb') as f:
-        obs_rms = pickle.load(f)
-    if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6:
-        dims = list(range(13)) + [30, 31] + [41, 42]
-        new_mean = obs_rms['proprioceptive'].mean.reshape(cfg.MODEL.MAX_LIMBS, -1)
-        obs_rms['proprioceptive'].mean = new_mean[:, dims].ravel()
-        new_var = obs_rms['proprioceptive'].var.reshape(cfg.MODEL.MAX_LIMBS, -1)
-        obs_rms['proprioceptive'].var = new_var[:, dims].ravel()
 
     # merge the training data
     buffer = {
@@ -67,7 +59,7 @@ def distill_policy(source_folder, target_folder, agent_path):
         'act_padding_mask': [], 
         'unimal_ids': [], 
     }
-    if cfg.ENV.KEYS_TO_KEEP:
+    if 'hfield' in cfg.ENV.KEYS_TO_KEEP:
         buffer['hfield'] = []
     # all_context = []
     for i, agent in enumerate(agents):
@@ -118,6 +110,27 @@ def distill_policy(source_folder, target_folder, agent_path):
 
     for key in buffer:
         buffer[key] = torch.cat(buffer[key], dim=0)
+
+    if teacher_mode == 'MT':
+        # if the teacher is trained by multi-task RL, reuse its obs rms for the student
+        with open(f'expert_data/{source_folder}/obs_rms.pkl', 'rb') as f:
+            obs_rms = pickle.load(f)
+        if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6:
+            dims = list(range(13)) + [30, 31] + [41, 42]
+            new_mean = obs_rms['proprioceptive'].mean.reshape(cfg.MODEL.MAX_LIMBS, -1)
+            obs_rms['proprioceptive'].mean = new_mean[:, dims].ravel()
+            new_var = obs_rms['proprioceptive'].var.reshape(cfg.MODEL.MAX_LIMBS, -1)
+            obs_rms['proprioceptive'].var = new_var[:, dims].ravel()
+    elif teacher_mode == 'ST':
+        # if the teachers are trained by single-task RL, renormalize the proprioceptive features
+        obs_rms = {'proprioceptive': RunningMeanStd(shape=buffer['obs'].shape[-1])}
+        obs_rms['proprioceptive'].mean = buffer['obs'].mean(axis=0)
+        obs_rms['proprioceptive'].var = buffer['obs'].var(axis=0)
+        buffer['obs'] = np.clip(
+            (buffer['obs'] - obs_rms['proprioceptive'].mean) / (np.sqrt(obs_rms['proprioceptive'].var + 1e-8)), 
+            -10., 
+            10.
+        )
 
     train_data = DistillationDataset(buffer)
     train_dataloader = DataLoader(train_data, batch_size=cfg.DISTILL.BATCH_SIZE, shuffle=True, drop_last=False, num_workers=2, pin_memory=True)
