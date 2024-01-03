@@ -19,7 +19,7 @@ def make_mlp(dim_list):
     return nn.Sequential(*layers)
 
 
-def make_mlp_default(dim_list, final_nonlinearity=True, nonlinearity="relu"):
+def make_mlp_default(dim_list, final_nonlinearity=True, nonlinearity="relu", dropout=None):
     layers = []
     for dim_in, dim_out in zip(dim_list[:-1], dim_list[1:]):
         layers.append(nn.Linear(dim_in, dim_out))
@@ -27,8 +27,12 @@ def make_mlp_default(dim_list, final_nonlinearity=True, nonlinearity="relu"):
             layers.append(nn.ReLU())
         elif nonlinearity == "tanh":
             layers.append(nn.Tanh())
+        if dropout is not None:
+            layers.append(nn.Dropout(p=dropout))
 
     if not final_nonlinearity:
+        if dropout is not None:
+            layers.pop()
         layers.pop()
     return nn.Sequential(*layers)
 

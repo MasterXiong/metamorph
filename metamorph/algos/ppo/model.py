@@ -21,6 +21,29 @@ import time
 import matplotlib.pyplot as plt
 
 
+class SimplistMLP(nn.Module):
+    def __init__(self, obs_space, out_dim):
+        super(SimplistMLP, self).__init__()
+        self.model_args = cfg.MODEL.MLP
+        dims = [obs_space["proprioceptive"].shape[0]] + [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
+        self.layers = tu.make_mlp_default(dims)
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
+            self.final_input_dim = self.model_args.HIDDEN_DIM + cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS[-1]
+        else:
+            self.final_input_dim = self.model_args.HIDDEN_DIM 
+        self.output_layer = nn.Linear(self.final_input_dim, out_dim)
+    
+    def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, unimal_ids=None):
+        obs_embedding = self.layers(obs)
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+            embedding = torch.cat([obs_embedding, hfield_embedding], 1)
+        # output layer
+        output = self.output_layer(embedding)
+        return output, None
+
+
 class VanillaMLP(nn.Module):
     def __init__(self, obs_space, out_dim):
         super(VanillaMLP, self).__init__()
@@ -32,7 +55,7 @@ class VanillaMLP(nn.Module):
         # hidden layers
         if self.model_args.LAYER_NUM > 1:
             hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
-            self.hidden_layers = tu.make_mlp_default(hidden_dims)
+            self.hidden_layers = tu.make_mlp_default(hidden_dims, dropout=self.model_args.DROPOUT)
         # output layer
         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
             self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
@@ -40,6 +63,9 @@ class VanillaMLP(nn.Module):
         else:
             self.final_input_dim = self.model_args.HIDDEN_DIM 
         self.output_layer = nn.Linear(self.final_input_dim, out_dim)
+        # dropout
+        if self.model_args.DROPOUT is not None:
+            self.input_dropout = nn.Dropout(p=self.model_args.DROPOUT)
 
     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, unimal_ids=None):
 
@@ -52,6 +78,8 @@ class VanillaMLP(nn.Module):
         embedding = self.input_layer(obs)
         embedding = embedding / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
         embedding = F.relu(embedding)
+        if self.model_args.DROPOUT is not None:
+            embedding = self.input_dropout(embedding)
         # hidden layers
         if self.model_args.LAYER_NUM > 1:
             embedding = self.hidden_layers(embedding)
@@ -799,6 +827,8 @@ class ActorCritic(nn.Module):
                 self.v_net = HNMLP(obs_space, cfg.MODEL.MAX_LIMBS)
             elif cfg.MODEL.TYPE == 'per_agent_mlp':
                 self.v_net = PerAgentMLP(obs_space, cfg.MODEL.MAX_LIMBS)
+            elif cfg.MODEL.TYPE == 'simplist_mlp':
+                self.v_net = SimplistMLP(obs_space, cfg.MODEL.MAX_LIMBS)
             else:
                 self.v_net = VanillaMLP(obs_space, cfg.MODEL.MAX_LIMBS)
 
@@ -811,6 +841,8 @@ class ActorCritic(nn.Module):
                 self.mu_net = HNMLP(obs_space, cfg.MODEL.MAX_LIMBS * 2)
             elif cfg.MODEL.TYPE == 'per_agent_mlp':
                 self.mu_net = PerAgentMLP(obs_space, cfg.MODEL.MAX_LIMBS * 2)
+            elif cfg.MODEL.TYPE == 'simplist_mlp':
+                self.mu_net = SimplistMLP(obs_space, cfg.MODEL.MAX_LIMBS * 2)
             else:
                 self.mu_net = VanillaMLP(obs_space, cfg.MODEL.MAX_LIMBS * 2)
             self.num_actions = cfg.MODEL.MAX_LIMBS * 2

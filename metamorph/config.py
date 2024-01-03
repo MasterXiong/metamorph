@@ -481,6 +481,8 @@ _C.MODEL.MLP.CONTEXT_EMBEDDING_NORM = None
 _C.MODEL.MLP.CONTEXT_EMBEDDING_DROPOUT = False
 # hidden context
 _C.MODEL.MLP.HIDDEN_CONTEXT = 'mean'
+# dropout in the base MLP
+_C.MODEL.MLP.DROPOUT = None
 
 # hyperparameters for hypernet
 _C.MODEL.HYPERNET = CN()
