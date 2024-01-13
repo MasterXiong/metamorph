@@ -76,7 +76,7 @@ def distill_policy(source_folder, target_folder, agent_path, teacher_mode, valid
         # all_context.append(init_obs['context'])
         env.close()
         # drop context features from obs if needed
-        if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6 and agent_data['obs'].shape[-1] == 52:
+        if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6 and agent_data['obs'].shape[-1] == 624:
             dims = list(range(13)) + [30, 31] + [41, 42]
             data_size = agent_data['obs'].shape[0]
             new_obs = agent_data['obs'].view(data_size, cfg.MODEL.MAX_LIMBS, -1)
