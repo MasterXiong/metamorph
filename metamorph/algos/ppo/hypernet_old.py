@@ -434,6 +434,7 @@ class MLPModel(nn.Module):
             if self.model_args.HN_HIDDEN:
                 if self.model_args.SHARE_CONTEXT_ENCODER:
                     context_embedding = self.context_embedding_input
+                    context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
                 else:
                     context_embedding = obs_context
                     if self.model_args.CONTEXT_MASK:
@@ -450,16 +451,16 @@ class MLPModel(nn.Module):
                         context_embedding = self.layer_norm_hidden(context_embedding)
                     if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
                         context_embedding = self.hidden_dropout(context_embedding)
-                    for i, layer in enumerate(self.HN_hidden_weight):
-                        weight = layer(context_embedding).view(batch_size, self.hidden_dims[i], self.hidden_dims[i + 1])
-                        if self.model_args.HN_GENERATE_BIAS:
-                            bias = self.HN_hidden_bias[i](context_embedding)
-                            embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
-                        else:
-                            embedding = (embedding[:, :, None] * weight).sum(dim=1)
-                        if self.model_args.LAYER_NORM:
-                            embedding = self.LN_layers[i + 1](embedding)
-                        embedding = F.relu(embedding)
+                for i, layer in enumerate(self.HN_hidden_weight):
+                    weight = layer(context_embedding).view(batch_size, self.hidden_dims[i], self.hidden_dims[i + 1])
+                    if self.model_args.HN_GENERATE_BIAS:
+                        bias = self.HN_hidden_bias[i](context_embedding)
+                        embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
+                    else:
+                        embedding = (embedding[:, :, None] * weight).sum(dim=1)
+                    if self.model_args.LAYER_NORM:
+                        embedding = self.LN_layers[i + 1](embedding)
+                    embedding = F.relu(embedding)
             else:
                 embedding = self.hidden_layers(embedding)
 
@@ -490,12 +491,12 @@ class MLPModel(nn.Module):
                     context_embedding = self.context_encoder_for_output(context_embedding)
                 if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
                     context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
-            if self.model_args.CONTEXT_EMBEDDING_NORM == 'p2_norm':
-                context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
-            elif self.model_args.CONTEXT_EMBEDDING_NORM == 'layer_norm':
-                context_embedding = self.layer_norm_output(context_embedding)
-            if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
-                context_embedding = self.output_dropout(context_embedding)
+                if self.model_args.CONTEXT_EMBEDDING_NORM == 'p2_norm':
+                    context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
+                elif self.model_args.CONTEXT_EMBEDDING_NORM == 'layer_norm':
+                    context_embedding = self.layer_norm_output(context_embedding)
+                if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
+                    context_embedding = self.output_dropout(context_embedding)
             output_weight = self.hnet_output_weight(context_embedding).view(batch_size, self.seq_len, self.final_input_dim, self.limb_out_dim)
             # save for diagnose
             self.context_embedding_output = context_embedding
@@ -537,6 +538,7 @@ class MLPModel(nn.Module):
                 context_embedding = self.context_encoder_for_input(context_embedding)
             if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
                 context_embedding = self.input_dropout(context_embedding)
+            self.context_embedding_input = context_embedding
             self.input_weight = self.hnet_input_weight(context_embedding).view(batch_size, self.seq_len, self.limb_obs_size, self.model_args.HIDDEN_DIM)
             self.input_bias = self.hnet_input_bias(context_embedding)
 
@@ -545,6 +547,7 @@ class MLPModel(nn.Module):
             if self.model_args.HN_HIDDEN:
                 if self.model_args.SHARE_CONTEXT_ENCODER:
                     context_embedding = self.context_embedding_input
+                    context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
                 else:
                     context_embedding = obs_context
                     if self.model_args.CONTEXT_MASK:
@@ -557,12 +560,12 @@ class MLPModel(nn.Module):
                     context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
                     if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
                         context_embedding = self.hidden_dropout(context_embedding)
-                    self.hidden_weights, self.hidden_bias = [], []
-                    for i, layer in enumerate(self.HN_hidden_weight):
-                        weight = layer(context_embedding).view(batch_size, self.hidden_dims[i], self.hidden_dims[i + 1])
-                        self.hidden_weights.append(weight)
-                        bias = self.HN_hidden_bias[i](context_embedding)
-                        self.hidden_bias.append(bias)
+                self.hidden_weights, self.hidden_bias = [], []
+                for i, layer in enumerate(self.HN_hidden_weight):
+                    weight = layer(context_embedding).view(batch_size, self.hidden_dims[i], self.hidden_dims[i + 1])
+                    self.hidden_weights.append(weight)
+                    bias = self.HN_hidden_bias[i](context_embedding)
+                    self.hidden_bias.append(bias)
 
         # output layer
         if self.model_args.HN_OUTPUT:
@@ -581,7 +584,7 @@ class MLPModel(nn.Module):
                         context_embedding = self.context_encoder_for_output(context_embedding)
                 else:
                     context_embedding = self.context_encoder_for_output(context_embedding)
-            if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
-                context_embedding = self.output_dropout(context_embedding)
+                if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
+                    context_embedding = self.output_dropout(context_embedding)
             self.output_weight = self.hnet_output_weight(context_embedding).view(batch_size, self.seq_len, self.final_input_dim, self.limb_out_dim)
             self.output_bias = self.hnet_output_bias(context_embedding)
