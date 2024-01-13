@@ -483,6 +483,8 @@ _C.MODEL.MLP.CONTEXT_EMBEDDING_DROPOUT = False
 _C.MODEL.MLP.HIDDEN_CONTEXT = 'mean'
 # dropout in the base MLP
 _C.MODEL.MLP.DROPOUT = None
+# position to concat hfield
+_C.MODEL.MLP.HFIELD_POS = 'output'
 
 # hyperparameters for hypernet
 _C.MODEL.HYPERNET = CN()

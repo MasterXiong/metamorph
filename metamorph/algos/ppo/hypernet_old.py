@@ -161,10 +161,10 @@ class MLPModel(nn.Module):
                         final_nonlinearity=True
                     )
 
-            if "hfield" not in cfg.ENV.KEYS_TO_KEEP:
-                self.final_input_dim = self.model_args.HIDDEN_DIM
-            else:
+            if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'output':
                 self.final_input_dim = self.model_args.HIDDEN_DIM + cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS[-1]
+            else:
+                self.final_input_dim = self.model_args.HIDDEN_DIM
 
             self.hnet_output_weight = nn.Linear(HN_input_dim, self.final_input_dim * self.limb_out_dim, bias=self.model_args.BIAS_IN_HN_OUTPUT_LAYER)
 
@@ -260,6 +260,8 @@ class MLPModel(nn.Module):
 
                 HN_output_layers = []
                 self.hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
+                if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'hidden':
+                    self.hidden_dims[0] += cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS[-1]
                 for i in range(self.model_args.LAYER_NUM - 1):
                     output_layer = nn.Linear(HN_input_dim, self.hidden_dims[i] * self.hidden_dims[i + 1], bias=self.model_args.BIAS_IN_HN_OUTPUT_LAYER)
                     if self.model_args.HN_INIT_STRATEGY == 'p2_norm':
@@ -278,11 +280,11 @@ class MLPModel(nn.Module):
                         output_layer.weight.data.normal_(std=initrange)
                         output_layer.bias.data.zero_()
                     elif self.model_args.HN_INIT_STRATEGY == 'bias_init':
-                        initrange = np.sqrt(1 / self.model_args.HIDDEN_DIM)
+                        initrange = np.sqrt(1 / self.hidden_dims[i])
                         output_layer.weight.data.zero_()
                         output_layer.bias.data.normal_(std=initrange)
                     elif self.model_args.HN_INIT_STRATEGY == 'bias_init_v2':
-                        initrange = np.sqrt(1 / self.model_args.HIDDEN_DIM)
+                        initrange = np.sqrt(1 / self.hidden_dims[i])
                         output_layer.weight.data.zero_()
                         output_layer.bias.data.uniform_(-initrange, initrange)
                     else:
@@ -296,14 +298,14 @@ class MLPModel(nn.Module):
                 if self.model_args.HN_GENERATE_BIAS:
                     layers = []
                     for i in range(self.model_args.LAYER_NUM - 1):
-                        hnet_hidden_bias = nn.Linear(HN_input_dim, self.model_args.HIDDEN_DIM)
+                        hnet_hidden_bias = nn.Linear(HN_input_dim, self.hidden_dims[i + 1])
                         if self.model_args.HN_INIT_STRATEGY == 'HN_paper':
                             var = 1. / HN_input_dim
                             initrange = np.sqrt(var)
                             hnet_hidden_bias.weight.data.normal_(std=initrange)
                             hnet_hidden_bias.bias.data.zero_()
                         elif self.model_args.HN_INIT_STRATEGY == 'bias_init_v2':
-                            initrange = np.sqrt(1 / self.model_args.HIDDEN_DIM)
+                            initrange = np.sqrt(1 / self.hidden_dims[i])
                             hnet_hidden_bias.weight.data.zero_()
                             hnet_hidden_bias.bias.data.uniform_(-initrange, initrange)
                         else:
