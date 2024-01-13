@@ -41,7 +41,7 @@ class DistillationDataset(Dataset):
         return obs, act, act_mean, context, obs_mask, act_mask, hfield, unimal_ids
 
 
-def distill_policy(source_folder, target_folder, agent_path, teacher_mode):
+def distill_policy(source_folder, target_folder, agent_path, teacher_mode, validation=False):
 
     cfg.ENV.WALKER_DIR = agent_path
     set_cfg_options()
@@ -76,7 +76,7 @@ def distill_policy(source_folder, target_folder, agent_path, teacher_mode):
         # all_context.append(init_obs['context'])
         env.close()
         # drop context features from obs if needed
-        if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6:
+        if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6 and agent_data['obs'].shape[-1] == 52:
             dims = list(range(13)) + [30, 31] + [41, 42]
             data_size = agent_data['obs'].shape[0]
             new_obs = agent_data['obs'].view(data_size, cfg.MODEL.MAX_LIMBS, -1)
@@ -84,7 +84,9 @@ def distill_policy(source_folder, target_folder, agent_path, teacher_mode):
             agent_data['obs'] = new_obs.view(data_size, -1)
         if cfg.DISTILL.SAMPLE_STRATEGY == 'random':
             sample_index = np.random.choice(agent_data['obs'].shape[0], cfg.DISTILL.PER_AGENT_SAMPLE_NUM, replace=False)
-        for key in ['obs', 'act', 'act_mean']:
+        for key in ['obs', 'act', 'act_mean', 'hfield']:
+            if key not in buffer:
+                continue
             if cfg.DISTILL.SAMPLE_STRATEGY == 'random':
                 buffer[key].append(agent_data[key][sample_index])
             elif cfg.DISTILL.SAMPLE_STRATEGY == 'timestep_first':
@@ -99,8 +101,6 @@ def distill_policy(source_folder, target_folder, agent_path, teacher_mode):
             value = torch.from_numpy(init_obs[key]).float().unsqueeze(0).repeat(cfg.DISTILL.PER_AGENT_SAMPLE_NUM, 1)
             buffer[key].append(value)
         buffer['unimal_ids'].append(torch.ones(cfg.DISTILL.PER_AGENT_SAMPLE_NUM, dtype=torch.long) * i)
-        if 'hfield' in cfg.ENV.KEYS_TO_KEEP:
-            buffer['hfield'].append(agent_data['hfield'])
     # all_context = np.stack(all_context, axis=0)
     # all_context = all_context.reshape(1200, -1)
     # for i in range(all_context.shape[1]):
@@ -108,8 +108,19 @@ def distill_policy(source_folder, target_folder, agent_path, teacher_mode):
     # with open('context_norm.pkl', 'wb') as f:
     #     pickle.dump([all_context.min(axis=0), all_context.max(axis=0)], f)
 
+    if validation:
+        in_domain_validation_buffer = {}
+        out_domain_validation_buffer = {}
     for key in buffer:
-        buffer[key] = torch.cat(buffer[key], dim=0)
+        if validation:
+            valid_agent_num = int(len(buffer[key]) * 0.9)
+            out_domain_validation_buffer[key] = torch.cat(buffer[key][valid_agent_num:], dim=0)
+            valid_sample_num = int(cfg.DISTILL.PER_AGENT_SAMPLE_NUM * 0.9)
+            in_domain_validation_buffer[key] = torch.cat([x[valid_sample_num:] for x in buffer[key][:valid_agent_num]], dim=0)
+            buffer[key] = torch.cat([x[:valid_sample_num] for x in buffer[key][:valid_agent_num]], dim=0)
+            print (out_domain_validation_buffer[key].shape[0], in_domain_validation_buffer[key].shape[0], buffer[key].shape[0])
+        else:
+            buffer[key] = torch.cat(buffer[key], dim=0)
 
     if teacher_mode == 'MT':
         # if the teacher is trained by multi-task RL, reuse its obs rms for the student
@@ -127,13 +138,18 @@ def distill_policy(source_folder, target_folder, agent_path, teacher_mode):
         obs_rms['proprioceptive'].mean = buffer['obs'].mean(axis=0)
         obs_rms['proprioceptive'].var = buffer['obs'].var(axis=0)
         buffer['obs'] = np.clip(
-            (buffer['obs'] - obs_rms['proprioceptive'].mean) / (np.sqrt(obs_rms['proprioceptive'].var + 1e-8)), 
+            (buffer['obs'] - obs_rms['proprioceptive'].mean) / np.sqrt(obs_rms['proprioceptive'].var + 1e-8), 
             -10., 
             10.
         )
 
     train_data = DistillationDataset(buffer)
     train_dataloader = DataLoader(train_data, batch_size=cfg.DISTILL.BATCH_SIZE, shuffle=True, drop_last=False, num_workers=2, pin_memory=True)
+    if validation:
+        in_domain_validation_data = DistillationDataset(in_domain_validation_buffer)
+        in_domain_validation_dataloader = DataLoader(in_domain_validation_data, batch_size=cfg.DISTILL.BATCH_SIZE, shuffle=True, drop_last=False, num_workers=2, pin_memory=True)
+        out_domain_validation_data = DistillationDataset(out_domain_validation_buffer)
+        out_domain_validation_dataloader = DataLoader(out_domain_validation_data, batch_size=cfg.DISTILL.BATCH_SIZE, shuffle=True, drop_last=False, num_workers=2, pin_memory=True)
 
     optimizer = optim.Adam(
         model.parameters(), 
@@ -142,54 +158,98 @@ def distill_policy(source_folder, target_folder, agent_path, teacher_mode):
         weight_decay=cfg.DISTILL.WEIGHT_DECAY
     )
 
-    loss_curve = []
+    def loss_function(obs_dict, act, act_mean):
+        if cfg.DISTILL.IMITATION_TARGET == 'act':
+            _, pi, logp, _ = model(obs_dict, act=act.cuda(), compute_val=False, unimal_ids=unimal_ids)
+        else:
+            _, pi, logp, _ = model(obs_dict, act=act_mean.cuda(), compute_val=False, unimal_ids=unimal_ids)
+        if cfg.DISTILL.LOSS_TYPE == 'KL':
+            if cfg.DISTILL.KL_TARGET == 'act':
+                target = act
+            elif cfg.DISTILL.KL_TARGET == 'act_mean':
+                target = act_mean
+            else:
+                raise ValueError("Unsupported loss type")
+            if cfg.PPO.TANH == 'action':
+                pred = torch.tanh(model.action_mu)
+                target = torch.tanh(target)
+            else:
+                pred = model.action_mu
+            if cfg.DISTILL.BALANCED_LOSS:
+                loss = 0.5 * (((pred - target.cuda()).square() * (1 - obs_dict['act_padding_mask'])).sum(dim=1) / (1 - obs_dict['act_padding_mask']).sum(dim=1)).mean()
+            else:
+                loss = 0.5 * ((pred - target.cuda()).square() * (1 - obs_dict['act_padding_mask'])).sum(dim=1).mean()
+        elif cfg.DISTILL.LOSS_TYPE == 'logp':
+            if cfg.DISTILL.BALANCED_LOSS:
+                loss = -((model.limb_logp * (1 - obs_dict['act_padding_mask'])).sum(dim=1, keepdim=True) / (1 - obs_dict['act_padding_mask']).sum(dim=1, keepdim=True)).mean()
+            else:
+                loss = -logp.mean()
+        else:
+            raise ValueError("Unsupported loss type")
+        return loss
+
+    loss_curve, in_domain_valid_curve, out_domain_valid_curve = [], [], []
     for i in range(cfg.DISTILL.EPOCH_NUM):
 
         if i % cfg.DISTILL.SAVE_FREQ == 0:
             torch.save([model.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{i}.pt')
 
         batch_losses = []
-        for obs, act, act_mean, context, obs_mask, act_mask, hfield, unimal_ids in train_dataloader:
+        for j, (obs, train_act, train_act_mean, context, obs_mask, act_mask, hfield, unimal_ids) in enumerate(train_dataloader):
 
-            obs_dict = {
+            train_obs_dict = {
                 'proprioceptive': obs.cuda(), 
                 'context': context.cuda(), 
                 'obs_padding_mask': obs_mask.cuda(), 
                 'act_padding_mask': act_mask.cuda(), 
             }
             if 'hfield' in cfg.ENV.KEYS_TO_KEEP:
-                obs_dict['hfield'] = hfield.cuda()
+                train_obs_dict['hfield'] = hfield.cuda()
 
-            if cfg.DISTILL.IMITATION_TARGET == 'act':
-                _, pi, logp, _ = model(obs_dict, act=act.cuda(), compute_val=False, unimal_ids=unimal_ids)
-            else:
-                _, pi, logp, _ = model(obs_dict, act=act_mean.cuda(), compute_val=False, unimal_ids=unimal_ids)
-            if cfg.DISTILL.LOSS_TYPE == 'KL':
-                if cfg.DISTILL.BALANCED_LOSS:
-                    loss = 0.5 * (((model.action_mu - act_mean.cuda()).square() * (1 - obs_dict['act_padding_mask'])).sum(dim=1) / (1 - obs_dict['act_padding_mask']).sum(dim=1)).mean()
-                else:
-                    loss = 0.5 * ((model.action_mu - act_mean.cuda()).square() * (1 - obs_dict['act_padding_mask'])).sum(dim=1).mean()
-            elif cfg.DISTILL.LOSS_TYPE == 'logp':
-                if cfg.DISTILL.BALANCED_LOSS:
-                    loss = -((model.limb_logp * (1 - obs_dict['act_padding_mask'])).sum(dim=1, keepdim=True) / (1 - obs_dict['act_padding_mask']).sum(dim=1, keepdim=True)).mean()
-                else:
-                    loss = -logp.mean()
-            else:
-                raise ValueError("Unsupported loss type")
-
+            loss = loss_function(train_obs_dict, train_act, train_act_mean)
             optimizer.zero_grad()
             loss.backward()
-
             if cfg.DISTILL.GRAD_NORM is not None:
                 norm = nn.utils.clip_grad_norm_(model.parameters(), cfg.DISTILL.GRAD_NORM)
-
             optimizer.step()
-
             batch_losses.append(loss.item())
 
-        print (f'epoch {i}, average batch loss: {np.mean(batch_losses)}')
+        if validation:
+            batch_in_domain_valid_loss = []
+            for obs, valid_act, valid_act_mean, context, obs_mask, act_mask, hfield, unimal_ids in in_domain_validation_dataloader:
+                valid_obs_dict = {
+                    'proprioceptive': obs.cuda(), 
+                    'context': context.cuda(), 
+                    'obs_padding_mask': obs_mask.cuda(), 
+                    'act_padding_mask': act_mask.cuda(), 
+                }
+                if 'hfield' in cfg.ENV.KEYS_TO_KEEP:
+                    valid_obs_dict['hfield'] = hfield.cuda()
+                with torch.no_grad():
+                    loss = loss_function(valid_obs_dict, valid_act, valid_act_mean)
+                batch_in_domain_valid_loss.append(loss.item())
+            in_domain_valid_curve.append(np.mean(batch_in_domain_valid_loss))
+
+            batch_out_domain_valid_loss = []
+            for obs, valid_act, valid_act_mean, context, obs_mask, act_mask, hfield, unimal_ids in out_domain_validation_dataloader:
+                valid_obs_dict = {
+                    'proprioceptive': obs.cuda(), 
+                    'context': context.cuda(), 
+                    'obs_padding_mask': obs_mask.cuda(), 
+                    'act_padding_mask': act_mask.cuda(), 
+                }
+                if 'hfield' in cfg.ENV.KEYS_TO_KEEP:
+                    valid_obs_dict['hfield'] = hfield.cuda()
+                with torch.no_grad():
+                    loss = loss_function(valid_obs_dict, valid_act, valid_act_mean)
+                batch_out_domain_valid_loss.append(loss.item())
+            out_domain_valid_curve.append(np.mean(batch_out_domain_valid_loss))
+
+            print (f'epoch {i}, train: {np.mean(batch_losses):.4f}, in domain valid: {np.mean(batch_in_domain_valid_loss):.4f}, out domain valid: {np.mean(batch_out_domain_valid_loss):.4f}')
+        else:
+            print (f'epoch {i}, average batch loss: {np.mean(batch_losses)}')
         loss_curve.append(np.mean(batch_losses))
 
     torch.save([model.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{cfg.DISTILL.EPOCH_NUM}.pt')
     with open(f'{cfg.OUT_DIR}/loss_curve.pkl', 'wb') as f:
-        pickle.dump(loss_curve, f)
+        pickle.dump([loss_curve, in_domain_valid_curve, out_domain_valid_curve], f)
