@@ -45,7 +45,10 @@ def collect_data(agent, ppo_trainer, data_path, num_env=64, timesteps=1000, deno
             hfield_buffer[t] = obs['hfield'].clone()
         except:
             pass
-        obs, reward, done, infos = envs.step(act)
+        if cfg.PPO.TANH == 'action':
+            obs, reward, done, infos = envs.step(torch.tanh(act))
+        else:
+            obs, reward, done, infos = envs.step(act)
         for info in infos:
             if 'episode' in info:
                 score.append(info['episode']['r'])
@@ -60,16 +63,17 @@ def collect_data(agent, ppo_trainer, data_path, num_env=64, timesteps=1000, deno
         data['hfield'] = hfield_buffer.view(-1, hfield_buffer.shape[-1]).cpu()
     except:
         pass
+    obs_clip_ratio = ((data['obs'].abs() - 10).abs() < 0.1).float().mean().item()
+    print ('normalization clip ratio: ', obs_clip_ratio)
     if denormalize:
-        print ('normalization clip ratio: ', (data['obs'].abs() == 10).float().mean().item())
         mean = obs_rms['proprioceptive'].mean
         var = obs_rms['proprioceptive'].var
         epsilon = 1e-8
         data['obs'] = (data['obs'] * np.sqrt(var + epsilon) + mean).float()
 
     with open(f'{data_path}/{agent}.pkl', 'wb') as f:
-        pickle.dump(data, f)    
-    return np.mean(score)
+        pickle.dump(data, f)
+    return np.mean(score), obs_clip_ratio
 
 
 def generate_expert_data(model_path, agent_path, start=0, end=100, seed='1409', mode='MT'):
@@ -88,7 +92,7 @@ def generate_expert_data(model_path, agent_path, start=0, end=100, seed='1409', 
         ppo_trainer = PPO()
 
         for agent in agents:
-            score = collect_data(agent, ppo_trainer, data_path, denormalize=False)
+            score, _ = collect_data(agent, ppo_trainer, data_path, denormalize=False)
             print (agent, score)
             all_agent_scores.append(score)
         print ('avg expert score: ', np.mean(all_agent_scores))
@@ -97,6 +101,7 @@ def generate_expert_data(model_path, agent_path, start=0, end=100, seed='1409', 
             pickle.dump(get_ob_rms(ppo_trainer.envs), f)
     
     elif mode == 'ST':
+        ratio = []
         for agent in agents:
             cfg.merge_from_file(f'{model_path}/{agent}/{seed}/config.yaml')
             cfg.PPO.CHECKPOINT_PATH = f'{model_path}/{agent}/{seed}/Unimal-v0.pt'
@@ -104,19 +109,22 @@ def generate_expert_data(model_path, agent_path, start=0, end=100, seed='1409', 
             cfg.ENV.WALKER_DIR = agent_path
             set_cfg_options()
             ppo_trainer = PPO()
-            score = collect_data(agent, ppo_trainer, data_path, denormalize=True)
+            score, obs_clip_ratio = collect_data(agent, ppo_trainer, data_path, denormalize=True)
             print (agent, score)
             all_agent_scores.append(score)
+            ratio.append(obs_clip_ratio)
         print ('avg expert score: ', np.mean(all_agent_scores))
+        print ('obs clip ratio')
+        print (ratio)
 
 
 
 if __name__ == '__main__':
 
     # MT
-    # python tools/generate_expert_data.py --model_path baselines/ft_400M_mutate_1000_env_256_uniform_sample_KL_5_wo_PE+dropout/1409 --start 0 --end 250
+    # python tools/generate_expert_data.py --model_path baselines/csr_200M_HN+FA_KL_3_wo_PE+dropout --mode MT --seed 1409 --start 0 --end 25
     # ST
-    # python tools/generate_expert_data.py --model_path output/MLP_ST_ft_256*2_KL_5 --seed 1409 --mode ST --start 0 --end 100
+    # python tools/generate_expert_data.py --model_path output/MLP_ST_ft_256*2_KL_5_tanh_action_no_context_in_state --seed 1409 --mode ST --start 0 --end 100
     parser = argparse.ArgumentParser(description="Collect expert data from trained RL agent")
     parser.add_argument("--model_path", help="the path of the expert", required=True, type=str)
     parser.add_argument("--seed", help="seed of the expert", required=True, type=str)

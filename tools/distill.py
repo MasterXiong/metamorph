@@ -1,11 +1,36 @@
 import argparse
 import os
+import sys
 
 from metamorph.algos.ppo.distill import *
 from metamorph.config import cfg
 from metamorph.config import dump_cfg
 
-from tools.train_ppo import parse_args, set_cfg_options
+from tools.train_ppo import set_cfg_options
+
+
+def parse_args():
+    """Parses the arguments."""
+    parser = argparse.ArgumentParser(description="Train a RL agent")
+    parser.add_argument(
+        "--cfg", dest="cfg_file", help="Config file", required=True, type=str
+    )
+    parser.add_argument(
+        "--no_context_in_state", action="store_true"
+    )
+    parser.add_argument(
+        "--validation", action="store_true"
+    )
+    parser.add_argument(
+        "opts",
+        help="See morphology/core/config.py for all options",
+        default=None,
+        nargs=argparse.REMAINDER,
+    )
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(1)
+    return parser.parse_args()
 
 
 
@@ -49,4 +74,4 @@ if __name__ == '__main__':
     else:
         teacher_mode = 'MT'
     print (teacher_mode)
-    distill_policy(cfg.DISTILL.SOURCE, cfg.DISTILL.TARGET, agent_path, teacher_mode)
+    distill_policy(cfg.DISTILL.SOURCE, cfg.DISTILL.TARGET, agent_path, teacher_mode, validation=args.validation)

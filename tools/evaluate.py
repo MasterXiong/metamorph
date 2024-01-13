@@ -282,7 +282,7 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
         # with open(f'{agent_path}/metadata/{agent}.json', 'r') as f:
         #     limb_num = json.load(f)["num_limbs"]
         if agent in eval_result and len(eval_result[agent]) == 3:
-            episode_return, _, _ = eval_result[agent]
+            episode_return, ood_ratio, _ = eval_result[agent]
             avg_score.append(np.array(episode_return).mean())
         else:
             envs = make_vec_envs(xml_file=agent, training=False, norm_rew=True, render_policy=True)
@@ -290,13 +290,13 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
             set_ret_rms(envs, get_ret_rms(ppo_trainer.envs))
             episode_return, ood_ratio, episode_gae = evaluate(policy, envs, agent, compute_gae=compute_gae)
             envs.close()
-            print (agent, f'{episode_return.mean():.2f} +- {episode_return.std():.2f}', f'OOD ratio: {ood_ratio}')
             # print ([np.maximum(x, 0.).mean() for x in episode_gae])
             eval_result[agent] = [episode_return, ood_ratio, episode_gae]
             ood_list[i] = ood_ratio
             avg_score.append(np.array(episode_return).mean())
             with open(f'eval/{output_name}.pkl', 'wb') as f:
                 pickle.dump(eval_result, f)
+        print (agent, f'{episode_return.mean():.2f} +- {episode_return.std():.2f}', f'OOD ratio: {ood_ratio}')
 
     print ('avg score across all test agents: ', np.array(avg_score).mean())
     return np.array(avg_score).mean()

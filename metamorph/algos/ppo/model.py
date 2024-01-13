@@ -35,10 +35,10 @@ class SimplistMLP(nn.Module):
         self.output_layer = nn.Linear(self.final_input_dim, out_dim)
     
     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, unimal_ids=None):
-        obs_embedding = self.layers(obs)
+        embedding = self.layers(obs)
         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
             hfield_embedding = self.hfield_encoder(obs_env["hfield"])
-            embedding = torch.cat([obs_embedding, hfield_embedding], 1)
+            embedding = torch.cat([embedding, hfield_embedding], 1)
         # output layer
         output = self.output_layer(embedding)
         return output, None

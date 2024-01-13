@@ -687,6 +687,7 @@ _C.DISTILL.BALANCED_LOSS = False
 _C.DISTILL.GRAD_NORM = None
 _C.DISTILL.SAMPLE_STRATEGY = 'env_first'
 _C.DISTILL.LOSS_TYPE = 'logp'
+_C.DISTILL.KL_TARGET = 'act_mean'
 
 # ----------------------------------------------------------------------------#
 # Misc Options

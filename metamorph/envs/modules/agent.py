@@ -17,8 +17,8 @@ class Agent:
         self.np_random = random_state
 
         self.limb_context_range = {
-            # 'body_pos': np.array([[-0.5, -0.45, -0.49], [0.5, 0.45, 2.04]]), 
-            # 'body_ipos': np.array([[-0.225, -0.225, -0.225], [0.225, 0.225, 0.]]), 
+            'body_pos': np.array([[-0.5, -0.45, -0.49], [0.5, 0.45, 2.04]]), 
+            'body_ipos': np.array([[-0.225, -0.225, -0.225], [0.225, 0.225, 0.]]), 
             'body_iquat': np.array([[0.70710678, -0.70710678, -0.70710678, 0.], [1., 0.70710678, 0.70710678, 0.]]), 
             'geom_quat': np.array([[0.70710678, -0.70710678, -0.70710678, 0.], [1., 0.70710678, 0.70710678, 0.]]), 
             'body_mass': np.array([[1.17809725], [4.1887902]]), 
@@ -88,7 +88,7 @@ class Agent:
         env.metadata["orig_height"] = round(orig_height, 2)
         env.metadata["fall_threshold"] = orig_height * cfg.ENV.STAND_HEIGHT_RATIO
         self._change_order(env, root)
-        # self.node_depth = self.get_tree_depth(root)
+        self.node_depth = self.get_tree_depth(root)
 
     def _change_order(self, env, root):
         worldbody = root.findall("./worldbody")[0]
@@ -117,28 +117,28 @@ class Agent:
             for o in orig_order
         ]
     
-    # def get_tree_depth(self, root):
-    #     worldbody = root.findall("./worldbody")[0]
-    #     root = xu.find_elem(worldbody, "body", "name", "torso/0")[0]
+    def get_tree_depth(self, root):
+        worldbody = root.findall("./worldbody")[0]
+        root = xu.find_elem(worldbody, "body", "name", "torso/0")[0]
 
-    #     def tree_treversal(order, depth_list, depth=1):
-    #         children = xu.find_elem(order[-1], "body", child_only=True)
-    #         for c in children:
-    #             order.append(c)
-    #             depth_list.append(depth)
-    #             tree_treversal(order, depth_list, depth=depth + 1)
+        def tree_treversal(order, depth_list, depth=1):
+            children = xu.find_elem(order[-1], "body", child_only=True)
+            for c in children:
+                order.append(c)
+                depth_list.append(depth)
+                tree_treversal(order, depth_list, depth=depth + 1)
         
-    #     order = [root]
-    #     depth_list = [0]
-    #     tree_treversal(order, depth_list, depth=1)
-    #     max_depth = max(depth_list)
-    #     # turn depth into one-hot form
-    #     node_depth = np.zeros([len(depth_list), cfg.MODEL.TRANSFORMER.MAX_NODE_DEPTH])
-    #     for i in range(len(depth_list)):
-    #         node_depth[i, depth_list[i]] = 1.
-    #         # node_depth[i, -1] = depth_list[i] / max_depth
-    #     self.node_depth_padded = np.concatenate([node_depth, np.zeros([cfg.MODEL.MAX_LIMBS - node_depth.shape[0], node_depth.shape[1]])], axis=0)
-    #     return node_depth
+        order = [root]
+        depth_list = [0]
+        tree_treversal(order, depth_list, depth=1)
+        max_depth = max(depth_list)
+        # turn depth into one-hot form
+        node_depth = np.zeros([len(depth_list), cfg.MODEL.TRANSFORMER.MAX_NODE_DEPTH])
+        for i in range(len(depth_list)):
+            node_depth[i, depth_list[i]] = 1.
+            # node_depth[i, -1] = depth_list[i] / max_depth
+        self.node_depth_padded = np.concatenate([node_depth, np.zeros([cfg.MODEL.MAX_LIMBS - node_depth.shape[0], node_depth.shape[1]])], axis=0)
+        return node_depth
 
     def modify_sim_step(self, env, sim):
         self.agent_qpos_idxs = np.array(mu.qpos_idxs_for_agent(sim))
@@ -218,12 +218,12 @@ class Agent:
         joint_from -= 1
         
         # # generate SWAT traversals
-        # parents = [-1 for _ in range(len(body_idxs))]
-        # for i in range(len(joint_to)):
-        #     parents[joint_to[i]] = joint_from[i]
+        parents = [-1 for _ in range(len(body_idxs))]
+        for i in range(len(joint_to)):
+            parents[joint_to[i]] = joint_from[i]
         # traversals = swat.getTraversal(parents)
 
-        # children = swat.getChildrens(parents)
+        children = swat.getChildrens(parents)
         # if cfg.MODEL.TRANSFORMER.USE_SWAT_RE:
         #     relational_features = swat.getGraphDict(parents)
         # else:
@@ -248,9 +248,9 @@ class Agent:
         #         depth = node_depth[child_id]
         #         tree_PE[child_id, (depth - 1) * max_child_num + branch_id] = 1.
         
-        # self.children_num = np.zeros([len(children), 1])
-        # for i in range(len(children)):
-        #     self.children_num[i] = len(children[i]) / cfg.MODEL.TRANSFORMER.MAX_CHILD_NUM
+        self.children_num = np.zeros([len(children), 1])
+        for i in range(len(children)):
+            self.children_num[i] = len(children[i]) / cfg.MODEL.TRANSFORMER.MAX_CHILD_NUM
 
         # generate connectivity matrix and graph PE
         # 0: node parent and node itself
