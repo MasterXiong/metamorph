@@ -353,12 +353,17 @@ class MLPModel(nn.Module):
                 embedding = embedding.sum(dim=1)
             embedding = F.relu(embedding)
 
+            if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+                hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+
+            if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'hidden':
+                embedding = torch.cat([embedding, hfield_embedding], 1)
+
             for weight, bias in zip(self.hidden_weights, self.hidden_bias):
                 embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
                 embedding = F.relu(embedding)
 
-            if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-                hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+            if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'output':
                 embedding = torch.cat([embedding, hfield_embedding], 1)
 
             output = (embedding[:, None, :, None] * self.output_weight).sum(dim=-2) + self.output_bias
@@ -431,6 +436,12 @@ class MLPModel(nn.Module):
                 embedding = self.LN_layers[0](embedding)
             embedding = F.relu(embedding)
         
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
+            hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'hidden':
+            embedding = torch.cat([embedding, hfield_embedding], 1)
+
         # hidden layers
         if self.model_args.LAYER_NUM > 1:
             if self.model_args.HN_HIDDEN:
@@ -466,8 +477,7 @@ class MLPModel(nn.Module):
             else:
                 embedding = self.hidden_layers(embedding)
 
-        if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-            hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+        if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'output':
             embedding = torch.cat([embedding, hfield_embedding], 1)
 
         # output layer
