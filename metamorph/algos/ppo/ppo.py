@@ -131,10 +131,10 @@ class PPO:
                 break
 
         self.fps = 0
-        os.system(f'mkdir {cfg.OUT_DIR}/iter_prob')
-        os.system(f'mkdir {cfg.OUT_DIR}/proxy_score')
-        os.system(f'mkdir {cfg.OUT_DIR}/weight_stats')
-        os.system(f'mkdir {cfg.OUT_DIR}/context_embedding_norm')
+        os.makedirs(f'{cfg.OUT_DIR}/iter_prob', exist_ok=True)
+        os.makedirs(f'{cfg.OUT_DIR}/proxy_score', exist_ok=True)
+        os.makedirs(f'{cfg.OUT_DIR}/weight_stats', exist_ok=True)
+        os.makedirs(f'{cfg.OUT_DIR}/context_embedding_norm', exist_ok=True)
 
         self.ST_performance = None
         self.last_probs = None
