@@ -76,9 +76,9 @@ def collect_data(agent, ppo_trainer, data_path, num_env=64, timesteps=1000, deno
     return np.mean(score), obs_clip_ratio
 
 
-def generate_expert_data(model_path, agent_path, start=0, end=100, seed='1409', mode='MT'):
+def generate_expert_data(model_path, agent_path, data_path, start=0, end=100, seed='1409', mode='MT', num_env=64):
 
-    data_path = '/'.join(['expert_data', model_path.split('/')[1], seed])
+    data_path = '/'.join(['expert_data', data_path, seed])
     os.makedirs(data_path, exist_ok=True)
     agents = [x[:-4] for x in os.listdir(f'{agent_path}/xml')][start:end]
     all_agent_scores = []
@@ -92,7 +92,7 @@ def generate_expert_data(model_path, agent_path, start=0, end=100, seed='1409', 
         ppo_trainer = PPO()
 
         for agent in agents:
-            score, _ = collect_data(agent, ppo_trainer, data_path, denormalize=False)
+            score, _ = collect_data(agent, ppo_trainer, data_path, denormalize=False, num_env=num_env)
             print (agent, score)
             all_agent_scores.append(score)
         print ('avg expert score: ', np.mean(all_agent_scores))
@@ -122,17 +122,23 @@ def generate_expert_data(model_path, agent_path, start=0, end=100, seed='1409', 
 if __name__ == '__main__':
 
     # MT
-    # python tools/generate_expert_data.py --model_path baselines/csr_200M_HN+FA_KL_3_wo_PE+dropout --mode MT --seed 1409 --start 0 --end 25
+    # python tools/generate_expert_data.py --model_path baselines/csr_200M_HN+FA_KL_3_wo_PE+dropout --data_path csr_200M_HN+FA_KL_3_wo_PE+dropout_8k_mutate_1000 --mode MT --seed 1409 --agent_path data/train_mutate_1000 --num_env 8 --start 0 --end 25
     # ST
     # python tools/generate_expert_data.py --model_path output/MLP_ST_ft_256*2_KL_5_tanh_action_no_context_in_state --seed 1409 --mode ST --start 0 --end 100
     parser = argparse.ArgumentParser(description="Collect expert data from trained RL agent")
     parser.add_argument("--model_path", help="the path of the expert", required=True, type=str)
+    parser.add_argument("--data_path", help="the path to save expert data", type=str, default='')
     parser.add_argument("--seed", help="seed of the expert", required=True, type=str)
     parser.add_argument("--mode", help="multi-task or single-task expert", required=True, type=str)
     parser.add_argument("--start", help="the start index", type=int, default=0)
     parser.add_argument("--end", help="the end index", type=int, default=100)
+    parser.add_argument("--agent_path", help="path of the agents", type=str, default='data/train')
+    parser.add_argument("--num_env", help="collection env number", type=int, default=64)
     args = parser.parse_args()
 
     model_path = args.model_path
-    agent_path = 'data/train'
-    generate_expert_data(model_path, agent_path, start=args.start, end=args.end, seed=args.seed, mode=args.mode)
+    agent_path = args.agent_path
+    data_path = args.data_path
+    if data_path == '':
+        data_path = model_path.split('/')[1]
+    generate_expert_data(model_path, agent_path, data_path, start=args.start, end=args.end, seed=args.seed, mode=args.mode, num_env=args.num_env)
