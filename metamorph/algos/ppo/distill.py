@@ -41,10 +41,8 @@ class DistillationDataset(Dataset):
         return obs, act, act_mean, context, obs_mask, act_mask, hfield, unimal_ids
 
 
-def distill_policy(source_folder, target_folder, agent_path, teacher_mode, validation=False):
+def distill_policy(source_folder, target_folder, teacher_mode, validation=False):
 
-    cfg.ENV.WALKER_DIR = agent_path
-    set_cfg_options()
     agents = cfg.ENV.WALKERS
     envs = make_vec_envs()
     model = ActorCritic(envs.observation_space, envs.action_space).cuda()
@@ -207,6 +205,11 @@ def distill_policy(source_folder, target_folder, agent_path, teacher_mode, valid
                 train_obs_dict['hfield'] = hfield.cuda()
 
             loss = loss_function(train_obs_dict, train_act, train_act_mean)
+            # if cfg.DISTILL.BASE_WEIGHT_DECAY is not None:
+            #     if j % 100 == 0:
+            #         print (f'batch {j}: loss = {loss.item()}, L2 reg = {model.mu_net.base_norm_square}')
+            #     loss += cfg.DISTILL.BASE_WEIGHT_DECAY * model.mu_net.base_norm_square
+
             optimizer.zero_grad()
             loss.backward()
             if cfg.DISTILL.GRAD_NORM is not None:

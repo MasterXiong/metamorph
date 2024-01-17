@@ -63,15 +63,13 @@ if __name__ == '__main__':
         ]
         ob_opts = ["MODEL.PROPRIOCEPTIVE_OBS_TYPES", obs_type]
         cfg.merge_from_list(ob_opts)
-    cfg.ENV.WALKER_DIR = 'data/train'
     set_cfg_options()
     os.makedirs(cfg.OUT_DIR, exist_ok=True)
     dump_cfg()
 
-    agent_path = 'data/train'
     if 'ST' in cfg.OUT_DIR:
         teacher_mode = 'ST'
     else:
         teacher_mode = 'MT'
     print (teacher_mode)
-    distill_policy(cfg.DISTILL.SOURCE, cfg.DISTILL.TARGET, agent_path, teacher_mode, validation=args.validation)
+    distill_policy(cfg.DISTILL.SOURCE, cfg.DISTILL.TARGET, teacher_mode, validation=args.validation)
