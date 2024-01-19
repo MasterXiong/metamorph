@@ -1,5 +1,6 @@
 import math
 import pickle
+import copy
 
 import numpy as np
 import torch
@@ -24,7 +25,7 @@ import matplotlib.pyplot as plt
 class SimplistMLP(nn.Module):
     def __init__(self, obs_space, out_dim):
         super(SimplistMLP, self).__init__()
-        self.model_args = cfg.MODEL.MLP
+        self.model_args = copy.deepcopy(cfg.MODEL.MLP)
         dims = [obs_space["proprioceptive"].shape[0]] + [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
         self.layers = tu.make_mlp_default(dims)
         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
@@ -47,7 +48,7 @@ class SimplistMLP(nn.Module):
 class VanillaMLP(nn.Module):
     def __init__(self, obs_space, out_dim):
         super(VanillaMLP, self).__init__()
-        self.model_args = cfg.MODEL.MLP
+        self.model_args = copy.deepcopy(cfg.MODEL.MLP)
         self.seq_len = cfg.MODEL.MAX_LIMBS
 
         # input layer
@@ -95,7 +96,7 @@ class VanillaMLP(nn.Module):
 class PerAgentMLP(nn.Module):
     def __init__(self, obs_space, out_dim):
         super(PerAgentMLP, self).__init__()
-        self.model_args = cfg.MODEL.MLP
+        self.model_args = copy.deepcopy(cfg.MODEL.MLP)
         self.seq_len = cfg.MODEL.MAX_LIMBS
         # input layer
         initrange = np.sqrt(1. / obs_space["proprioceptive"].shape[0])
@@ -238,7 +239,7 @@ class TransformerModel(nn.Module):
 
         self.decoder_out_dim = decoder_out_dim
 
-        self.model_args = cfg.MODEL.TRANSFORMER
+        self.model_args = copy.deepcopy(cfg.MODEL.TRANSFORMER)
         self.seq_len = cfg.MODEL.MAX_LIMBS
         # Embedding layer for per limb obs
         limb_obs_size = obs_space["proprioceptive"].shape[0] // self.seq_len
@@ -958,7 +959,7 @@ class ActorCritic(nn.Module):
         # print ('time on connectivity', end - start)
 
         # reshape the obs for transformer input
-        if cfg.MODEL.TYPE == 'transformer':
+        if type(self.mu_net) == TransformerModel:
             obs = obs.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)
             if obs_context is not None:
                 obs_context = obs_context.reshape(batch_size, self.seq_len, -1).permute(1, 0, 2)

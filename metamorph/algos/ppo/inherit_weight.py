@@ -5,8 +5,10 @@ from metamorph.config import cfg
 from metamorph.algos.ppo.model import ActorCritic
 
 
-def restore_from_checkpoint(ac):
-    checkpoint = torch.load(cfg.PPO.CHECKPOINT_PATH)
+def restore_from_checkpoint(ac, cp_path=None):
+    if cp_path is None:
+        cp_path = cfg.PPO.CHECKPOINT_PATH
+    checkpoint = torch.load(cp_path)
     ob_rms, ret_rms, optimizer_state = None, None, None
     if len(checkpoint) == 2:
         model_p, ob_rms = checkpoint
