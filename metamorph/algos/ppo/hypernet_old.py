@@ -318,7 +318,7 @@ class MLPModel(nn.Module):
             self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
 
         if self.model_args.LAYER_NORM:
-            norm_layers = [nn.LayerNorm(cfg.MODEL.MLP.HIDDEN_DIM, elementwise_affine=False) for _ in range(cfg.MODEL.MLP.LAYER_NUM)]
+            norm_layers = [nn.LayerNorm(cfg.MODEL.MLP.HIDDEN_DIM) for _ in range(cfg.MODEL.MLP.LAYER_NUM)]
             self.LN_layers = nn.ModuleList(norm_layers)
 
         if self.model_args.CONTEXT_EMBEDDING_NORM == 'layer_norm':
@@ -351,6 +351,8 @@ class MLPModel(nn.Module):
                 embedding = embedding.mean(dim=1)
             else:
                 embedding = embedding.sum(dim=1)
+            if self.model_args.LAYER_NORM:
+                embedding = self.LN_layers[0](embedding)
             embedding = F.relu(embedding)
 
             if "hfield" in cfg.ENV.KEYS_TO_KEEP:
@@ -359,9 +361,12 @@ class MLPModel(nn.Module):
             if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'hidden':
                 embedding = torch.cat([embedding, hfield_embedding], 1)
 
-            for weight, bias in zip(self.hidden_weights, self.hidden_bias):
+            for i, weight in enumerate(self.hidden_weights):
                 layer_input = embedding
+                bias = self.hidden_bias[i]
                 embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
+                if self.model_args.LAYER_NORM:
+                    embedding = self.LN_layers[i + 1](embedding)
                 embedding = F.relu(embedding)
                 if self.model_args.SKIP_CONNECTION:
                     embedding = embedding + layer_input
