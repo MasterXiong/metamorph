@@ -360,8 +360,11 @@ class MLPModel(nn.Module):
                 embedding = torch.cat([embedding, hfield_embedding], 1)
 
             for weight, bias in zip(self.hidden_weights, self.hidden_bias):
+                layer_input = embedding
                 embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
                 embedding = F.relu(embedding)
+                if self.model_args.SKIP_CONNECTION:
+                    embedding = embedding + layer_input
 
             if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'output':
                 embedding = torch.cat([embedding, hfield_embedding], 1)
@@ -466,6 +469,7 @@ class MLPModel(nn.Module):
                         context_embedding = self.hidden_dropout(context_embedding)
                 for i, layer in enumerate(self.HN_hidden_weight):
                     weight = layer(context_embedding).view(batch_size, self.hidden_dims[i], self.hidden_dims[i + 1])
+                    layer_input = embedding
                     if self.model_args.HN_GENERATE_BIAS:
                         bias = self.HN_hidden_bias[i](context_embedding)
                         embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
@@ -474,6 +478,8 @@ class MLPModel(nn.Module):
                     if self.model_args.LAYER_NORM:
                         embedding = self.LN_layers[i + 1](embedding)
                     embedding = F.relu(embedding)
+                    if self.model_args.SKIP_CONNECTION:
+                        embedding = embedding + layer_input
             else:
                 embedding = self.hidden_layers(embedding)
 

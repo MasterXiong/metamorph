@@ -485,6 +485,8 @@ _C.MODEL.MLP.HIDDEN_CONTEXT = 'mean'
 _C.MODEL.MLP.DROPOUT = None
 # position to concat hfield
 _C.MODEL.MLP.HFIELD_POS = 'output'
+# skip connection
+_C.MODEL.MLP.SKIP_CONNECTION = False
 
 # hyperparameters for hypernet
 _C.MODEL.HYPERNET = CN()
