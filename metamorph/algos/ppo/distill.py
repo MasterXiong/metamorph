@@ -57,8 +57,8 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
     all_context = defaultdict(list)
 
     for i, agent in enumerate(agents):
-        if i == 5:
-            break
+        # if i == 5:
+        #     break
         data_path = f'expert_data/{source_folder}/{agent}.pkl'
         if not os.path.exists(data_path):
             continue
