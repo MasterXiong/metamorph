@@ -253,8 +253,10 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
             print (f'epoch {i}, train: {np.mean(batch_losses):.4f}, in domain valid: {np.mean(batch_in_domain_valid_loss):.4f}, out domain valid: {np.mean(batch_out_domain_valid_loss):.4f}')
         else:
             print (f'epoch {i}, average batch loss: {np.mean(batch_losses)}')
+        params_norm = torch.norm(torch.cat([p.view(-1) for p in model.parameters()]), 2)
+        print ('model norm: ', params_norm)
         loss_curve.append(np.mean(batch_losses))
+        with open(f'{cfg.OUT_DIR}/loss_curve.pkl', 'wb') as f:
+            pickle.dump([loss_curve, in_domain_valid_curve, out_domain_valid_curve], f)
 
     torch.save([model.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{cfg.DISTILL.EPOCH_NUM}.pt')
-    with open(f'{cfg.OUT_DIR}/loss_curve.pkl', 'wb') as f:
-        pickle.dump([loss_curve, in_domain_valid_curve, out_domain_valid_curve], f)
