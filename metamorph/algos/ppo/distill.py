@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import pickle
+from collections import defaultdict
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
@@ -30,15 +31,12 @@ class DistillationDataset(Dataset):
         obs = self.data['obs'][index]
         act = self.data['act'][index]
         act_mean = self.data['act_mean'][index]
-        context = self.data['context'][index]
-        obs_mask = self.data['obs_padding_mask'][index]
-        act_mask = self.data['act_padding_mask'][index]
         unimal_ids = self.data['unimal_ids'][index]
         if 'hfield' in self.data:
             hfield = self.data['hfield'][index]
         else:
             hfield = torch.zeros(1)
-        return obs, act, act_mean, context, obs_mask, act_mask, hfield, unimal_ids
+        return obs, act, act_mean, hfield, unimal_ids
 
 
 def distill_policy(source_folder, target_folder, teacher_mode, validation=False):
@@ -52,17 +50,15 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
         'obs': [], 
         'act': [], 
         'act_mean': [], 
-        'context': [], 
-        'obs_padding_mask': [], 
-        'act_padding_mask': [], 
         'unimal_ids': [], 
     }
     if 'hfield' in cfg.ENV.KEYS_TO_KEEP:
         buffer['hfield'] = []
-    # all_context = []
+    all_context = defaultdict(list)
+
     for i, agent in enumerate(agents):
-        # if i == 5:
-        #     break
+        if i == 5:
+            break
         data_path = f'expert_data/{source_folder}/{agent}.pkl'
         if not os.path.exists(data_path):
             continue
@@ -71,8 +67,10 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
             agent_data = pickle.load(f)
         env = make_env(cfg.ENV_NAME, 0, 0, xml_file=agent)()
         init_obs = env.reset()
-        # all_context.append(init_obs['context'])
         env.close()
+        all_context['context'].append(init_obs['context'])
+        all_context['obs_mask'].append(init_obs['obs_padding_mask'])
+        all_context['act_mask'].append(init_obs['act_padding_mask'])
         # drop context features from obs if needed
         if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6 and agent_data['obs'].shape[-1] == 624:
             dims = list(range(13)) + [30, 31] + [41, 42]
@@ -95,9 +93,6 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
                 buffer[key].append(agent_data[key][:cfg.DISTILL.PER_AGENT_SAMPLE_NUM])
             else:
                 raise ValueError("Unsupported sample strategy")
-        for key in ['context', 'obs_padding_mask', 'act_padding_mask']:
-            value = torch.from_numpy(init_obs[key]).float().unsqueeze(0).repeat(cfg.DISTILL.PER_AGENT_SAMPLE_NUM, 1)
-            buffer[key].append(value)
         buffer['unimal_ids'].append(torch.ones(cfg.DISTILL.PER_AGENT_SAMPLE_NUM, dtype=torch.long) * i)
     # all_context = np.stack(all_context, axis=0)
     # all_context = all_context.reshape(1200, -1)
@@ -105,6 +100,9 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
     #     print (i, all_context[:, i].min(), all_context[:, i].max())
     # with open('context_norm.pkl', 'wb') as f:
     #     pickle.dump([all_context.min(axis=0), all_context.max(axis=0)], f)
+    all_context['context'] = torch.from_numpy(np.stack(all_context['context'])).float().cuda()
+    all_context['obs_mask'] = torch.from_numpy(np.stack(all_context['obs_mask'])).float().cuda()
+    all_context['act_mask'] = torch.from_numpy(np.stack(all_context['act_mask'])).float().cuda()
 
     if validation:
         in_domain_validation_buffer = {}
@@ -193,13 +191,17 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
             torch.save([model.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{i}.pt')
 
         batch_losses = []
-        for j, (obs, train_act, train_act_mean, context, obs_mask, act_mask, hfield, unimal_ids) in enumerate(train_dataloader):
+        for j, (obs, train_act, train_act_mean, hfield, unimal_ids) in enumerate(train_dataloader):
+
+            context = all_context['context'][unimal_ids]
+            obs_mask = all_context['obs_mask'][unimal_ids]
+            act_mask = all_context['act_mask'][unimal_ids]
 
             train_obs_dict = {
                 'proprioceptive': obs.cuda(), 
-                'context': context.cuda(), 
-                'obs_padding_mask': obs_mask.cuda(), 
-                'act_padding_mask': act_mask.cuda(), 
+                'context': context, 
+                'obs_padding_mask': obs_mask,  
+                'act_padding_mask': act_mask, 
             }
             if 'hfield' in cfg.ENV.KEYS_TO_KEEP:
                 train_obs_dict['hfield'] = hfield.cuda()
