@@ -147,12 +147,22 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
         out_domain_validation_data = DistillationDataset(out_domain_validation_buffer)
         out_domain_validation_dataloader = DataLoader(out_domain_validation_data, batch_size=cfg.DISTILL.BATCH_SIZE, shuffle=True, drop_last=False, num_workers=2, pin_memory=True)
 
-    optimizer = optim.Adam(
-        model.parameters(), 
-        lr=cfg.DISTILL.BASE_LR, 
-        eps=cfg.DISTILL.EPS, 
-        weight_decay=cfg.DISTILL.WEIGHT_DECAY
-    )
+    if cfg.DISTILL.OPTIMIZER == 'adam':
+        optimizer = optim.Adam(
+            model.parameters(), 
+            lr=cfg.DISTILL.BASE_LR, 
+            eps=cfg.DISTILL.EPS, 
+            weight_decay=cfg.DISTILL.WEIGHT_DECAY
+        )
+    elif cfg.DISTILL.OPTIMIZER == 'adamw':
+        optimizer = optim.AdamW(
+            model.parameters(), 
+            lr=cfg.DISTILL.BASE_LR, 
+            eps=cfg.DISTILL.EPS, 
+            weight_decay=cfg.DISTILL.WEIGHT_DECAY
+        )
+    else:
+        raise ValueError("Unsupported optimizer type")
 
     def loss_function(obs_dict, act, act_mean):
         if cfg.DISTILL.IMITATION_TARGET == 'act':
@@ -253,7 +263,7 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
             print (f'epoch {i}, train: {np.mean(batch_losses):.4f}, in domain valid: {np.mean(batch_in_domain_valid_loss):.4f}, out domain valid: {np.mean(batch_out_domain_valid_loss):.4f}')
         else:
             print (f'epoch {i}, average batch loss: {np.mean(batch_losses)}')
-        params_norm = torch.norm(torch.cat([p.view(-1) for p in model.parameters()]), 2)
+        params_norm = torch.norm(torch.cat([p.view(-1) for p in model.parameters()]), 2).item()
         print ('model norm: ', params_norm)
         loss_curve.append(np.mean(batch_losses))
         with open(f'{cfg.OUT_DIR}/loss_curve.pkl', 'wb') as f:
