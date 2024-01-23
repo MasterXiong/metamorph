@@ -401,6 +401,8 @@ _C.MODEL.CONTEXT_OBS_TYPES = [
     "absolute_body_pos", "absolute_body_ipos", "body_iquat", # limb model
     "body_mass", "body_shape", # limb hardware
     "joint_range_onehot", "joint_axis", "gear_onehot",  # joint hardware
+    # "jnt_pos", # joint model
+    # "joint_range", "gear", # joint hardware
     # "torso_limb_indicator", 
     # "body_pos", "body_ipos", 
 ]
@@ -449,6 +451,7 @@ _C.MODEL.MLP.CONTEXT_ENCODER_TYPE = 'linear'
 _C.MODEL.MLP.HN_INPUT = False
 _C.MODEL.MLP.HN_OUTPUT = False
 _C.MODEL.MLP.HN_HIDDEN = False
+_C.MODEL.MLP.HN_HFIELD = False
 _C.MODEL.MLP.PER_NODE_EMBED = False
 _C.MODEL.MLP.PER_NODE_DECODER = False
 _C.MODEL.MLP.PER_ROBOT_HIDDEN_LAYERS = False
@@ -487,6 +490,11 @@ _C.MODEL.MLP.DROPOUT = None
 _C.MODEL.MLP.HFIELD_POS = 'output'
 # skip connection
 _C.MODEL.MLP.SKIP_CONNECTION = False
+# TF context encoder
+_C.MODEL.MLP.CONTEXT_TF_ENCODER_NHEAD = 2
+_C.MODEL.MLP.CONTEXT_TF_ENCODER_FF_DIM = 256
+# context embedding aggregation
+_C.MODEL.MLP.CONTEXT_ENBEDDING_AGG = 'mean'
 
 # hyperparameters for hypernet
 _C.MODEL.HYPERNET = CN()
@@ -693,6 +701,7 @@ _C.DISTILL.SAMPLE_STRATEGY = 'env_first'
 _C.DISTILL.LOSS_TYPE = 'logp'
 _C.DISTILL.KL_TARGET = 'act_mean'
 _C.DISTILL.OPTIMIZER = 'adam'
+_C.DISTILL.SAMPLE_WEIGHT = False
 
 _C.DAGGER = CN()
 _C.DAGGER.STUDENT_PATH = ''
@@ -704,6 +713,9 @@ _C.DAGGER.BASE_LR = 3e-4
 _C.DAGGER.EPS = 1e-5
 _C.DAGGER.WEIGHT_DECAY = 0.
 _C.DAGGER.SAVE_FREQ = 5
+_C.DAGGER.BATCH_SIZE = 5120
+_C.DAGGER.EPOCH_PER_ITER = 10
+_C.DAGGER.MINIBATCH_UPDATE_PER_ITER = 100
 
 # ----------------------------------------------------------------------------#
 # Misc Options

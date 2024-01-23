@@ -181,10 +181,18 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
                 target = torch.tanh(target)
             else:
                 pred = model.action_mu
-            if cfg.DISTILL.BALANCED_LOSS:
-                loss = 0.5 * (((pred - target.cuda()).square() * (1 - obs_dict['act_padding_mask'])).sum(dim=1) / (1 - obs_dict['act_padding_mask']).sum(dim=1)).mean()
+            if cfg.DISTILL.SAMPLE_WEIGHT:
+                threshold = 1.
+                w = torch.where(target.abs() > threshold, torch.exp(threshold - target.abs()), 1.).cuda()
+                if cfg.DISTILL.BALANCED_LOSS:
+                    loss = 0.5 * (((pred - target.cuda()).square() * w * (1 - obs_dict['act_padding_mask'])).sum(dim=1) / (1 - obs_dict['act_padding_mask']).sum(dim=1)).mean()
+                else:
+                    loss = 0.5 * ((pred - target.cuda()).square() * w * (1 - obs_dict['act_padding_mask'])).mean()
             else:
-                loss = 0.5 * ((pred - target.cuda()).square() * (1 - obs_dict['act_padding_mask'])).sum(dim=1).mean()
+                if cfg.DISTILL.BALANCED_LOSS:
+                    loss = 0.5 * (((pred - target.cuda()).square() * (1 - obs_dict['act_padding_mask'])).sum(dim=1) / (1 - obs_dict['act_padding_mask']).sum(dim=1)).mean()
+                else:
+                    loss = 0.5 * ((pred - target.cuda()).square() * (1 - obs_dict['act_padding_mask'])).mean()
         elif cfg.DISTILL.LOSS_TYPE == 'logp':
             if cfg.DISTILL.BALANCED_LOSS:
                 loss = -((model.limb_logp * (1 - obs_dict['act_padding_mask'])).sum(dim=1, keepdim=True) / (1 - obs_dict['act_padding_mask']).sum(dim=1, keepdim=True)).mean()
