@@ -52,8 +52,8 @@ class MLPModel(nn.Module):
                 context_embed = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                 context_encoder_layers = TransformerEncoderLayerResidual(
                     cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE,
-                    cfg.MODEL.TRANSFORMER.NHEAD,
-                    256,
+                    self.model_args.CONTEXT_TF_ENCODER_NHEAD,
+                    self.model_args.CONTEXT_TF_ENCODER_FF_DIM,
                     cfg.MODEL.TRANSFORMER.DROPOUT, 
                     batch_first=True, 
                 )
@@ -136,8 +136,8 @@ class MLPModel(nn.Module):
                     context_embed = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                     context_encoder_layers = TransformerEncoderLayerResidual(
                         cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE,
-                        cfg.MODEL.TRANSFORMER.NHEAD,
-                        256,
+                        self.model_args.CONTEXT_TF_ENCODER_NHEAD,
+                        self.model_args.CONTEXT_TF_ENCODER_FF_DIM, 
                         cfg.MODEL.TRANSFORMER.DROPOUT,
                         batch_first=True, 
                     )
@@ -233,8 +233,8 @@ class MLPModel(nn.Module):
                         context_embed = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                         context_encoder_layers = TransformerEncoderLayerResidual(
                             cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE,
-                            cfg.MODEL.TRANSFORMER.NHEAD,
-                            256,
+                            self.model_args.CONTEXT_TF_ENCODER_NHEAD,
+                            self.model_args.CONTEXT_TF_ENCODER_FF_DIM, 
                             cfg.MODEL.TRANSFORMER.DROPOUT,
                             batch_first=True, 
                         )
@@ -315,7 +315,59 @@ class MLPModel(nn.Module):
                     self.HN_hidden_bias = nn.ModuleList(layers)
 
         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-            self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
+            if self.model_args.HN_HFIELD:
+                print ('use HN for hfield encoder')
+                if not self.model_args.SHARE_CONTEXT_ENCODER:
+                    if self.model_args.CONTEXT_ENCODER_TYPE == 'linear':
+                        self.context_encoder_for_hfield = tu.make_mlp_default(context_encoder_dim)
+                    elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
+                        context_embed = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                        context_encoder_layers = TransformerEncoderLayerResidual(
+                            cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE,
+                            self.model_args.CONTEXT_TF_ENCODER_NHEAD,
+                            self.model_args.CONTEXT_TF_ENCODER_FF_DIM, 
+                            cfg.MODEL.TRANSFORMER.DROPOUT,
+                            batch_first=True, 
+                        )
+                        context_encoder_TF = TransformerEncoder(
+                            context_encoder_layers, 1, norm=None,
+                        )
+                        if self.model_args.CONTEXT_MASK:
+                            self.context_embed_hfield = context_embed
+                            self.context_encoder_for_hfield = context_encoder_TF
+                        else:
+                            self.context_encoder_for_hfield = nn.Sequential(
+                                context_embed, 
+                                context_encoder_TF, 
+                            )
+                    elif self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                        # self.context_embed_output = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                        self.context_encoder_for_hfield = GraphNeuralNetwork(
+                            input_dim = context_obs_size, 
+                            hidden_dims = [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE], 
+                            output_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
+                            final_nonlinearity=True
+                        )
+
+                HN_output_layers = []
+                self.hfield_dims = mlp_dims = [obs_space.spaces["hfield"].shape[0]] + cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS
+                for i in range(len(mlp_dims) - 1):
+                    output_layer = nn.Linear(HN_input_dim, mlp_dims[i] * mlp_dims[i + 1])
+                    initrange = np.sqrt(1 / mlp_dims[i])
+                    output_layer.weight.data.zero_()
+                    output_layer.bias.data.normal_(std=initrange)
+                    HN_output_layers.append(output_layer)
+                self.HN_hfield_weight = nn.ModuleList(HN_output_layers)
+
+                layers = []
+                for i in range(len(mlp_dims) - 1):
+                    hnet_hfield_bias = nn.Linear(HN_input_dim, mlp_dims[i + 1])
+                    hnet_hfield_bias.weight.data.zero_()
+                    hnet_hfield_bias.bias.data.zero_()
+                    layers.append(hnet_hfield_bias)
+                self.HN_hfield_bias = nn.ModuleList(layers)
+            else:
+                self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
 
         if self.model_args.LAYER_NORM:
             norm_layers = [nn.LayerNorm(cfg.MODEL.MLP.HIDDEN_DIM) for _ in range(cfg.MODEL.MLP.LAYER_NUM)]
@@ -330,6 +382,8 @@ class MLPModel(nn.Module):
             self.input_dropout = nn.Dropout(p=0.1)
             self.hidden_dropout = nn.Dropout(p=0.1)
             self.output_dropout = nn.Dropout(p=0.1)
+            if self.model_args.HN_HFIELD:
+                self.hfield_dropout = nn.Dropout(p=0.1)
 
 
     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, unimal_ids=None):
@@ -354,15 +408,22 @@ class MLPModel(nn.Module):
             if self.model_args.LAYER_NORM:
                 embedding = self.LN_layers[0](embedding)
             embedding = F.relu(embedding)
+            layer_input = embedding
 
             if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-                hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+                if self.model_args.HN_HFIELD:
+                    hfield_embedding = obs_env["hfield"]
+                    for i, weight in enumerate(self.hfield_weights):
+                        bias = self.hfield_bias[i]
+                        hfield_embedding = (hfield_embedding[:, :, None] * weight).sum(dim=1) + bias
+                        hfield_embedding = F.relu(hfield_embedding)
+                else:
+                    hfield_embedding = self.hfield_encoder(obs_env["hfield"])
 
             if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'hidden':
                 embedding = torch.cat([embedding, hfield_embedding], 1)
 
             for i, weight in enumerate(self.hidden_weights):
-                layer_input = embedding
                 bias = self.hidden_bias[i]
                 embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
                 if self.model_args.LAYER_NORM:
@@ -370,6 +431,7 @@ class MLPModel(nn.Module):
                 embedding = F.relu(embedding)
                 if self.model_args.SKIP_CONNECTION:
                     embedding = embedding + layer_input
+                layer_input = embedding
 
             if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'output':
                 embedding = torch.cat([embedding, hfield_embedding], 1)
@@ -443,9 +505,34 @@ class MLPModel(nn.Module):
             if self.model_args.LAYER_NORM:
                 embedding = self.LN_layers[0](embedding)
             embedding = F.relu(embedding)
+            layer_input = embedding
         
         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
-            hfield_embedding = self.hfield_encoder(obs_env["hfield"])
+            if self.model_args.HN_HFIELD:
+                if self.model_args.SHARE_CONTEXT_ENCODER:
+                    context_embedding = self.context_embedding_input
+                    context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+                else:
+                    context_embedding = obs_context
+                    if self.model_args.CONTEXT_MASK:
+                        context_embedding = self.context_embed_hfield(context_embedding)
+                        context_embedding = self.context_encoder_for_hfield(context_embedding, src_key_padding_mask=obs_mask)
+                    else:
+                        context_embedding = self.context_encoder_for_hfield(context_embedding)
+                    # aggregate the context embedding
+                    # need to aggregate with mean. sum will lead to significant KL divergence
+                    context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+                    if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
+                        context_embedding = self.hfield_dropout(context_embedding)
+
+                hfield_embedding = obs_env["hfield"]
+                for i, layer in enumerate(self.HN_hfield_weight):
+                    weight = layer(context_embedding).view(batch_size, self.hfield_dims[i], self.hfield_dims[i + 1])
+                    bias = self.HN_hfield_bias[i](context_embedding)
+                    hfield_embedding = (hfield_embedding[:, :, None] * weight).sum(dim=1) + bias
+                    hfield_embedding = F.relu(hfield_embedding)
+            else:
+                hfield_embedding = self.hfield_encoder(obs_env["hfield"])
 
         if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'hidden':
             embedding = torch.cat([embedding, hfield_embedding], 1)
@@ -465,7 +552,10 @@ class MLPModel(nn.Module):
                         context_embedding = self.context_encoder_for_hidden(context_embedding)
                     # aggregate the context embedding
                     # need to aggregate with mean. sum will lead to significant KL divergence
-                    context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+                    if self.model_args.CONTEXT_ENBEDDING_AGG == 'mean':
+                        context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+                    else:
+                        context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1)
                     if self.model_args.CONTEXT_EMBEDDING_NORM == 'p2_norm':
                         context_embedding = torch.div(context_embedding, torch.norm(context_embedding, p=2, dim=-1, keepdim=True))
                     elif self.model_args.CONTEXT_EMBEDDING_NORM == 'layer_norm':
@@ -474,7 +564,6 @@ class MLPModel(nn.Module):
                         context_embedding = self.hidden_dropout(context_embedding)
                 for i, layer in enumerate(self.HN_hidden_weight):
                     weight = layer(context_embedding).view(batch_size, self.hidden_dims[i], self.hidden_dims[i + 1])
-                    layer_input = embedding
                     if self.model_args.HN_GENERATE_BIAS:
                         bias = self.HN_hidden_bias[i](context_embedding)
                         embedding = (embedding[:, :, None] * weight).sum(dim=1) + bias
@@ -485,6 +574,7 @@ class MLPModel(nn.Module):
                     embedding = F.relu(embedding)
                     if self.model_args.SKIP_CONNECTION:
                         embedding = embedding + layer_input
+                    layer_input = embedding
             else:
                 embedding = self.hidden_layers(embedding)
 
@@ -580,7 +670,10 @@ class MLPModel(nn.Module):
                         context_embedding = self.context_encoder_for_hidden(context_embedding)
                     # aggregate the context embedding
                     # need to aggregate with mean. sum will lead to significant KL divergence
-                    context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+                    if self.model_args.CONTEXT_ENBEDDING_AGG == 'mean':
+                        context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+                    else:
+                        context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1)
                     if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
                         context_embedding = self.hidden_dropout(context_embedding)
                 self.hidden_weights, self.hidden_bias = [], []
@@ -611,3 +704,27 @@ class MLPModel(nn.Module):
                     context_embedding = self.output_dropout(context_embedding)
             self.output_weight = self.hnet_output_weight(context_embedding).view(batch_size, self.seq_len, self.final_input_dim, self.limb_out_dim)
             self.output_bias = self.hnet_output_bias(context_embedding)
+
+        if self.model_args.HN_HFIELD:
+            if self.model_args.SHARE_CONTEXT_ENCODER:
+                context_embedding = self.context_embedding_input
+                context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+            else:
+                context_embedding = obs_context
+                if self.model_args.CONTEXT_MASK:
+                    context_embedding = self.context_embed_hfield(context_embedding)
+                    context_embedding = self.context_encoder_for_hfield(context_embedding, src_key_padding_mask=obs_mask)
+                else:
+                    context_embedding = self.context_encoder_for_hfield(context_embedding)
+                # aggregate the context embedding
+                # need to aggregate with mean. sum will lead to significant KL divergence
+                context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
+                if self.model_args.CONTEXT_EMBEDDING_DROPOUT:
+                    context_embedding = self.hfield_dropout(context_embedding)
+
+            self.hfield_weights, self.hfield_bias = [], []
+            for i, layer in enumerate(self.HN_hfield_weight):
+                weight = layer(context_embedding).view(batch_size, self.hfield_dims[i], self.hfield_dims[i + 1])
+                self.hfield_weights.append(weight)
+                bias = self.HN_hfield_bias[i](context_embedding)
+                self.hfield_bias.append(bias)

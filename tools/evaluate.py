@@ -285,7 +285,7 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
             episode_return, ood_ratio, _ = eval_result[agent]
             avg_score.append(np.array(episode_return).mean())
         else:
-            envs = make_vec_envs(xml_file=agent, training=False, norm_rew=True, render_policy=True)
+            envs = make_vec_envs(xml_file=agent, training=False, norm_rew=False, render_policy=True, max_episode_num=1)
             set_ob_rms(envs, obs_rms)
             set_ret_rms(envs, get_ret_rms(ppo_trainer.envs))
             episode_return, ood_ratio, episode_gae = evaluate(policy, envs, agent, compute_gae=compute_gae)
@@ -300,6 +300,75 @@ def evaluate_model(model_path, agent_path, policy_folder, suffix=None, terminate
 
     print ('avg score across all test agents: ', np.array(avg_score).mean())
     return np.array(avg_score).mean()
+
+
+def evaluate_model_v2(model_path, agent_path, policy_folder, suffix=None, deterministic=True):
+
+    print (policy_folder)
+    cfg.merge_from_file(f'{policy_folder}/config.yaml')
+    cfg.PPO.CHECKPOINT_PATH = model_path
+    cfg.ENV.WALKERS = []
+    cfg.ENV.WALKER_DIR = agent_path
+    cfg.OUT_DIR = './eval'
+    # do not include terminating on falling during evaluation
+    cfg.DETERMINISTIC = deterministic
+    set_cfg_options()
+    test_agents = cfg.ENV.WALKERS
+
+    ppo_trainer = PPO()
+    policy = ppo_trainer.agent
+    # change to eval mode as we have dropout in the model
+    policy.ac.eval()
+
+    folder_name = policy_folder.split('/')[-2]
+    output_name = folder_name + '/' + suffix
+    os.makedirs(f'eval/{folder_name}', exist_ok=True)
+    print (output_name)
+
+    obs_rms = get_ob_rms(ppo_trainer.envs)
+    try:
+        obs_rms['proprioceptive'].mean = obs_rms['proprioceptive'].mean.numpy()
+        obs_rms['proprioceptive'].var = obs_rms['proprioceptive'].var.numpy()
+    except:
+        pass
+
+    cfg.ENV.FIX_ENV = True
+    envs = make_vec_envs(training=False)
+    set_ob_rms(envs, obs_rms)
+    obs = envs.reset()
+
+    if type(policy.ac.mu_net) == MLPModel or type(policy.ac.mu_net) == HNMLP:
+        policy.ac.mu_net.generate_params(obs['context'], obs['obs_padding_mask'].bool())
+
+    episode_per_agent = 16
+    episode_return = [[] for _ in test_agents]
+    episode_num = np.zeros(len(test_agents))
+
+    for t in range(1000 * episode_per_agent):
+        # unimal_ids = env.get_unimal_idx()
+        if t % 1000 == 0:
+            print (f'{t} steps finished')
+        _, act, _ = policy.act(obs, return_attention=False, compute_val=False, unimal_ids=None)
+        obs, reward, done, infos = envs.step(act)
+
+        idx = np.where(done)[0]
+        episode_num[idx] += 1
+        for i in idx:
+            episode_return[i].append(infos[i]['episode']['r'])
+            if i == 0:
+                print (obs['proprioceptive'][i].reshape(12, -1)[1, :8])
+        if (episode_num < episode_per_agent).sum() == 0:
+            break
+    envs.close()
+
+    eval_result = {}
+    for i, agent in enumerate(test_agents):
+        eval_result[agent] = [np.array(episode_return[i][:episode_per_agent]), None, None]
+    with open(f'eval/{output_name}.pkl', 'wb') as f:
+        pickle.dump(eval_result, f)
+
+    print ('avg score across all test agents: ', np.mean(np.stack(episode_return)))
+    return np.mean(np.stack(episode_return))
 
 
 # def get_context(agent_path):

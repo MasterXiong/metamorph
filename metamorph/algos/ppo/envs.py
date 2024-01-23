@@ -18,7 +18,7 @@ from metamorph.envs.wrappers.multi_env_wrapper import MultiEnvWrapper
 from modular.wrappers import ModularObservationPadding, ModularActionPadding
 
 
-def make_env(env_id, seed, rank, xml_file=None):
+def make_env(env_id, seed, rank, xml_file=None, max_episode_num=1e12):
     def _thunk():
         if env_id in CUSTOM_ENVS:
             if env_id == 'Unimal-v0':
@@ -34,7 +34,7 @@ def make_env(env_id, seed, rank, xml_file=None):
         if str(env.__class__.__name__).find("TimeLimit") >= 0:
             env = TimeLimitMask(env)
         # Store the un-normalized rewards
-        env = RecordEpisodeStatistics(env)
+        env = RecordEpisodeStatistics(env, max_episode_num=max_episode_num)
         return env
 
     return _thunk
@@ -56,6 +56,7 @@ def make_vec_envs(
     render_policy=False,
     seed=None,
     env_type='train', 
+    max_episode_num=1e12, 
 ):
     if not num_env:
         num_env = cfg.PPO.NUM_ENVS
@@ -74,7 +75,7 @@ def make_vec_envs(
             xml_file = cfg.ENV.WALKERS[0]
         #print ('xml file', xml_file)
         envs = [
-            make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file)
+            make_env(cfg.ENV_NAME, seed, idx, xml_file=xml_file, max_episode_num=max_episode_num)
             for idx in range(num_env)
         ]
         #print (len(envs))
@@ -94,9 +95,7 @@ def make_vec_envs(
                 # envs = [env_func_wrapper(MultiEnvWrapper(_env, idx, env_type=env_type)) for idx, _env in enumerate(envs)]
             else:
                 for i, xml in enumerate(cfg.ENV.WALKERS):
-                    _env = make_env(cfg.ENV_NAME, seed, 2 * i, xml_file=xml)()
-                    envs.append(env_func_wrapper(_env))
-                    _env = make_env(cfg.ENV_NAME, seed, 2 * i + 1, xml_file=xml)()
+                    _env = make_env(cfg.ENV_NAME, seed, i, xml_file=xml, max_episode_num=16)()
                     envs.append(env_func_wrapper(_env))
                 cfg.PPO.NUM_ENVS = len(envs)
         elif cfg.ENV_NAME == 'Modular-v0':
@@ -218,7 +217,7 @@ class TimeLimitMask(gym.Wrapper):
 
 
 class RecordEpisodeStatistics(gym.Wrapper):
-    def __init__(self, env, deque_size=100):
+    def __init__(self, env, deque_size=100, max_episode_num=1e12):
         super(RecordEpisodeStatistics, self).__init__(env)
         self.t0 = (
             time.time()
@@ -231,13 +230,25 @@ class RecordEpisodeStatistics(gym.Wrapper):
         self.return_queue = deque(maxlen=deque_size)
         self.length_queue = deque(maxlen=deque_size)
 
+        self.max_episode_num = max_episode_num
+        self.episode_num = 0
+
     def reset(self, **kwargs):
+        self.episode_num += 1
+        if self.episode_num > self.max_episode_num:
+            return self.init_obs
         observation = super(RecordEpisodeStatistics, self).reset(**kwargs)
+        if self.episode_num == 1:
+            self.init_obs = observation
         self.episode_return = 0.0
         self.episode_length = 0
         return observation
 
     def step(self, action):
+        if self.episode_num > self.max_episode_num:
+            # do nothing
+            return self.init_obs, 0., False, dict()
+
         observation, reward, done, info = super(
             RecordEpisodeStatistics, self
         ).step(action)
