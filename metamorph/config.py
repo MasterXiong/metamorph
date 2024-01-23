@@ -716,6 +716,8 @@ _C.DAGGER.SAVE_FREQ = 5
 _C.DAGGER.BATCH_SIZE = 5120
 _C.DAGGER.EPOCH_PER_ITER = 10
 _C.DAGGER.MINIBATCH_UPDATE_PER_ITER = 100
+_C.DAGGER.ANNEAL_THRESHOLD = 1
+_C.DAGGER.SUFFIX = ''
 
 # ----------------------------------------------------------------------------#
 # Misc Options

@@ -123,10 +123,9 @@ class DAggerTrainer:
                 student_act_mean = student_pi.loc
                 student_act_sample = student_pi.sample()
                 # Sample actions
-                anneal_threshold = 1. - cur_iter / cfg.DAGGER.ITERS
-                if cur_iter < 10:
-                    anneal_threshold = 1. - cur_iter / 10
-                    choose_teacher = (torch.rand(teacher_act_mean.shape[0], 1) <= anneal_threshold).float().cuda()
+                if cur_iter < cfg.DAGGER.ANNEAL_THRESHOLD:
+                    teacher_prob = 1. - cur_iter / cfg.DAGGER.ANNEAL_THRESHOLD
+                    choose_teacher = (torch.rand(teacher_act_mean.shape[0], 1) <= teacher_prob).float().cuda()
                     act = choose_teacher * teacher_act_sample + (1. - choose_teacher) * student_act_sample
                 else:
                     act = student_act_sample

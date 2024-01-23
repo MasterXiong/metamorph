@@ -24,7 +24,7 @@ def main():
     # Set cfg options which are inferred
     set_cfg_options()
 
-    cfg.OUT_DIR = f'{cfg.DAGGER.STUDENT_PATH[:-5]}_dagger_cp_{cfg.DAGGER.STUDENT_CHECKPOINT}/{cfg.DAGGER.STUDENT_PATH[-4:]}'
+    cfg.OUT_DIR = f'{cfg.DAGGER.STUDENT_PATH[:-5]}_{cfg.DAGGER.SUFFIX}/{cfg.DAGGER.STUDENT_PATH[-4:]}'
     os.makedirs(cfg.OUT_DIR, exist_ok=True)
 
     # Save the config
