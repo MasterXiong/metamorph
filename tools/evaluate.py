@@ -68,25 +68,25 @@ def evaluate(policy, env, agent, compute_gae=False):
 
     obs = env.reset()
     ood_ratio = (obs['proprioceptive'].abs() == 10.).float().mean().item()
-    if cfg.MODEL.NORMALIZE_CONTEXT:
-        with open('context_norm.pkl', 'rb') as f:
-            context_min, context_max = pickle.load(f)
-        context_min = torch.Tensor(context_min).float().unsqueeze(0).cuda()
-        context_max = torch.Tensor(context_max).float().unsqueeze(0).cuda()
-        context_range = context_max - context_min
-        context_range[context_range == 0] = 1e-8
-        obs_context = obs['context']
-        batch_size = obs_context.shape[0]
-        obs_context = obs_context.view(batch_size * 12, -1)
-        obs_context = (obs_context - context_min) / context_range
-        obs_context = obs_context.view(batch_size, -1)
-        obs['context'] = obs_context
+    # if cfg.MODEL.NORMALIZE_CONTEXT:
+    #     with open('context_norm.pkl', 'rb') as f:
+    #         context_min, context_max = pickle.load(f)
+    #     context_min = torch.Tensor(context_min).float().unsqueeze(0).cuda()
+    #     context_max = torch.Tensor(context_max).float().unsqueeze(0).cuda()
+    #     context_range = context_max - context_min
+    #     context_range[context_range == 0] = 1e-8
+    #     obs_context = obs['context']
+    #     batch_size = obs_context.shape[0]
+    #     obs_context = obs_context.view(batch_size * 12, -1)
+    #     obs_context = (obs_context - context_min) / context_range
+    #     obs_context = obs_context.view(batch_size, -1)
+    #     obs['context'] = obs_context
 
     if type(policy.ac.mu_net) == MLPModel or type(policy.ac.mu_net) == HNMLP:
         policy.ac.mu_net.generate_params(obs['context'], obs['obs_padding_mask'].bool())
 
+    unimal_ids = env.get_unimal_idx()
     for t in range(2000):
-        unimal_ids = env.get_unimal_idx()
         if compute_gae:
             val, act, _ = policy.act(obs, return_attention=False, compute_val=True, unimal_ids=unimal_ids)
             episode_values.append(val)
@@ -333,6 +333,7 @@ def evaluate_model_v2(model_path, agent_path, policy_folder, suffix=None, determ
         pass
 
     cfg.ENV.FIX_ENV = True
+    cfg.VECENV.IN_SERIES = 6
     envs = make_vec_envs(training=False)
     set_ob_rms(envs, obs_rms)
     obs = envs.reset()
@@ -355,8 +356,6 @@ def evaluate_model_v2(model_path, agent_path, policy_folder, suffix=None, determ
         episode_num[idx] += 1
         for i in idx:
             episode_return[i].append(infos[i]['episode']['r'])
-            if i == 0:
-                print (obs['proprioceptive'][i].reshape(12, -1)[1, :8])
         if (episode_num < episode_per_agent).sum() == 0:
             break
     envs.close()
