@@ -64,7 +64,10 @@ class DAggerTrainer:
             except:
                 continue
         # student envs is only used to set the state and action space of the student model
-        student_envs = make_vec_envs(training=False)
+        student_envs = make_vec_envs(training=False, env_type='train')
+        self.train_agents = copy.deepcopy(cfg.ENV.WALKERS)
+        with open(f'{cfg.OUT_DIR}/walkers_train.json', 'w') as f:
+            json.dump(cfg.ENV.WALKERS, f)
         # load the model
         self.student = ActorCritic(student_envs.observation_space, student_envs.action_space).cuda()
         # the student and teacher share the same obs_rms based on our distillation code
@@ -88,6 +91,22 @@ class DAggerTrainer:
             with open(f'{cfg.ENV.WALKER_DIR}/context_v2.pkl', 'wb') as f:
                 pickle.dump(self.student_context, f)
 
+        # test envs
+        cfg.ENV.WALKER_DIR = 'data/test'
+        cfg.ENV.WALKERS = [x[:-4] for x in os.listdir('data/test/xml')]
+        self.test_envs = make_vec_envs(training=False, env_type='test')
+        set_ob_rms(self.test_envs, self.student_obs_rms)
+        with open(f'{cfg.OUT_DIR}/walkers_test.json', 'w') as f:
+            json.dump(cfg.ENV.WALKERS, f)
+        self.test_agents = copy.deepcopy(cfg.ENV.WALKERS)
+
+        # for i, agent in enumerate(cfg.ENV.WALKERS):
+        #     env = make_env(cfg.ENV_NAME, 0, 0, xml_file=agent)()
+        #     init_obs = env.reset()
+        #     print (agent)
+        #     print ((torch.from_numpy(init_obs['context']).float() != self.student_context[i]).float().mean())
+        #     env.close()
+
         self.optimizer = optim.Adam(self.student.parameters(), lr=cfg.DAGGER.BASE_LR, eps=cfg.DAGGER.EPS, weight_decay=cfg.DAGGER.WEIGHT_DECAY)
 
     def convert_obs(self, teacher_obs, unimal_ids):
@@ -103,12 +122,19 @@ class DAggerTrainer:
 
     def train(self):
 
-        with open(f'{cfg.OUT_DIR}/walkers_train.json', 'w') as f:
-            json.dump(cfg.ENV.WALKERS, f)
-        self.save_sampled_agent_seq(-1)
+        self.save_sampled_agent_seq(-1, mode='train')
+        self.save_sampled_agent_seq(-1, mode='test')
+        torch.save([self.student.state_dict(), self.student_obs_rms], f'{cfg.OUT_DIR}/checkpoint_0.pt')
 
-        obs = self.envs.reset()
+        # disable dropout
+        self.student.eval()
+
+        train_return_curve, test_return_curve = [], []
         for cur_iter in range(cfg.DAGGER.ITERS):
+            iter_train_returns, iter_test_returns = [], []
+
+            # collect data on the training envs
+            obs = self.envs.reset()
             for step in range(cfg.DAGGER.ITER_STEPS):
                 unimal_ids = self.envs.get_unimal_idx()
                 # teacher
@@ -119,6 +145,7 @@ class DAggerTrainer:
                 # student
                 student_obs = self.convert_obs(obs, unimal_ids)
                 with torch.no_grad():
+                    self.student.mu_net.generate_params(student_obs['context'], student_obs['obs_padding_mask'].bool())
                     _, student_pi, _, _ = self.student(student_obs, compute_val=False)
                 student_act_mean = student_pi.loc
                 student_act_sample = student_pi.sample()
@@ -133,13 +160,37 @@ class DAggerTrainer:
                 self.buffer.insert(student_obs, teacher_act_mean)
                 # env step
                 obs, reward, done, infos = self.envs.step(act)
+                for info in infos:
+                    if 'episode' in info:
+                        iter_train_returns.append(info['episode']['r'])
             
+            # evaluate on the test envs
+            obs = self.test_envs.reset()
+            for step in range(1000):
+                with torch.no_grad():
+                    self.student.mu_net.generate_params(obs['context'], obs['obs_padding_mask'].bool())
+                    _, student_pi, _, _ = self.student(obs, compute_val=False)
+                act = student_pi.loc
+                obs, reward, done, infos = self.test_envs.step(act)
+                for info in infos:
+                    if 'episode' in info:
+                        iter_test_returns.append(info['episode']['r'])
+
+            train_return_curve.append(np.mean(iter_train_returns))
+            test_return_curve.append(np.mean(iter_test_returns))
+            print (f'Iter {cur_iter}') 
+            print (f'Avg train return {int(np.mean(iter_train_returns))} over {len(iter_train_returns)} episodes')
+            print (f'Avg test return {int(np.mean(iter_test_returns))} over {len(iter_test_returns)} episodes')
+
             print (f'Train for iter {cur_iter}')
             self.train_on_buffer()
 
-            self.save_sampled_agent_seq(cur_iter)
+            self.save_sampled_agent_seq(cur_iter, mode='train')
+            self.save_sampled_agent_seq(cur_iter, mode='test')
             if (cur_iter + 1) % cfg.DAGGER.SAVE_FREQ == 0:
                 torch.save([self.student.state_dict(), self.student_obs_rms], f'{cfg.OUT_DIR}/checkpoint_{cur_iter + 1}.pt')
+            with open(f'{cfg.OUT_DIR}/return_curves.pkl', 'wb') as f:
+                pickle.dump([train_return_curve, test_return_curve], f)
 
     def train_on_buffer(self):
 
@@ -149,6 +200,7 @@ class DAggerTrainer:
         for i in range(cfg.DAGGER.EPOCH_PER_ITER):
             batch_sampler = self.buffer.get_sampler()
             for j, batch in enumerate(batch_sampler):
+                self.student.mu_net.generate_params(batch['obs']['context'], batch['obs']['obs_padding_mask'].bool())
                 _, student_pi, _, _ = self.student(batch["obs"], compute_val=False)
                 student_act_mean = student_pi.loc
                 # compute action loss
@@ -169,9 +221,12 @@ class DAggerTrainer:
             if early_stop:
                 break
 
-    def save_sampled_agent_seq(self, cur_iter):
+    def save_sampled_agent_seq(self, cur_iter, mode='train'):
         
-        agents = cfg.ENV.WALKERS
+        if mode == 'train':
+            agents = self.train_agents
+        else:
+            agents = self.test_agents
         num_agents = len(agents)
         if num_agents <= 1:
             return
@@ -188,5 +243,5 @@ class DAggerTrainer:
         size = int(ep_per_env * cfg.PPO.NUM_ENVS * 50)
         task_list = np.random.choice(range(0, num_agents), size=size, p=probs)
         task_list = [int(_) for _ in task_list]
-        path = os.path.join(cfg.OUT_DIR, f"sampling_train.json")
+        path = os.path.join(cfg.OUT_DIR, f"sampling_{mode}.json")
         fu.save_json(task_list, path)

@@ -42,9 +42,27 @@ class Buffer(object):
         # self.step = (self.step + 1) % cfg.DAGGER.ITER_STEPS
         self.step += 1
 
+    def get_validation_data(self, valid_step_num):
+        self.valid_step_num = valid_step_num
+        batch = {}
+        if isinstance(self.obs, dict):
+            batch["obs"] = {}
+            for ot, ov in self.obs.items():
+                    batch["obs"][ot] = ov[-valid_step_num:].view(-1, *ov.size()[2:]).cuda()
+        else:
+            batch["obs"] = self.obs[-valid_step_num:].view(-1, *self.obs.size()[2:]).cuda()
+
+        batch["act_target"] = self.act_target[-valid_step_num:].view(-1, self.act_target.size(-1)).cuda()
+        return batch
+
     def get_sampler(self):
 
-        dset_size = self.step * self.P
+        try:
+            step_num = self.step - self.valid_step_num
+        except:
+            step_num = self.step
+
+        dset_size = step_num * self.P
         assert dset_size >= cfg.DAGGER.BATCH_SIZE
 
         sampler = BatchSampler(
@@ -58,9 +76,9 @@ class Buffer(object):
             if isinstance(self.obs, dict):
                 batch["obs"] = {}
                 for ot, ov in self.obs.items():
-                        batch["obs"][ot] = ov[:self.step].view(-1, *ov.size()[2:])[idxs].cuda()
+                        batch["obs"][ot] = ov[:step_num].view(-1, *ov.size()[2:])[idxs].cuda()
             else:
-                batch["obs"] = self.obs[:self.step].view(-1, *self.obs.size()[2:])[idxs].cuda()
+                batch["obs"] = self.obs[:step_num].view(-1, *self.obs.size()[2:])[idxs].cuda()
 
-            batch["act_target"] = self.act_target[:self.step].view(-1, self.act_target.size(-1))[idxs].cuda()
+            batch["act_target"] = self.act_target[:step_num].view(-1, self.act_target.size(-1))[idxs].cuda()
             yield batch

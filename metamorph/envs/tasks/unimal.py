@@ -1,5 +1,6 @@
 import os
 from collections import OrderedDict
+import copy
 
 import gym
 import mujoco_py
@@ -37,6 +38,8 @@ class UnimalEnv(gym.Env):
             self.unimal_idx = cfg.ENV.WALKERS.index(unimal_id)
         except:
             self.unimal_idx = -1
+        # copy data path to avoid change in cfg
+        self.agent_folder = copy.copy(cfg.ENV.WALKER_DIR)
 
         self.viewer = None
         self._viewers = {}
@@ -62,7 +65,7 @@ class UnimalEnv(gym.Env):
         return self.unimal_idx
 
     def _load_all_unimals(self):
-        dir_path = os.path.join(cfg.ENV.WALKER_DIR, "xml")
+        dir_path = os.path.join(self.agent_folder, "xml")
         xml_paths = [
             os.path.join(dir_path, "{}.xml".format(walker_name))
             for walker_name in cfg.ENV.WALKERS
@@ -70,7 +73,7 @@ class UnimalEnv(gym.Env):
         return [create_agent_xml(path) for path in xml_paths]
 
     def _load_unimal_metadata(self):
-        path = os.path.join(cfg.ENV.WALKER_DIR, "metadata", "{}.json".format(self.unimal_id))
+        path = os.path.join(self.agent_folder, "metadata", "{}.json".format(self.unimal_id))
         return fu.load_json(path)
 
     def add_module(self, cname):
@@ -123,7 +126,7 @@ class UnimalEnv(gym.Env):
             [True, False], self.np_random
         )
         # self.xml_str = self.unimal_xmls[idx]
-        xml_path = f"{cfg.ENV.WALKER_DIR}/xml/{unimal_id}.xml"
+        xml_path = f"{self.agent_folder}/xml/{unimal_id}.xml"
         self.xml_str = create_agent_xml(xml_path)
 
     ###########################################################################
