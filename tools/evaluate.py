@@ -83,7 +83,10 @@ def evaluate(policy, env, agent, compute_gae=False):
     #     obs['context'] = obs_context
 
     if type(policy.ac.mu_net) == MLPModel or type(policy.ac.mu_net) == HNMLP:
-        policy.ac.mu_net.generate_params(obs['context'], obs['obs_padding_mask'].bool())
+        morphology_info = {}
+        morphology_info['adjacency_matrix'] = obs['adjacency_matrix']
+        with torch.no_grad():
+            policy.ac.mu_net.generate_params(obs['context'], obs['obs_padding_mask'].bool(), morphology_info=morphology_info)
 
     unimal_ids = env.get_unimal_idx()
     for t in range(2000):

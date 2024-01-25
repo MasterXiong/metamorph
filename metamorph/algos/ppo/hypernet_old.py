@@ -633,7 +633,7 @@ class MLPModel(nn.Module):
 
         return output, None
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def generate_params(self, obs_context, obs_mask, morphology_info=None):
 
         batch_size = obs_context.shape[0]
