@@ -935,7 +935,7 @@ class ActorCritic(nn.Module):
 
         # start = time.time()
         morphology_info = {}
-        # morphology_info["adjacency_matrix"] = obs_dict["adjacency_matrix"]
+        morphology_info["adjacency_matrix"] = obs_dict["adjacency_matrix"]
         if cfg.MODEL.TRANSFORMER.USE_CONNECTIVITY_IN_ATTENTION:
             morphology_info['connectivity'] = obs_dict['connectivity'].bool()
         if cfg.MODEL.TRANSFORMER.USE_MORPHOLOGY_INFO_IN_ATTENTION:

@@ -71,29 +71,47 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
         all_context['context'].append(init_obs['context'])
         all_context['obs_mask'].append(init_obs['obs_padding_mask'])
         all_context['act_mask'].append(init_obs['act_padding_mask'])
-        # drop context features from obs if needed
-        if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6 and agent_data['obs'].shape[-1] == 624:
-            dims = list(range(13)) + [30, 31] + [41, 42]
-            data_size = agent_data['obs'].shape[0]
-            new_obs = agent_data['obs'].view(data_size, cfg.MODEL.MAX_LIMBS, -1)
-            new_obs = new_obs[:, :, dims]
-            agent_data['obs'] = new_obs.view(data_size, -1)
-        if cfg.DISTILL.SAMPLE_STRATEGY == 'random':
-            sample_index = np.random.choice(agent_data['obs'].shape[0], cfg.DISTILL.PER_AGENT_SAMPLE_NUM, replace=False)
-        for key in ['obs', 'act', 'act_mean', 'hfield']:
-            if key not in buffer:
-                continue
+        all_context['adjacency_matrix'].append(init_obs['adjacency_matrix'])
+        if type(agent_data['obs']) == list:
+            # aggregate episode data
+            episode_num = cfg.DISTILL.PER_AGENT_EPISODE_NUM
+            for key in ['obs', 'act', 'act_mean', 'hfield']:
+                if key not in agent_data:
+                    continue
+                agent_data[key] = torch.cat(agent_data[key][:episode_num], dim=0)
+                if key == 'obs':
+                    if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6 and agent_data['obs'].shape[-1] == 624:
+                        dims = list(range(13)) + [30, 31] + [41, 42]
+                        data_size = agent_data['obs'].shape[0]
+                        new_obs = agent_data['obs'].view(data_size, cfg.MODEL.MAX_LIMBS, -1)
+                        new_obs = new_obs[:, :, dims]
+                        agent_data['obs'] = new_obs.view(data_size, -1)
+                buffer[key].append(agent_data[key])
+            buffer['unimal_ids'].append(torch.ones(agent_data['obs'].shape[0], dtype=torch.long) * i)
+        else:
+            # drop context features from obs if needed
+            if len(cfg.MODEL.PROPRIOCEPTIVE_OBS_TYPES) == 6 and agent_data['obs'].shape[-1] == 624:
+                dims = list(range(13)) + [30, 31] + [41, 42]
+                data_size = agent_data['obs'].shape[0]
+                new_obs = agent_data['obs'].view(data_size, cfg.MODEL.MAX_LIMBS, -1)
+                new_obs = new_obs[:, :, dims]
+                agent_data['obs'] = new_obs.view(data_size, -1)
             if cfg.DISTILL.SAMPLE_STRATEGY == 'random':
-                buffer[key].append(agent_data[key][sample_index])
-            elif cfg.DISTILL.SAMPLE_STRATEGY == 'timestep_first':
-                data_size = agent_data[key].shape[0]
-                feat_dim = agent_data[key].shape[-1]
-                buffer[key].append(agent_data[key].reshape(-1, 64, feat_dim).permute(1, 0, 2).reshape(data_size, feat_dim)[:cfg.DISTILL.PER_AGENT_SAMPLE_NUM])
-            elif cfg.DISTILL.SAMPLE_STRATEGY == 'env_first':
-                buffer[key].append(agent_data[key][:cfg.DISTILL.PER_AGENT_SAMPLE_NUM])
-            else:
-                raise ValueError("Unsupported sample strategy")
-        buffer['unimal_ids'].append(torch.ones(cfg.DISTILL.PER_AGENT_SAMPLE_NUM, dtype=torch.long) * i)
+                sample_index = np.random.choice(agent_data['obs'].shape[0], cfg.DISTILL.PER_AGENT_SAMPLE_NUM, replace=False)
+            for key in ['obs', 'act', 'act_mean', 'hfield']:
+                if key not in buffer:
+                    continue
+                if cfg.DISTILL.SAMPLE_STRATEGY == 'random':
+                    buffer[key].append(agent_data[key][sample_index])
+                elif cfg.DISTILL.SAMPLE_STRATEGY == 'timestep_first':
+                    data_size = agent_data[key].shape[0]
+                    feat_dim = agent_data[key].shape[-1]
+                    buffer[key].append(agent_data[key].reshape(-1, 64, feat_dim).permute(1, 0, 2).reshape(data_size, feat_dim)[:cfg.DISTILL.PER_AGENT_SAMPLE_NUM])
+                elif cfg.DISTILL.SAMPLE_STRATEGY == 'env_first':
+                    buffer[key].append(agent_data[key][:cfg.DISTILL.PER_AGENT_SAMPLE_NUM])
+                else:
+                    raise ValueError("Unsupported sample strategy")
+            buffer['unimal_ids'].append(torch.ones(cfg.DISTILL.PER_AGENT_SAMPLE_NUM, dtype=torch.long) * i)
     # all_context = np.stack(all_context, axis=0)
     # all_context = all_context.reshape(1200, -1)
     # for i in range(all_context.shape[1]):
@@ -103,6 +121,7 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
     all_context['context'] = torch.from_numpy(np.stack(all_context['context'])).float().cuda()
     all_context['obs_mask'] = torch.from_numpy(np.stack(all_context['obs_mask'])).float().cuda()
     all_context['act_mask'] = torch.from_numpy(np.stack(all_context['act_mask'])).float().cuda()
+    all_context['adjacency_matrix'] = torch.from_numpy(np.stack(all_context['adjacency_matrix'])).float().cuda()
 
     if validation:
         in_domain_validation_buffer = {}
@@ -117,6 +136,7 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
             print (out_domain_validation_buffer[key].shape[0], in_domain_validation_buffer[key].shape[0], buffer[key].shape[0])
         else:
             buffer[key] = torch.cat(buffer[key], dim=0)
+            print (buffer[key].shape)
 
     if teacher_mode == 'MT':
         # if the teacher is trained by multi-task RL, reuse its obs rms for the student
@@ -182,7 +202,7 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
             else:
                 pred = model.action_mu
             if cfg.DISTILL.SAMPLE_WEIGHT:
-                threshold = 1.
+                threshold = cfg.DISTILL.LARGE_ACT_DECAY
                 w = torch.where(target.abs() > threshold, torch.exp(threshold - target.abs()), 1.).cuda()
                 if cfg.DISTILL.BALANCED_LOSS:
                     loss = 0.5 * (((pred - target.cuda()).square() * w * (1 - obs_dict['act_padding_mask'])).sum(dim=1) / (1 - obs_dict['act_padding_mask']).sum(dim=1)).mean()
@@ -214,12 +234,14 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
             context = all_context['context'][unimal_ids]
             obs_mask = all_context['obs_mask'][unimal_ids]
             act_mask = all_context['act_mask'][unimal_ids]
+            adjacency_matrix = all_context['adjacency_matrix'][unimal_ids]
 
             train_obs_dict = {
                 'proprioceptive': obs.cuda(), 
                 'context': context, 
                 'obs_padding_mask': obs_mask,  
                 'act_padding_mask': act_mask, 
+                'adjacency_matrix': adjacency_matrix, 
             }
             if 'hfield' in cfg.ENV.KEYS_TO_KEEP:
                 train_obs_dict['hfield'] = hfield.cuda()

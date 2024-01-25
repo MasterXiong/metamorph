@@ -297,6 +297,8 @@ class Agent:
             child_idx, parent_idx = joint_to[i], joint_from[i]
             self.adjacency_matrix[parent_idx, child_idx] = 1.
             self.adjacency_matrix[child_idx, parent_idx] = 1.
+        # devide by node degree
+        self.adjacency_matrix /= self.adjacency_matrix.sum(axis=1).reshape(-1, 1)
 
         # return np.vstack((joint_to, joint_from)).T.flatten(), connectivity, traversals, tree_PE, graph_PE, relational_features
         return np.vstack((joint_to, joint_from)).T.flatten()

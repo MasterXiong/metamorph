@@ -17,12 +17,11 @@ class GraphConvolutionLayer(nn.Module):
 
 
 class GraphNeuralNetwork(nn.Module):
-    def __init__(self, input_dim, hidden_dims, output_dim, final_nonlinearity=False):
+    def __init__(self, dim, num_layer, final_nonlinearity=False):
         super(GraphNeuralNetwork, self).__init__()
         self.layers = []
-        self.dims = [input_dim] + hidden_dims + [output_dim]
-        for i in range(len(self.dims) - 1):
-            gc_layer = GraphConvolutionLayer(self.dims[i], self.dims[i + 1])
+        for i in range(num_layer):
+            gc_layer = GraphConvolutionLayer(dim, dim)
             self.layers.append(gc_layer)
         self.layers = nn.ModuleList(self.layers)
         self.final_nonlinearity = final_nonlinearity

@@ -10,6 +10,7 @@ from metamorph.utils import model as tu
 
 from .transformer import TransformerEncoder
 from .transformer import TransformerEncoderLayerResidual
+from .gnn import GraphNeuralNetwork
 
 
 class MLPObsEncoder(nn.Module):
@@ -69,12 +70,11 @@ class MLPModel(nn.Module):
                         context_encoder_TF, 
                     )
             elif self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
-                # self.context_embed_input = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                self.context_embed_input = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                 self.context_encoder_for_input = GraphNeuralNetwork(
-                    input_dim = context_obs_size, 
-                    hidden_dims = [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE], 
-                    output_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
-                    final_nonlinearity=True
+                    dim=cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
+                    num_layer=self.model_args.GNN_LAYER_NUM, 
+                    final_nonlinearity=False, 
                 )
 
             self.hnet_input_weight = nn.Linear(HN_input_dim, limb_obs_size * self.model_args.HIDDEN_DIM, bias=self.model_args.BIAS_IN_HN_OUTPUT_LAYER)
@@ -153,12 +153,11 @@ class MLPModel(nn.Module):
                             context_encoder_TF, 
                         )
                 elif self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
-                    # self.context_embed_output = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                    self.context_embed_output = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                     self.context_encoder_for_output = GraphNeuralNetwork(
-                        input_dim = context_obs_size, 
-                        hidden_dims = [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE], 
-                        output_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
-                        final_nonlinearity=True
+                        dim=cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
+                        num_layer=self.model_args.GNN_LAYER_NUM, 
+                        final_nonlinearity=False, 
                     )
 
             if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'output':
@@ -250,12 +249,11 @@ class MLPModel(nn.Module):
                                 context_encoder_TF, 
                             )
                     elif self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
-                        # self.context_embed_output = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                        self.context_embed_hidden = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                         self.context_encoder_for_hidden = GraphNeuralNetwork(
-                            input_dim = context_obs_size, 
-                            hidden_dims = [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE], 
-                            output_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
-                            final_nonlinearity=True
+                            dim=cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
+                            num_layer=self.model_args.GNN_LAYER_NUM, 
+                            final_nonlinearity=False, 
                         )
 
                 HN_output_layers = []
@@ -341,12 +339,11 @@ class MLPModel(nn.Module):
                                 context_encoder_TF, 
                             )
                     elif self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
-                        # self.context_embed_output = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
+                        self.context_embed_hfield = nn.Linear(context_obs_size, cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE)
                         self.context_encoder_for_hfield = GraphNeuralNetwork(
-                            input_dim = context_obs_size, 
-                            hidden_dims = [cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE], 
-                            output_dim = cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
-                            final_nonlinearity=True
+                            dim=cfg.MODEL.TRANSFORMER.CONTEXT_EMBED_SIZE, 
+                            num_layer=self.model_args.GNN_LAYER_NUM, 
+                            final_nonlinearity=False, 
                         )
 
                 HN_output_layers = []
@@ -455,6 +452,7 @@ class MLPModel(nn.Module):
                 context_embedding = obs_context
 
             if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                context_embedding = self.context_embed_input(context_embedding)
                 context_embedding = self.context_encoder_for_input(context_embedding, morphology_info["adjacency_matrix"])
             elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
                 if self.model_args.CONTEXT_MASK:
@@ -545,11 +543,15 @@ class MLPModel(nn.Module):
                     context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
                 else:
                     context_embedding = obs_context
-                    if self.model_args.CONTEXT_MASK:
+                    if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
                         context_embedding = self.context_embed_hidden(context_embedding)
-                        context_embedding = self.context_encoder_for_hidden(context_embedding, src_key_padding_mask=obs_mask)
-                    else:
-                        context_embedding = self.context_encoder_for_hidden(context_embedding)
+                        context_embedding = self.context_encoder_for_hidden(context_embedding, morphology_info["adjacency_matrix"])
+                    elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
+                        if self.model_args.CONTEXT_MASK:
+                            context_embedding = self.context_embed_hidden(context_embedding)
+                            context_embedding = self.context_encoder_for_hidden(context_embedding, src_key_padding_mask=obs_mask)
+                        else:
+                            context_embedding = self.context_encoder_for_hidden(context_embedding)
                     # aggregate the context embedding
                     # need to aggregate with mean. sum will lead to significant KL divergence
                     if self.model_args.CONTEXT_ENBEDDING_AGG == 'mean':
@@ -593,6 +595,7 @@ class MLPModel(nn.Module):
                 context_embedding = self.context_embedding_input
             else:
                 if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                    context_embedding = self.context_embed_output(context_embedding)
                     context_embedding = self.context_encoder_for_output(context_embedding, morphology_info["adjacency_matrix"])
                 elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
                     if self.model_args.CONTEXT_MASK:
@@ -640,6 +643,7 @@ class MLPModel(nn.Module):
         if self.model_args.HN_INPUT:
             context_embedding = obs_context
             if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                context_embedding = self.context_embed_input(context_embedding)
                 context_embedding = self.context_encoder_for_input(context_embedding, morphology_info["adjacency_matrix"])
             elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
                 if self.model_args.CONTEXT_MASK:
@@ -663,11 +667,15 @@ class MLPModel(nn.Module):
                     context_embedding = (context_embedding * (1. - obs_mask.float())[:, :, None]).sum(dim=1) / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
                 else:
                     context_embedding = obs_context
-                    if self.model_args.CONTEXT_MASK:
+                    if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
                         context_embedding = self.context_embed_hidden(context_embedding)
-                        context_embedding = self.context_encoder_for_hidden(context_embedding, src_key_padding_mask=obs_mask)
-                    else:
-                        context_embedding = self.context_encoder_for_hidden(context_embedding)
+                        context_embedding = self.context_encoder_for_hidden(context_embedding, morphology_info["adjacency_matrix"])
+                    elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
+                        if self.model_args.CONTEXT_MASK:
+                            context_embedding = self.context_embed_hidden(context_embedding)
+                            context_embedding = self.context_encoder_for_hidden(context_embedding, src_key_padding_mask=obs_mask)
+                        else:
+                            context_embedding = self.context_encoder_for_hidden(context_embedding)
                     # aggregate the context embedding
                     # need to aggregate with mean. sum will lead to significant KL divergence
                     if self.model_args.CONTEXT_ENBEDDING_AGG == 'mean':
@@ -691,6 +699,7 @@ class MLPModel(nn.Module):
             else:
                 context_embedding = obs_context
                 if self.model_args.CONTEXT_ENCODER_TYPE == 'gnn':
+                    context_embedding = self.context_embed_output(context_embedding)
                     context_embedding = self.context_encoder_for_output(context_embedding, morphology_info["adjacency_matrix"])
                 elif self.model_args.CONTEXT_ENCODER_TYPE == 'transformer':
                     if self.model_args.CONTEXT_MASK:
