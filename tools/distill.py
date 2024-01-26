@@ -21,6 +21,7 @@ def parse_args():
     parser.add_argument(
         "--validation", action="store_true"
     )
+    parser.add_argument("--context_version", type=int, default=2)
     parser.add_argument(
         "opts",
         help="See morphology/core/config.py for all options",
@@ -63,6 +64,15 @@ if __name__ == '__main__':
         ]
         ob_opts = ["MODEL.PROPRIOCEPTIVE_OBS_TYPES", obs_type]
         cfg.merge_from_list(ob_opts)
+    if args.context_version == 1:
+        context_type = [
+            "body_pos", "body_ipos", "body_iquat", "geom_quat", # limb model
+            "body_mass", "body_shape", # limb hardware
+            "jnt_pos", # joint model
+            "joint_range", "joint_axis", "gear" # joint hardware
+        ]
+        opts = ["MODEL.CONTEXT_OBS_TYPES", context_type]
+        cfg.merge_from_list(opts)
     set_cfg_options()
     os.makedirs(cfg.OUT_DIR, exist_ok=True)
     dump_cfg()
