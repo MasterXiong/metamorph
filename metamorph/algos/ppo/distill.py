@@ -226,7 +226,10 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
     for i in range(cfg.DISTILL.EPOCH_NUM):
 
         if i % cfg.DISTILL.SAVE_FREQ == 0:
-            torch.save([model.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{i}.pt')
+            torch.save([model.mu_net.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{i}.pt')
+        elif i <= 50:
+            if i % 5 == 0:
+                torch.save([model.mu_net.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{i}.pt')
 
         batch_losses = []
         for j, (obs, train_act, train_act_mean, hfield, unimal_ids) in enumerate(train_dataloader):
@@ -299,4 +302,4 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
         with open(f'{cfg.OUT_DIR}/loss_curve.pkl', 'wb') as f:
             pickle.dump([loss_curve, in_domain_valid_curve, out_domain_valid_curve], f)
 
-    torch.save([model.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{cfg.DISTILL.EPOCH_NUM}.pt')
+    torch.save([model.mu_net.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{cfg.DISTILL.EPOCH_NUM}.pt')
