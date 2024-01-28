@@ -123,6 +123,10 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
     all_context['act_mask'] = torch.from_numpy(np.stack(all_context['act_mask'])).float().cuda()
     all_context['adjacency_matrix'] = torch.from_numpy(np.stack(all_context['adjacency_matrix'])).float().cuda()
 
+    context_features = all_context['context'].reshape(all_context['context'].shape[0] * 12, -1)
+    for i in range(context_features.shape[1]):
+        print (i, context_features[:, i].min(), context_features[:, i].max())
+
     if validation:
         in_domain_validation_buffer = {}
         out_domain_validation_buffer = {}
