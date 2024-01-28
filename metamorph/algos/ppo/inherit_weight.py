@@ -17,11 +17,14 @@ def restore_from_checkpoint(ac, cp_path=None):
     else:
         model_p, ob_rms, ret_rms, optimizer_state = checkpoint
 
-    state_dict_c = ac.state_dict()
     if type(model_p) == ActorCritic:
         state_dict_p = model_p.state_dict()
     else:
         state_dict_p = model_p
+    if any(['mu_net' in key for key in state_dict_p.keys()]):
+        state_dict_c = ac.state_dict()
+    else:
+        state_dict_c = ac.mu_net.state_dict()
     if set(state_dict_c.keys()) != set(state_dict_p.keys()):
         print ('The params are not aligned!')
         print ('The following params are in model, but not in checkpoint:')
