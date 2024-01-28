@@ -552,6 +552,8 @@ class MLPModel(nn.Module):
                             context_embedding = self.context_encoder_for_hidden(context_embedding, src_key_padding_mask=obs_mask)
                         else:
                             context_embedding = self.context_encoder_for_hidden(context_embedding)
+                    else:
+                        context_embedding = self.context_encoder_for_input(context_embedding)
                     # aggregate the context embedding
                     # need to aggregate with mean. sum will lead to significant KL divergence
                     if self.model_args.CONTEXT_ENBEDDING_AGG == 'mean':
@@ -676,6 +678,8 @@ class MLPModel(nn.Module):
                             context_embedding = self.context_encoder_for_hidden(context_embedding, src_key_padding_mask=obs_mask)
                         else:
                             context_embedding = self.context_encoder_for_hidden(context_embedding)
+                    else:
+                        context_embedding = self.context_encoder_for_input(context_embedding)
                     # aggregate the context embedding
                     # need to aggregate with mean. sum will lead to significant KL divergence
                     if self.model_args.CONTEXT_ENBEDDING_AGG == 'mean':
