@@ -54,16 +54,13 @@ class VanillaMLP(nn.Module):
         # input layer
         self.input_layer = nn.Linear(obs_space["proprioceptive"].shape[0], self.model_args.HIDDEN_DIM)
         # hidden layers
-        if self.model_args.LAYER_NUM > 1:
-            hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
-            self.hidden_layers = tu.make_mlp_default(hidden_dims, dropout=self.model_args.DROPOUT)
+        hidden_dims = [self.model_args.HIDDEN_DIM for _ in range(self.model_args.LAYER_NUM)]
         # output layer
         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
             self.hfield_encoder = MLPObsEncoder(obs_space.spaces["hfield"].shape[0])
-            self.final_input_dim = self.model_args.HIDDEN_DIM + cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS[-1]
-        else:
-            self.final_input_dim = self.model_args.HIDDEN_DIM 
-        self.output_layer = nn.Linear(self.final_input_dim, out_dim)
+            hidden_dims[0] += cfg.MODEL.TRANSFORMER.EXT_HIDDEN_DIMS[-1] 
+        self.hidden_layers = tu.make_mlp_default(hidden_dims, dropout=self.model_args.DROPOUT)
+        self.output_layer = nn.Linear(self.model_args.HIDDEN_DIM, out_dim)
         # dropout
         if self.model_args.DROPOUT is not None:
             self.input_dropout = nn.Dropout(p=self.model_args.DROPOUT)
@@ -77,17 +74,15 @@ class VanillaMLP(nn.Module):
         obs = obs.reshape(batch_size, self.seq_len, -1) * (1. - obs_mask.float())[:, :, None]
         obs = obs.reshape(batch_size, -1)
         embedding = self.input_layer(obs)
-        embedding = embedding / (1. - obs_mask.float()).sum(dim=1, keepdim=True)
         embedding = F.relu(embedding)
         if self.model_args.DROPOUT is not None:
             embedding = self.input_dropout(embedding)
-        # hidden layers
-        if self.model_args.LAYER_NUM > 1:
-            embedding = self.hidden_layers(embedding)
         # hfield
         if "hfield" in cfg.ENV.KEYS_TO_KEEP:
             hfield_embedding = self.hfield_encoder(obs_env["hfield"])
             embedding = torch.cat([embedding, hfield_embedding], 1)
+        # hidden layers
+        embedding = self.hidden_layers(embedding)
         # output layer
         output = self.output_layer(embedding)
         return output, None
