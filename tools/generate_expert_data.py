@@ -109,7 +109,7 @@ def generate_expert_data(model_path, agent_path, data_path, start=0, end=100, se
             cfg.ENV.WALKER_DIR = agent_path
             set_cfg_options()
             ppo_trainer = PPO()
-            score, obs_clip_ratio = collect_data(agent, ppo_trainer, data_path, denormalize=True)
+            score, obs_clip_ratio = collect_data(agent, ppo_trainer, data_path, denormalize=True, num_env=num_env)
             print (agent, score)
             all_agent_scores.append(score)
             ratio.append(obs_clip_ratio)
@@ -122,9 +122,10 @@ def generate_expert_data(model_path, agent_path, data_path, start=0, end=100, se
 if __name__ == '__main__':
 
     # MT
-    # python tools/generate_expert_data.py --model_path baselines/csr_200M_HN+FA_KL_3_wo_PE+dropout --data_path csr_200M_HN+FA_KL_3_wo_PE+dropout_8k_mutate_1000 --mode MT --seed 1409 --agent_path data/train_mutate_1000 --num_env 8 --start 0 --end 25
+    # python tools/generate_expert_data.py --model_path baselines/obstacle_200M_HN+FA_KL_3_wo_PE+dropout --data_path obstacle_200M_HN+FA_KL_3_wo_PE+dropout_8k_test --mode MT --seed 1409 --agent_path data/test --num_env 8 --start 0 --end 25
+    # python tools/generate_expert_data.py --model_path baselines/ft_baseline_KL_5_wo_PE+dropout --data_path ft_baseline_KL_5_wo_PE+dropout_8k*1000 --mode MT --seed 1409 --agent_path data/train_mutate_1000 --num_env 8 --start 0 --end 100
     # ST
-    # python tools/generate_expert_data.py --model_path output/MLP_ST_ft_256*2_KL_5_tanh_action_no_context_in_state --seed 1409 --mode ST --start 0 --end 100
+    # python tools/generate_expert_data.py --model_path output/MLP_ST_ft_256*2_KL_5 --data_path MLP_ST_ft_256*2_KL_5_80k*100 --seed 1409 --mode ST --num_env 80 --start 0 --end 100
     parser = argparse.ArgumentParser(description="Collect expert data from trained RL agent")
     parser.add_argument("--model_path", help="the path of the expert", required=True, type=str)
     parser.add_argument("--data_path", help="the path to save expert data", type=str, default='')

@@ -243,6 +243,12 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
             act_mask = all_context['act_mask'][unimal_ids]
             adjacency_matrix = all_context['adjacency_matrix'][unimal_ids]
 
+            if cfg.DISTILL.DOMAIN_RANDOMIZATION:
+                selected = torch.bernoulli(torch.ones_like(context) * 0.1).cuda()
+                noise_scale = torch.rand(context.shape).cuda() * 0.1 * context
+                noise_direction = torch.bernoulli(torch.ones_like(context) * 0.5).cuda() * 2 - 1.
+                context += selected * noise_direction * noise_scale
+
             train_obs_dict = {
                 'proprioceptive': obs.cuda(), 
                 'context': context, 

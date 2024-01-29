@@ -82,6 +82,16 @@ if __name__ == '__main__':
         ]
         opts = ["MODEL.CONTEXT_OBS_TYPES", context_type]
         cfg.merge_from_list(opts)
+    elif args.context_version == 4:
+        context_type = [
+            "absolute_body_pos", "absolute_body_ipos", "body_iquat", # limb model
+            "body_mass", "body_shape", # limb hardware
+            "jnt_pos", # joint model
+            "joint_range", "joint_axis", "gear",  # joint hardware
+            "torso_limb_indicator", 
+        ]
+        opts = ["MODEL.CONTEXT_OBS_TYPES", context_type]
+        cfg.merge_from_list(opts)
     set_cfg_options()
     os.makedirs(cfg.OUT_DIR, exist_ok=True)
     dump_cfg()
