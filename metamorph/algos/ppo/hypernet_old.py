@@ -382,6 +382,9 @@ class MLPModel(nn.Module):
             if self.model_args.HN_HFIELD:
                 self.hfield_dropout = nn.Dropout(p=0.1)
 
+        if self.model_args.DROPOUT:
+            self.base_dropout = nn.ModuleList([nn.Dropout(p=0.1) for _ in range(cfg.MODEL.MLP.LAYER_NUM)])
+
 
     def forward(self, obs, obs_mask, obs_env, obs_cm_mask, obs_context, morphology_info, return_attention=False, unimal_ids=None):
 
@@ -428,6 +431,8 @@ class MLPModel(nn.Module):
                 embedding = F.relu(embedding)
                 if self.model_args.SKIP_CONNECTION:
                     embedding = embedding + layer_input
+                if self.model_args.DROPOUT:
+                    embedding = self.base_dropout[i](embedding)
                 layer_input = embedding
 
             if "hfield" in cfg.ENV.KEYS_TO_KEEP and self.model_args.HFIELD_POS == 'output':
@@ -578,6 +583,8 @@ class MLPModel(nn.Module):
                     embedding = F.relu(embedding)
                     if self.model_args.SKIP_CONNECTION:
                         embedding = embedding + layer_input
+                    if self.model_args.DROPOUT:
+                        embedding = self.base_dropout[i](embedding)
                     layer_input = embedding
             else:
                 embedding = self.hidden_layers(embedding)
