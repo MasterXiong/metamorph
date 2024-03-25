@@ -1,6 +1,7 @@
 import argparse
 import os
 import numpy as np
+import pickle
 
 from tools.evaluate import evaluate_model, evaluate_model_v2
 
@@ -28,7 +29,12 @@ def evaluate_checkpoint(folder, test_set, interval=600, additional_suffix=None, 
             agent_path = test_set
             policy_folder = f'{folder}/{seed}'
             print (model_path)
+            # folder_name = folder.split('/')[-1]
             # if os.path.exists(f'eval/{folder_name}/{suffix}.pkl'):
+            #     with open(f'eval/{folder_name}/{suffix}.pkl', 'rb') as f:
+            #         results = pickle.load(f)
+            #     avg_score = np.mean([np.mean(results[agent][0]) for agent in results])
+            #     seed_scores[iteration] = avg_score
             #     iteration += interval
             #     continue
             if not os.path.exists(model_path):
@@ -53,8 +59,8 @@ def evaluate_checkpoint(folder, test_set, interval=600, additional_suffix=None, 
 
 if __name__ == '__main__':
     
-    # python tools/eval_learning_curve.py --folder distilled_policy/obstacle_MT_modumorph_to_HN-MLP_v3_256*3_hfield_hidden_sum_agg_context_sum_agg_lr_3e-4_decouple_grad_norm_0.5_dropout_KL_loss_balanced_expert_size_8k*1000 --test_set data/test --interval 10 --seed 1409 --deterministic --version 1
-    # python tools/eval_learning_curve.py --folder distilled_policy/obstacle_MT_modumorph_to_HN-MLP_v3_256*3_hfield_hidden_sum_agg_lr_3e-4_decouple_grad_norm_0.5_dropout_KL_loss_balanced_expert_size_8k*1000_dagger_cp_0 --test_set data/test --interval 10 --seed 1409 --deterministic
+    # python tools/eval_learning_curve.py --folder distilled_policy/csr_MT_modumorph_to_HN-MLP_v3_256*3_hfield_hidden_sum_agg_context_v3_lr_3e-4_decouple_grad_norm_0.5_KL_loss_balanced_expert_size_8k*1000_weighted_loss_wo_dropout --test_set data/test --interval 10 --seed 1409 --deterministic
+    # python tools/eval_learning_curve.py --folder distilled_policy/obstacle_MT_modumorph_to_HN-MLP_v3_256*3_hfield_hidden_sum_agg_lr_3e-4_decouple_grad_norm_0.5_dropout_KL_loss_balanced_expert_size_8k*1000_cp_10_anneal_1_act_mean --test_set data/test --interval 10 --seed 1409 --deterministic --version 1
     # python tools/eval_learning_curve.py --folder distilled_policy/obstacle_MT_modumorph_to_HN-MLP_v3_256*4_hfield_hidden_sum_agg_lr_3e-4_decouple_grad_norm_0.5_dropout_KL_loss_balanced_expert_size_8k*1000 --test_set data/test --interval 10 --seed 1409 --deterministic
 
     # python tools/eval_learning_curve.py --folder output/ft_400M_mutate_400_env_256_uniform_sample_KL_5_wo_PE+dropout/1409 --test_set unimals_100/train --interval 100

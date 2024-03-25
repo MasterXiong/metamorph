@@ -74,6 +74,7 @@ class VanillaMLP(nn.Module):
         obs = obs.reshape(batch_size, self.seq_len, -1) * (1. - obs_mask.float())[:, :, None]
         obs = obs.reshape(batch_size, -1)
         embedding = self.input_layer(obs)
+        embedding /= (1. - obs_mask.float()).sum(dim=1, keepdim=True)
         embedding = F.relu(embedding)
         if self.model_args.DROPOUT is not None:
             embedding = self.input_dropout(embedding)

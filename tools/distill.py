@@ -22,6 +22,7 @@ def parse_args():
         "--validation", action="store_true"
     )
     parser.add_argument("--context_version", type=int, default=2)
+    parser.add_argument("--teacher_mode", type=str, default='MT')
     parser.add_argument(
         "opts",
         help="See morphology/core/config.py for all options",
@@ -96,9 +97,6 @@ if __name__ == '__main__':
     os.makedirs(cfg.OUT_DIR, exist_ok=True)
     dump_cfg()
 
-    if 'ST' in cfg.OUT_DIR:
-        teacher_mode = 'ST'
-    else:
-        teacher_mode = 'MT'
+    teacher_mode = args.teacher_mode
     print (teacher_mode)
     distill_policy(cfg.DISTILL.SOURCE, cfg.DISTILL.TARGET, teacher_mode, validation=args.validation)
