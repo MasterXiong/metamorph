@@ -2,6 +2,7 @@ import numpy as np
 import os
 import pickle
 from collections import defaultdict
+import time
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
@@ -57,7 +58,7 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
     all_context = defaultdict(list)
 
     for i, agent in enumerate(agents):
-        # if i == 5:
+        # if i == 50:
         #     break
         data_path = f'expert_data/{source_folder}/{agent}.pkl'
         if not os.path.exists(data_path):
@@ -236,6 +237,8 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
                 torch.save([model.mu_net.state_dict(), obs_rms], f'{cfg.OUT_DIR}/checkpoint_{i}.pt')
 
         batch_losses = []
+        train_time, network_time = 0., 0.
+        train_start = time.time()
         for j, (obs, train_act, train_act_mean, hfield, unimal_ids) in enumerate(train_dataloader):
 
             context = all_context['context'][unimal_ids]
@@ -271,6 +274,12 @@ def distill_policy(source_folder, target_folder, teacher_mode, validation=False)
                 norm = nn.utils.clip_grad_norm_(model.parameters(), cfg.DISTILL.GRAD_NORM)
             optimizer.step()
             batch_losses.append(loss.item())
+            if (j + 1) % 100 == 0:
+                batch_train_time = (time.time() - train_start) / (j + 1)
+                print (f'time per batch: {batch_train_time:.2f} s')
+
+        batch_train_time = (time.time() - train_start) / (j + 1)
+        print (f'time per batch: {batch_train_time:.2f} s')
 
         if validation:
             batch_in_domain_valid_loss = []
